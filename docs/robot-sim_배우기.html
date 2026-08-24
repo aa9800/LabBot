@@ -1,0 +1,196 @@
+<title>robot-sim 배우기</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root{
+  --bg:#eff1ec; --surface:#ffffff; --surface-2:#e5e8e0;
+  --text:#1b2320; --muted:#57625c;
+  --accent:#d9641e; --accent-ink:#ffffff; --accent2:#1f7a72;
+  --border:#c9cfc6; --warn:#b23a2e; --good:#2e7d46;
+  --code-bg:#e4e7df;
+  --shadow: 0 1px 0 rgba(27,35,32,0.06);
+  --font-display:'Big Shoulders Display', 'Arial Narrow', sans-serif;
+  --font-body:'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --font-mono:'IBM Plex Mono', 'Consolas', monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141917; --surface:#1b211d; --surface-2:#232a24;
+    --text:#e8eae4; --muted:#9aa39a;
+    --accent:#e8823f; --accent-ink:#141917; --accent2:#3fa69c;
+    --border:#333b34; --warn:#e07468; --good:#5cb87a;
+    --code-bg:#20261f; --shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1b211d; --surface-2:#232a24;
+  --text:#e8eae4; --muted:#9aa39a;
+  --accent:#e8823f; --accent-ink:#141917; --accent2:#3fa69c;
+  --border:#333b34; --warn:#e07468; --good:#5cb87a;
+  --code-bg:#20261f; --shadow: 0 1px 0 rgba(0,0,0,0.4);
+}
+
+*{box-sizing:border-box;}
+body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body); font-size:16px; line-height:1.7; -webkit-font-smoothing:antialiased; }
+::selection{ background:var(--accent); color:var(--accent-ink); }
+
+.doc{ max-width:720px; margin:0 auto; padding:0 28px 90px; }
+
+.cover{ padding:48px 0 28px; border-bottom:2px solid var(--text); margin-bottom:32px; }
+.cover .eyebrow{ font-family:var(--font-mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--accent2); margin-bottom:14px; }
+.cover h1{ font-family:var(--font-display); font-weight:800; font-size:clamp(30px,5vw,44px); margin:0 0 10px; line-height:1.1; }
+.cover .sub{ font-size:16px; color:var(--muted); max-width:56ch; margin:0; }
+
+section{ margin-bottom:36px; }
+h2{ font-family:var(--font-display); font-weight:800; font-size:22px; margin:0 0 4px; text-transform:uppercase; display:flex; gap:10px; align-items:baseline; }
+h2 .n{ color:var(--accent); }
+.section-sub{ color:var(--muted); font-size:13.5px; margin:0 0 14px; }
+h3{ font-family:var(--font-display); font-weight:700; font-size:16px; margin:20px 0 8px; text-transform:uppercase; }
+p{ margin:0 0 12px; max-width:64ch; }
+ul,ol{ margin:0 0 12px; padding-left:22px; }
+li{ margin-bottom:6px; max-width:62ch; }
+strong{ color:var(--text); }
+code{ font-family:var(--font-mono); background:var(--code-bg); padding:1px 6px; border-radius:3px; font-size:.9em; }
+
+pre{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px 16px; overflow-x:auto; font-family:var(--font-mono); font-size:13px; box-shadow:var(--shadow); }
+
+.table-scroll{ overflow-x:auto; margin:12px 0; border:1px solid var(--border); border-radius:6px; }
+table{ border-collapse:collapse; width:100%; min-width:460px; font-size:14px; background:var(--surface); }
+th,td{ text-align:left; padding:9px 13px; border-bottom:1px solid var(--border); vertical-align:top; }
+thead th{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); background:var(--surface-2); white-space:nowrap; }
+tbody tr:last-child td{ border-bottom:none; }
+td kbd{ font-family:var(--font-mono); background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:2px 7px; font-size:12.5px; }
+
+.callout{ background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent2); border-radius:4px; padding:14px 16px; margin:14px 0; font-size:14px; box-shadow:var(--shadow); }
+.callout b{ display:block; font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent2); margin-bottom:5px; }
+
+.steps{ list-style:none; margin:0; padding:0; }
+.steps li{ display:grid; grid-template-columns:38px 1fr; gap:14px; padding:14px 0; border-top:1px solid var(--border); }
+.steps li:first-child{ border-top:none; }
+.step-num{ font-family:var(--font-display); font-weight:800; font-size:20px; color:var(--accent); }
+
+.legend{ display:grid; gap:8px; margin:14px 0; }
+.legend div{ display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:9px 13px; font-size:13.5px; }
+.dot{ width:14px; height:14px; border-radius:50%; flex:none; }
+.dot.robot{ background:var(--accent); }
+.dot.marker{ border:2px solid var(--accent2); background:transparent; }
+.bar{ width:22px; height:5px; background:#9aa39a; flex:none; }
+.box{ width:14px; height:14px; background:var(--warn); flex:none; }
+
+footer{ padding:26px 0 10px; border-top:1px solid var(--border); font-family:var(--font-mono); font-size:11.5px; color:var(--muted); }
+</style>
+
+<div class="doc">
+  <div class="cover">
+    <div class="eyebrow">robot-sim · 배우는 순서</div>
+    <h1>가상 로봇 시뮬레이터 배우기</h1>
+    <p class="sub">실제 Raspbot이 오기 전에, 화면 속 가상 로봇으로 라인트래킹·장애물회피·QR스캔·실사를 미리 연습합니다. 순서대로 따라오시면 됩니다.</p>
+  </div>
+
+  <section>
+    <h2><span class="n">0</span> 이게 뭘 하는 건가요</h2>
+    <p>실제 로봇이 하게 될 "판단"(라인 따라가기, 장애물 만나면 정지, 선반 앞에서 물품 확인)을 <strong>화면 위 가상 로봇</strong>으로 미리 만들고 테스트하는 프로그램입니다. 여기서 검증한 로직은 나중에 실제 로봇에 거의 그대로 옮겨집니다 — 그래서 지금 이 안에서 확실히 이해하고 넘어가는 게 중요해요.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">1</span> 준비물 확인</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>확인</th><th>명령</th></tr></thead>
+        <tbody>
+          <tr><td>Python 설치돼 있는지</td><td><code>python --version</code> (3.10 이상이면 OK)</td></tr>
+          <tr><td>최신 코드 받기</td><td><code>git pull</code> (LabKeeper 폴더에서)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">2</span> 설치 &amp; 실행</h2>
+    <pre>cd robot-sim
+pip install -r requirements.txt
+python main.py</pre>
+    <p>창이 뜨고 주황색 점(로봇)이 회색 선을 따라 스스로 움직이면 성공입니다.</p>
+    <div class="callout">
+      <b>웹까지 같이 보고 싶다면</b>
+      <code>robot-sim</code> 실행 전에 <code>web/</code>(또는 로컬 프로토타입)을 먼저 켜두면, 로봇이 장애물을 감지했을 때 웹의 Safety 화면에 이벤트가 실제로 뜨는 걸 볼 수 있습니다. 안 켜져 있어도 로봇 자체는 정상 동작합니다.
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">3</span> 화면에 보이는 것 이해하기</h2>
+    <div class="legend">
+      <div><span class="bar"></span> 회색 선 — 로봇이 따라가는 경로 (실제 라인트래킹 센서가 인식하는 검은 선)</div>
+      <div><span class="dot robot"></span> 주황 점 — 로봇 (앞쪽으로 향한 짧은 선 = 로봇이 보는 방향)</div>
+      <div><span class="dot marker"></span> 청록 원 — 체크포인트(선반). 옆 숫자는 그 선반에 지금 남아있는 물품 수</div>
+      <div><span class="box"></span> 주황 사각형 — 장애물</div>
+    </div>
+    <p>왼쪽 위에 계속 올라오는 글자들은 "방금 무슨 일이 있었는지" 로그입니다 — QR 스캔, 장애물 감지, 실사 제출 결과 등.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">4</span> 조작해보기</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>키</th><th>동작</th><th>확인할 것</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>SPACE</kbd></td><td>로봇 앞에 장애물 놓기</td><td>로봇이 멈추는지, 로그에 "장애물 감지" 뜨는지</td></tr>
+          <tr><td><kbd>C</kbd></td><td>장애물 전체 치우기</td><td>로봇이 다시 움직이기 시작하는지</td></tr>
+          <tr><td><kbd>M</kbd></td><td>무작위 물품 하나를 선반에서 몰래 없앰</td><td>그 선반 숫자가 줄어드는지</td></tr>
+          <tr><td><kbd>F</kbd></td><td>지금까지 스캔한 결과를 실사로 제출</td><td>로그에 "불일치 N건" 뜨는지 (몰래 없앤 물품이 잡히는지)</td></tr>
+          <tr><td><kbd>N</kbd></td><td>스캔 기록 초기화</td><td>새로 순찰 한 바퀴 시작할 때 사용</td></tr>
+          <tr><td><kbd>R</kbd></td><td>로봇 위치 리셋</td><td>처음 자리로 돌아감</td></tr>
+          <tr><td><kbd>ESC</kbd></td><td>종료</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>추천 순서</strong>: 그냥 한 바퀴 돌게 지켜보기 → <kbd>M</kbd>으로 물품 하나 없애기 → 로봇이 그 자리를 다시 지나가게 두기 → <kbd>F</kbd>로 제출해서 정확히 잡히는지 확인.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">5</span> 창 없이 로직만 빠르게 확인 (연습)</h2>
+    <p>매번 창을 띄우지 않고 로직만 빠르게 돌려보는 방법도 있습니다.</p>
+    <pre>python check_logic.py</pre>
+    <p>2000틱을 순식간에 돌리고 마지막 위치·로그를 출력합니다. 코드를 조금 고쳤을 때 "안 깨졌는지"만 빠르게 확인하고 싶을 때 씁니다.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">6</span> 코드 한 줄 씩 바꿔보며 감 잡기</h2>
+    <ol class="steps">
+      <li><span class="step-num">1</span><div><strong><code>controller.py</code>의 <code>SPEED</code> 값</strong>을 70에서 30으로 바꾸고 다시 실행 — 로봇이 얼마나 느려지는지 체감</div></li>
+      <li><span class="step-num">2</span><div><strong><code>sim/engine.py</code>의 <code>TRACK_POINTS</code></strong> 좌표를 살짝 바꿔서 경로 모양이 어떻게 바뀌는지 확인</div></li>
+      <li><span class="step-num">3</span><div><strong><code>controller.py</code>의 <code>OBSTACLE_STOP_DISTANCE</code></strong>를 40에서 80으로 늘려서, 로봇이 더 멀리서부터 멈추는지 확인</div></li>
+    </ol>
+    <p>이런 식으로 값 하나씩 바꿔보면서 "이 숫자가 뭘 담당하는지" 감을 잡는 게, 실제 로봇 왔을 때 값을 튜닝하는 데 그대로 도움이 됩니다.</p>
+  </section>
+
+  <section>
+    <h2><span class="n">7</span> 코드가 어떻게 나뉘어 있는지</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>파일</th><th>역할</th></tr></thead>
+        <tbody>
+          <tr><td><code>controller.py</code></td><td>판단 로직만. "센서가 이렇게 읽히면 이렇게 움직인다" — 실제 로봇에도 그대로 재사용될 부분</td></tr>
+          <tr><td><code>sim/engine.py</code></td><td>가상 세계 자체 (트랙, 물리, 그리기)</td></tr>
+          <tr><td><code>sim/hal_sim.py</code></td><td>controller.py가 센서값을 "물어보는" 창구 — 지금은 가상 세계에 물어봄</td></tr>
+          <tr><td><code>real_hal.py</code></td><td>실제 로봇 오면 채울 자리. 지금은 비어있음(TODO)</td></tr>
+          <tr><td><code>notify.py</code></td><td>웹으로 이벤트/실사 결과 전송</td></tr>
+          <tr><td><code>main.py</code></td><td>창 띄우고 키 입력 처리, 위 조각들을 연결</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout">
+      <b>왜 이렇게 나눠놨나</b>
+      <code>controller.py</code>는 가상 세계인지 실물인지 전혀 모릅니다 — <code>hal_sim.py</code>/<code>real_hal.py</code> 중 뭘 연결하느냐만 다릅니다. 그래서 지금 시뮬레이터에서 검증한 판단 로직이, 실제 로봇 왔을 때 <code>real_hal.py</code>만 채우면 그대로 옮겨갑니다.
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">8</span> 실제 로봇이 왔을 때 할 일 (미리보기)</h2>
+    <p><code>real_hal.py</code>를 열어보면 5개 메서드가 <code>TODO</code>로 비어있습니다. Yahboom이 제공하는 예제 코드를 참고해서 이 5개만 채우면 됩니다 — <code>controller.py</code>는 손댈 필요 없습니다.</p>
+  </section>
+
+  <footer>
+    더 자세한 배경은 <code>docs/LabKeeper_설계문서.html</code>의 "08 라즈봇 연동" 참고.
+  </footer>
+</div>
