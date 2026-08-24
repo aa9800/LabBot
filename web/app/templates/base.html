@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}LabKeeper{% endblock %}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">LabKeeper</a>
+  <nav>
+    <a href="/">메인</a>
+    <a href="/items">물품</a>
+    <a href="/loans">대여/반납</a>
+    <a href="/audits">실사</a>
+    <a href="/safety">Safety</a>
+  </nav>
+</header>
+<main class="container">
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

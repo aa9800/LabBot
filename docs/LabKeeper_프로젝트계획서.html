@@ -1,0 +1,361 @@
+<title>LabKeeper 계획서</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root{
+  --bg:#eff1ec;
+  --surface:#ffffff;
+  --surface-2:#e5e8e0;
+  --text:#1b2320;
+  --muted:#57625c;
+  --accent:#d9641e;
+  --accent-ink:#ffffff;
+  --accent2:#1f7a72;
+  --border:#c9cfc6;
+  --shadow: 0 1px 0 rgba(27,35,32,0.06);
+  --font-display:'Big Shoulders Display', 'Arial Narrow', sans-serif;
+  --font-body:'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --font-mono:'IBM Plex Mono', 'Consolas', monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141917; --surface:#1b211d; --surface-2:#232a24;
+    --text:#e8eae4; --muted:#9aa39a;
+    --accent:#e8823f; --accent-ink:#141917; --accent2:#3fa69c;
+    --border:#333b34; --shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1b211d; --surface-2:#232a24;
+  --text:#e8eae4; --muted:#9aa39a;
+  --accent:#e8823f; --accent-ink:#141917; --accent2:#3fa69c;
+  --border:#333b34; --shadow: 0 1px 0 rgba(0,0,0,0.4);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:var(--font-body); font-size:16px; line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{ background:var(--accent); color:var(--accent-ink); }
+
+.doc{ max-width:760px; margin:0 auto; padding:0 32px 90px; }
+
+/* ---- cover ---- */
+.cover{ padding:56px 0 32px; border-bottom:2px solid var(--text); margin-bottom:36px; }
+.cover .course{
+  font-family:var(--font-mono); font-size:12.5px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--accent2); margin-bottom:14px;
+}
+.cover h1{
+  font-family:var(--font-display); font-weight:700; font-size:clamp(32px,5.5vw,46px);
+  line-height:1.1; margin:0 0 8px; text-wrap:balance;
+}
+.cover .subtitle{ font-size:16.5px; color:var(--muted); margin:0 0 28px; max-width:56ch; }
+.cover-info{
+  display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+  background:var(--border); border:1px solid var(--border); border-radius:6px; overflow:hidden;
+}
+.cover-info div{ background:var(--surface); padding:14px 16px; }
+.cover-info .k{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+.cover-info .v{ font-size:14.5px; font-weight:500; }
+.cover-info .v.tight{ color:var(--accent); }
+@media (max-width:560px){ .cover-info{ grid-template-columns:1fr 1fr; } }
+
+.daily-table th, .daily-table td{ white-space:nowrap; }
+.daily-table td.task{ white-space:normal; font-size:13.5px; }
+
+/* ---- toc ---- */
+.toc{ margin-bottom:44px; padding:18px 20px; background:var(--surface); border:1px solid var(--border); border-radius:6px; box-shadow:var(--shadow); }
+.toc .k{ font-family:var(--font-mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
+.toc ol{ margin:0; padding-left:20px; columns:2; column-gap:24px; font-size:14px; }
+.toc li{ margin-bottom:6px; }
+.toc a{ color:var(--text); text-decoration:none; }
+.toc a:hover{ color:var(--accent); }
+@media (max-width:560px){ .toc ol{ columns:1; } }
+
+/* ---- sections ---- */
+section{ margin-bottom:44px; }
+h2{
+  font-family:var(--font-display); font-weight:700; font-size:24px;
+  margin:0 0 16px; padding-bottom:10px; border-bottom:1px solid var(--border);
+  display:flex; align-items:baseline; gap:10px;
+}
+h2 .n{ color:var(--accent); }
+h3{ font-family:var(--font-body); font-weight:600; font-size:16.5px; margin:22px 0 10px; color:var(--accent2); }
+p{ margin:0 0 12px; max-width:66ch; }
+ul,ol.plain{ margin:0 0 14px; padding-left:22px; }
+li{ margin-bottom:6px; max-width:64ch; }
+strong{ color:var(--text); }
+
+.table-scroll{ overflow-x:auto; margin:14px 0; border:1px solid var(--border); border-radius:6px; }
+table{ border-collapse:collapse; width:100%; min-width:520px; font-size:14px; background:var(--surface); }
+th,td{ text-align:left; padding:9px 13px; border-bottom:1px solid var(--border); vertical-align:top; }
+thead th{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); background:var(--surface-2); white-space:nowrap; }
+tbody tr:last-child td{ border-bottom:none; }
+td.num, th.num{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+
+.callout{ background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--accent2); border-radius:4px; padding:14px 16px; margin:14px 0; font-size:14px; box-shadow:var(--shadow); }
+.callout b{ display:block; font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--accent2); margin-bottom:5px; }
+
+.goal-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin:16px 0; }
+.goal{ background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:14px 15px; box-shadow:var(--shadow); }
+.goal .k{ font-family:var(--font-mono); font-size:10.5px; color:var(--muted); text-transform:uppercase; margin-bottom:4px; }
+.goal .v{ font-size:14.5px; font-weight:600; }
+
+/* ---- role split ---- */
+.role-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:16px 0; }
+@media (max-width:560px){ .role-grid{ grid-template-columns:1fr; } }
+.role{ background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:16px; box-shadow:var(--shadow); }
+.role .name{ font-family:var(--font-display); font-weight:700; font-size:18px; margin-bottom:4px; }
+.role .focus{ font-family:var(--font-mono); font-size:11px; color:var(--accent2); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px; }
+.role ul{ margin:0; padding-left:18px; font-size:13.5px; color:var(--muted); }
+
+/* ---- timeline ---- */
+.timeline{ margin:18px 0; border:1px solid var(--border); border-radius:6px; background:var(--surface); padding:16px; overflow-x:auto; box-shadow:var(--shadow); }
+.tl-header{ display:grid; grid-template-columns:150px repeat(10,1fr); gap:4px; min-width:640px; margin-bottom:6px; }
+.tl-header span{ font-family:var(--font-mono); font-size:10px; color:var(--muted); text-align:center; }
+.tl-row{ display:grid; grid-template-columns:150px repeat(10,1fr); gap:4px; align-items:center; min-width:640px; padding:5px 0; }
+.tl-row .label{ font-size:13px; font-weight:500; padding-right:8px; }
+.tl-track{ position:relative; height:22px; background:var(--surface-2); border-radius:4px; grid-column: span 10; display:grid; grid-template-columns:repeat(10,1fr); }
+.tl-bar{ background:var(--accent2); border-radius:4px; height:22px; }
+.tl-bar.alt{ background:var(--accent); }
+
+/* ---- budget ---- */
+.budget-note{ font-size:12.5px; color:var(--muted); margin-top:6px; }
+
+footer{ padding:28px 0 10px; border-top:1px solid var(--border); font-family:var(--font-mono); font-size:11.5px; color:var(--muted); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+
+@media (max-width:560px){ .doc{ padding:0 20px 70px; } }
+</style>
+
+<div class="doc">
+
+  <div class="cover">
+    <div class="course">피지컬 AI 기초 · 로보카 프로젝트</div>
+    <h1>LabKeeper 프로젝트 계획서</h1>
+    <p class="subtitle">실습실 물품 대여·재고관리 웹 서비스에 Raspbot과 아두이노를 결합한 확장형 캡스톤 프로젝트</p>
+    <div class="cover-info">
+      <div><div class="k">과목</div><div class="v">피지컬 AI 기초</div></div>
+      <div><div class="k">과제</div><div class="v">로보카 프로젝트</div></div>
+      <div><div class="k">팀원</div><div class="v">여해동 · 김지훈</div></div>
+      <div><div class="k">제출기한 · 발표</div><div class="v tight">2026-08-31(월)</div></div>
+    </div>
+  </div>
+
+  <div class="toc">
+    <div class="k">목차</div>
+    <ol>
+      <li><a href="#s1">과제 개요</a></li>
+      <li><a href="#s2">추진 배경 및 필요성</a></li>
+      <li><a href="#s3">과제 목표</a></li>
+      <li><a href="#s4">추진 내용</a></li>
+      <li><a href="#s5">추진 방법</a></li>
+      <li><a href="#s6">추진 일정</a></li>
+      <li><a href="#s7">필요 장비 및 예산</a></li>
+      <li><a href="#s8">이후 확장 계획</a></li>
+      <li><a href="#s9">기대효과 및 활용방안</a></li>
+      <li><a href="#s10">참고자료</a></li>
+    </ol>
+  </div>
+
+  <section id="s1">
+    <h2><span class="n">1.</span> 과제 개요</h2>
+    <p><strong>LabKeeper</strong>는 실습실·랩의 물품 대여와 재고를 관리하는 웹 서비스다. 이 웹은 로봇이 없어도 등록·검색·대여·반납·실사·통계 기능만으로 실제 실습실 운영에 쓸 수 있도록 독립적으로 완성하는 것을 원칙으로 한다.</p>
+    <p>여기에 라즈베리파이 기반 로봇카(Raspbot)와 아두이노를 결합해, 로봇이 재고를 자동으로 실사하고 대여소 게이트가 대여·반납을 물리적으로 확인하는 <strong>Physical AI 확장 기능</strong>을 더한다. 즉 "로봇카를 위한 웹"이 아니라 "쓸 만한 웹에 로봇을 연결해 현실까지 확장하는 프로젝트"를 지향한다.</p>
+  </section>
+
+  <section id="s2">
+    <h2><span class="n">2.</span> 추진 배경 및 필요성</h2>
+    <p>실습실·메이커스페이스에서는 아래와 같은 문제가 반복적으로 발생한다.</p>
+    <ul>
+      <li><strong>위치 파악의 어려움</strong> — 물품이 어느 선반에 있는지 정확히 아는 사람이 없어 매번 찾아다녀야 한다.</li>
+      <li><strong>대여 기록의 부재</strong> — 누가 무엇을 언제 빌렸는지 종이로 적거나 아예 기록하지 않아, 분실·연체 추적이 안 된다.</li>
+      <li><strong>재고 실사의 공백</strong> — 실물과 장부가 맞는지는 보통 연 1회 전수조사 때만 확인해, 그 사이 발생한 불일치를 놓친다.</li>
+    </ul>
+    <p>이 문제는 대부분 수기 관리·낮은 확인 빈도에서 비롯된다. 웹으로 기록을 표준화하고, 로봇으로 확인 빈도와 정확도를 높이면 실질적으로 해결 가능하다.</p>
+  </section>
+
+  <section id="s3">
+    <h2><span class="n">3.</span> 과제 목표</h2>
+    <div class="goal-grid">
+      <div class="goal"><div class="k">목표 1 · 1주차</div><div class="v">독립 완결형 관리 웹 서비스 완성</div></div>
+      <div class="goal"><div class="k">목표 2 · 1주차</div><div class="v">실제 Raspbot으로 재고실사 데모 구현</div></div>
+      <div class="goal"><div class="k">목표 3 · 이후 단계</div><div class="v">가상 연구실(디지털 트윈)에서 로봇 로직 개발·검증</div></div>
+      <div class="goal"><div class="k">목표 4 · 이후 단계</div><div class="v">온디맨드 피킹 안내 구현</div></div>
+      <div class="goal"><div class="k">목표 5 · 이후 단계</div><div class="v">아두이노 게이트로 대여·반납 물리 확인 구현</div></div>
+    </div>
+    <p>핵심 차별점은 로봇 조작 자체가 아니라, <strong>웹의 실제 데이터·업무 흐름과 로봇의 이동·인식 결과가 서로 갱신을 주고받는다</strong>는 데 있다. 1주차는 목표 1~2까지, 나머지는 8장의 확장 계획을 따른다.</p>
+  </section>
+
+  <section id="s4">
+    <h2><span class="n">4.</span> 추진 내용</h2>
+
+    <h3>4.1 웹 서비스 핵심 기능</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>기능</th><th>설명</th></tr></thead>
+        <tbody>
+          <tr><td>물품 등록·검색</td><td>이름/카테고리/위치/수량/상태 등록, QR코드 발급, 필터·키워드 검색</td></tr>
+          <tr><td>대여·반납 워크플로우</td><td>신청 → 승인 → 대여중 → 반납, 연체 자동 판정 및 알림</td></tr>
+          <tr><td>재고 실사 기록</td><td>실사 세션(수행 주체·시각·결과) 기록, 불일치 리포트</td></tr>
+          <tr><td>통계·감사 로그</td><td>이용률·연체율·재고 정확도 추이, 변경 이력 추적</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>4.2 로봇 확장 기능</h3>
+    <p>Raspbot에는 그리퍼가 없어 물건을 직접 옮기지 못한다. 대신 <strong>이동 + 인식</strong>으로 웹의 데이터를 자동으로 확인·갱신하는 역할을 맡는다. 개체를 정확히 식별해야 하는 모든 순간에는 QR을, 넓은 구역을 빠르게 훑는 순간에는 객체인식을 쓰는 <strong>2단계 인식 전략</strong>을 전 기능에 공통으로 적용한다.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>기능</th><th>트리거</th><th>인식 방식</th><th>1주차 범위</th></tr></thead>
+        <tbody>
+          <tr><td>자동 재고 실사 순찰</td><td>관리자가 웹에서 실사 시작</td><td>1차 객체인식(구역별 개수 확인) → 2차 QR(불일치 구역 정밀 확인)</td><td>구현 (축소판)</td></tr>
+          <tr><td>온디맨드 피킹 안내</td><td>사용자가 특정 물품 대여 신청</td><td>1차 객체인식(카테고리 위치 확인) → 2차 QR(대여 가능한 개체 확정 및 예약)</td><td>이후 단계</td></tr>
+          <tr><td>대여소 게이트 확인</td><td>사용자가 물품을 들고 게이트 태그</td><td>RFID(사용자) + QR(물품) 동시 확인 → 대여/반납 확정</td><td>이후 단계 (웹 수동 처리로 대체)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>4.3 시스템 구성 개요</h3>
+    <p>웹 서비스가 유일한 데이터 원천이며, 가상 로봇과 실제 Raspbot은 동일한 코드(인식·판단 로직)로 동작하고 센서·구동 인터페이스만 교체된다. 상세 아키텍처, 데이터 모델, API 명세는 별도 <strong>기술 설계 문서</strong>에서 다룬다.</p>
+  </section>
+
+  <section id="s5">
+    <h2><span class="n">5.</span> 추진 방법</h2>
+
+    <h3>5.1 개발 전략 — 가상 검증 후 실물 이식 (장기 전략)</h3>
+    <p>실제 랩 공간과 다수의 로봇을 확보하기 어려우므로, 컴퓨터 안에 <strong>가상 연구실(디지털 트윈)</strong>을 만들어 로직을 먼저 개발·반복 검증하고, 완성된 로직만 실제 Raspbot에 옮겨 소규모 목업에서 최종 확인하는 것이 장기적인 개발 전략이다.</p>
+    <div class="callout">
+      <b>이번 스프린트 예외</b>
+      제출기한이 1주라 가상 연구실을 구축할 시간이 없다. 이번 스프린트는 위 전략을 건너뛰고 <strong>실제 Raspbot으로 바로 개발</strong>하며, 디지털 트윈 전략은 8장의 이후 단계부터 본격적으로 적용한다.
+    </div>
+    <div class="callout">
+      <b>핵심 원칙</b>
+      웹은 항상 완전히 동작해야 한다. 가상환경과 실물 로봇은 웹의 데이터를 자동으로 확인·갱신하는 보조 수단이며, 둘 다 없어도 웹은 수동 입력으로 100% 동작해야 한다.
+    </div>
+
+    <h3>5.2 기술 스택</h3>
+    <p>백엔드 FastAPI + PostgreSQL, 프론트엔드 React, 로봇/시뮬레이터 클라이언트는 Python(OpenCV) 공통 코드로 작성한다.</p>
+
+    <h3>5.3 팀 역할 분담(안)</h3>
+    <p>아래는 제안 분담이며 팀 내 협의로 조정한다.</p>
+    <div class="role-grid">
+      <div class="role">
+        <div class="name">여해동</div>
+        <div class="focus">Raspberry Pi / 로보카</div>
+        <ul>
+          <li>Raspbot 라인트래킹·이동 제어</li>
+          <li>카메라 기반 QR·객체 인식(perception)</li>
+          <li>웹 API와 연동되는 실사 순찰 로직 구현</li>
+        </ul>
+      </div>
+      <div class="role">
+        <div class="name">김지훈</div>
+        <div class="focus">Web / DB</div>
+        <ul>
+          <li>웹 서비스(물품·대여·반납) 개발</li>
+          <li>데이터베이스 스키마 및 API 설계</li>
+          <li>대시보드·통계 화면 구현</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="s6">
+    <h2><span class="n">6.</span> 추진 일정</h2>
+    <p>제출기한 겸 발표일이 <strong>2026-08-31(월)</strong>로 확정되어 총 11일 정도가 있다. 그래도 설계문서에 담은 전체 범위를 다 구현하기엔 시간이 부족해, 핵심은 여전히 <strong>웹 MVP + Raspbot 기본 실사 데모</strong>로 좁히고, 늘어난 여유 시간은 <strong>게이트 하드웨어 스트레치 작업과 발표 리허설</strong>에 쓴다.</p>
+    <div class="table-scroll daily-table">
+      <table>
+        <thead><tr><th>날짜</th><th>여해동 (Raspberry Pi·로보카)</th><th>김지훈 (Web·DB)</th></tr></thead>
+        <tbody>
+          <tr><td>8/21(금)</td><td class="task">Raspbot 개발환경 세팅, 기존 예제코드 파악</td><td class="task">DB 스키마·API 초안 확정</td></tr>
+          <tr><td>8/22(토)~8/23(일)</td><td class="task">라인트래킹 기본 이동 구현</td><td class="task">물품 등록·검색 CRUD 구현</td></tr>
+          <tr><td>8/24(월)</td><td class="task">카메라 QR 인식 연동</td><td class="task">대여·반납 API 및 화면 구현</td></tr>
+          <tr><td>8/25(화)</td><td class="task">실사 순찰 로직(이동+스캔) 완성</td><td class="task">실사 세션 업로드 API, 대시보드 기본 화면</td></tr>
+          <tr><td>8/26(수)</td><td class="task" colspan="2">웹 ↔ Raspbot 통합 테스트 및 버그 수정 (공동)</td></tr>
+          <tr><td>8/27(목)</td><td class="task">아두이노 게이트 + XIAO 카메라 연동 시도 (스트레치)</td><td class="task">MPU6050 IMU 연동 시도 (스트레치)</td></tr>
+          <tr><td>8/28(금)</td><td class="task" colspan="2">시연 시나리오 확정, 발표 슬라이드 초안 작성 (공동)</td></tr>
+          <tr><td>8/29(토)</td><td class="task" colspan="2">발표 리허설 1차 + 라이브 데모 백업 영상 촬영 (공동)</td></tr>
+          <tr><td>8/30(일)</td><td class="task" colspan="2">리허설 2차, 최종 버그 수정, 슬라이드 다듬기 (공동)</td></tr>
+          <tr><td>8/31(월)</td><td class="task" colspan="2">최종 제출 + 발표</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout warn">
+      <b>발표 리스크 관리 — 백업 영상</b>
+      로봇 하드웨어 데모는 발표 현장에서 Wi-Fi·조명·배터리 문제로 실패할 확률이 늘 있다. 8/29에 <strong>성공한 순간을 미리 녹화</strong>해두고, 발표 중 라이브 데모가 안 되면 즉시 백업 영상으로 전환한다.
+    </div>
+    <div class="callout">
+      <b>이번 제출 범위 밖 (다음 단계)</b>
+      가상 연구실(디지털 트윈)과 온디맨드 피킹 안내는 이번에도 제외한다. 아두이노 게이트·XIAO 카메라·IMU는 8/27에 스트레치로 시도해보고, 안 되면 기술 설계 문서에 남겨진 로드맵대로 이후 단계에서 진행한다.
+    </div>
+  </section>
+
+  <section id="s7">
+    <h2><span class="n">7.</span> 필요 장비 및 예산</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>품목</th><th>용도</th><th class="num">참고 가격</th></tr></thead>
+        <tbody>
+          <tr><td>라즈베리파이 5 라즈봇(Raspbot)</td><td>이동·카메라·초음파·라인트래킹</td><td class="num">약 106,700원</td></tr>
+          <tr><td>Raspberry Pi 5 4GB</td><td>Raspbot 두뇌 (라즈봇 가격에 미포함)</td><td class="num">217,800원(VAT포함)</td></tr>
+          <tr><td>아두이노 고급키트 SZH-EK013</td><td>RFID·릴레이·LCD·부저 등 게이트 구성</td><td class="num">확인 필요*</td></tr>
+          <tr><td>Seeed XIAO ESP32S3 Sense</td><td>게이트 물품 QR 인식 + WiFi 전송 (PC 브리지 불필요)</td><td class="num">확인 필요*</td></tr>
+          <tr><td>HC-SR04 초음파센서</td><td>게이트 대기모드 자동전환용 (스트레치)</td><td class="num">확인 필요*</td></tr>
+          <tr><td>MPU6050 (IMU)</td><td>Raspbot 헤딩 보정, 충돌/전복 감지</td><td class="num">확인 필요*</td></tr>
+          <tr><td>QR 스티커 인쇄, 목업 재료</td><td>물품 태깅, 선반/라인트랙 목업</td><td class="num">약 10,000원 내</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="budget-note">* 판매처 상세 페이지에 가격이 표시되지 않아 구매 시점에 재확인이 필요하다. 가격은 조사 시점(2026-08) 기준이며 변동될 수 있다.</p>
+    <p class="budget-note">아두이노 고급키트·XIAO ESP32S3 Sense·HC-SR04는 게이트 관련 항목이라 8장 "이후 단계"에 필요하며, 이번 1주 스프린트 예산에는 포함하지 않는다. MPU6050은 Raspbot 실측 검증 단계(3단계)에서 필요하다.</p>
+  </section>
+
+  <section id="s8">
+    <h2><span class="n">8.</span> 이후 확장 계획</h2>
+    <p>이번 제출(1주 스프린트)에서 다루지 않는 항목은 아래 순서로 이어서 진행한다. 상세 아키텍처는 기술 설계 문서를 따른다.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>순서</th><th>항목</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>아두이노 대여소 게이트</td><td>RFID+물품QR로 대여/반납 물리 확인, 릴레이·LCD·부저 연동. 시간이 남으면 이번 스프린트의 스트레치 목표로 시도</td></tr>
+          <tr><td>2</td><td>온디맨드 피킹 안내</td><td>사용자가 특정 물품 요청 시 로봇이 찾아가 확정·예약. 실사 순찰의 2단계 인식 로직을 그대로 재사용</td></tr>
+          <tr><td>3</td><td>가상 연구실(디지털 트윈)</td><td>Sim Engine으로 로직을 대규모로 반복 검증한 뒤 실물에 이식하는 구조로 전환. 1주 내 구현이 불가해 다음 스프린트부터 병행</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="s9">
+    <h2><span class="n">9.</span> 기대효과 및 활용방안</h2>
+    <ul>
+      <li><strong>운영 효율화</strong> — 실습실 물품의 위치·대여 상태·재고 정확도를 상시 파악할 수 있다.</li>
+      <li><strong>확인 빈도 향상</strong> — 연 1회 수준이던 재고 실사를 로봇이 상시 순찰로 대체해 불일치를 조기에 발견한다.</li>
+      <li><strong>재현 가능한 개발 방법론</strong> — 가상 연구실(디지털 트윈)로 검증 후 실물에 이식하는 구조는 로봇/공간 자원이 부족한 다른 프로젝트에도 그대로 적용 가능하다.</li>
+      <li><strong>확장성</strong> — 동일한 웹·로봇 구조를 도서관, 소규모 창고 등 유사한 대여·재고 도메인에도 이식할 수 있다.</li>
+    </ul>
+  </section>
+
+  <section id="s10">
+    <h2><span class="n">10.</span> 참고자료</h2>
+    <ul>
+      <li>라즈베리파이 5 라즈봇 Raspbot AI 비전 로봇 카 — <a href="https://www.icbanq.com/P016883920" target="_blank" rel="noopener">icbanq 상품페이지</a></li>
+      <li>Raspbot 활용 스터디(Yahboom) — <a href="https://www.yahboom.net/study/Raspbot" target="_blank" rel="noopener">yahboom.net</a></li>
+      <li>Raspberry Pi 5 4GB — <a href="https://www.icbanq.com/P015956549" target="_blank" rel="noopener">icbanq 상품페이지</a></li>
+      <li>Seeed Studio XIAO ESP32S3 Sense — <a href="https://www.devicemart.co.kr/goods/view?no=14991199" target="_blank" rel="noopener">디바이스마트 상품페이지</a></li>
+      <li>HC-SR04 초음파센서 — <a href="https://www.devicemart.co.kr/goods/view?no=1312774" target="_blank" rel="noopener">디바이스마트 상품페이지</a></li>
+      <li>MPU6050 (IMU) — <a href="https://www.coupang.com/vp/products/7440077974" target="_blank" rel="noopener">쿠팡 상품페이지</a></li>
+      <li>아두이노 고급키트 [SZH-EK013] — <a href="https://www.devicemart.co.kr/goods/view?no=1264627" target="_blank" rel="noopener">디바이스마트 상품페이지</a></li>
+      <li>Yahboom Raspbot 공식 저장소 — <a href="https://github.com/YahboomTechnology/Raspbot" target="_blank" rel="noopener">GitHub</a></li>
+      <li>LabKeeper 기술 설계 문서 (별도 문서)</li>
+    </ul>
+  </section>
+
+  <footer>
+    <span>LabKeeper 프로젝트 계획서</span>
+    <span>피지컬 AI 기초 · 로보카 프로젝트 · 여해동 · 김지훈</span>
+  </footer>
+
+</div>

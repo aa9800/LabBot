@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}대여/반납 · LabKeeper{% endblock %}
+{% block content %}
+<h1>대여 / 반납</h1>
+<div class="filters">
+  <a class="btn small {% if status %}secondary{% endif %}" href="/loans">전체</a>
+  <a class="btn small {% if status!='대여중' %}secondary{% endif %}" href="/loans?status=대여중">대여중</a>
+  <a class="btn small {% if status!='반납완료' %}secondary{% endif %}" href="/loans?status=반납완료">반납완료</a>
+</div>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>물품</th><th>사용자</th><th>대여일</th><th>반납예정</th><th>연체</th><th>상태</th><th></th></tr></thead>
+  <tbody>
+    {% for loan in loans %}
+    <tr>
+      <td><a href="/items/{{ loan.item.id }}">{{ loan.item.name }}</a></td>
+      <td>{{ loan.user.name }}</td>
+      <td>{{ loan.borrowed_at.strftime("%Y-%m-%d") }}</td>
+      <td>{{ loan.due_at.strftime("%Y-%m-%d") }}</td>
+      <td>{% if loan.overdue > 0 %}<span class="pill warn">{{ loan.overdue }}일</span>{% else %}<span class="pill ok">정상</span>{% endif %}</td>
+      <td>{{ loan.status }}</td>
+      <td>
+        {% if loan.status == "대여중" %}
+        <form class="inline" method="post" action="/loans/{{ loan.id }}/return">
+          <button class="btn small" type="submit">반납 처리</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">기록이 없습니다.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

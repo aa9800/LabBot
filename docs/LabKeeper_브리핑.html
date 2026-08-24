@@ -1,0 +1,269 @@
+<title>LabKeeper 브리핑</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@500&display=swap">
+
+<style>
+:root{
+  --bg:#eff1ec;
+  --surface:#ffffff;
+  --surface-2:#e5e8e0;
+  --text:#1b2320;
+  --muted:#57625c;
+  --accent:#d9641e;
+  --accent-ink:#ffffff;
+  --accent2:#1f7a72;
+  --border:#c9cfc6;
+  --shadow: 0 1px 0 rgba(27,35,32,0.06);
+  --font-display:'Big Shoulders Display', 'Arial Narrow', sans-serif;
+  --font-body:'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --font-mono:'IBM Plex Mono', 'Consolas', monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141917;
+    --surface:#1b211d;
+    --surface-2:#232a24;
+    --text:#e8eae4;
+    --muted:#9aa39a;
+    --accent:#e8823f;
+    --accent-ink:#141917;
+    --accent2:#3fa69c;
+    --border:#333b34;
+    --shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141917;
+  --surface:#1b211d;
+  --surface-2:#232a24;
+  --text:#e8eae4;
+  --muted:#9aa39a;
+  --accent:#e8823f;
+  --accent-ink:#141917;
+  --accent2:#3fa69c;
+  --border:#333b34;
+  --shadow: 0 1px 0 rgba(0,0,0,0.4);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font-body);
+  font-size:17px;
+  line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{ background:var(--accent); color:var(--accent-ink); }
+
+.page{ max-width:720px; margin:0 auto; padding: 0 28px 100px; }
+
+.eyebrow{
+  font-family:var(--font-mono);
+  font-size:12.5px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--accent2);
+}
+
+/* ---- hero ---- */
+.hero{ padding:72px 0 40px; border-bottom:1px solid var(--border); }
+.hero .eyebrow{ display:block; margin-bottom:16px; }
+.hero h1{
+  font-family:var(--font-display);
+  font-weight:800;
+  font-size:clamp(48px,10vw,84px);
+  line-height:0.92;
+  text-transform:uppercase;
+  letter-spacing:-.01em;
+  margin:0 0 18px;
+  text-wrap:balance;
+}
+.hero .tagline{
+  font-size:20px;
+  color:var(--muted);
+  max-width:520px;
+  margin:0;
+  text-wrap:balance;
+}
+.hero .tagline strong{ color:var(--text); }
+
+/* ---- generic section rhythm ---- */
+section{ padding:52px 0; border-bottom:1px solid var(--border); }
+section:last-of-type{ border-bottom:none; }
+h2{
+  font-family:var(--font-display);
+  font-weight:800;
+  font-size:30px;
+  text-transform:uppercase;
+  letter-spacing:-.005em;
+  margin:10px 0 16px;
+  text-wrap:balance;
+}
+p{ margin:0 0 14px; max-width:60ch; }
+p.lead{ font-size:18px; color:var(--muted); max-width:56ch; }
+
+/* ---- pain points ---- */
+.pain-list{ display:flex; flex-direction:column; gap:18px; margin-top:28px; }
+.pain{
+  display:flex; gap:16px; align-items:flex-start;
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:16px 18px; box-shadow:var(--shadow);
+}
+.pain svg{ flex:none; width:26px; height:26px; margin-top:2px; color:var(--accent); }
+.pain .t{ font-weight:600; font-size:16px; margin-bottom:2px; }
+.pain .d{ color:var(--muted); font-size:14.5px; }
+
+/* ---- feature cards ---- */
+.feature-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; margin-top:26px; }
+.feature{
+  background:var(--surface); border:1px solid var(--border); border-radius:8px;
+  padding:20px 18px; box-shadow:var(--shadow);
+}
+.feature svg{ width:28px; height:28px; color:var(--accent2); margin-bottom:12px; }
+.feature h3{ font-family:var(--font-display); font-weight:700; font-size:18px; text-transform:uppercase; margin:0 0 6px; }
+.feature p{ font-size:14px; color:var(--muted); margin:0; }
+
+/* ---- flow steps ---- */
+.flow{ display:flex; flex-direction:column; gap:0; margin-top:30px; }
+.flow-step{
+  display:grid; grid-template-columns:44px 1fr; gap:18px;
+  padding:20px 0; border-top:1px solid var(--border); position:relative;
+}
+.flow-step:first-child{ border-top:none; }
+.flow-num{
+  font-family:var(--font-display); font-weight:800; font-size:22px;
+  width:44px; height:44px; border-radius:50%;
+  background:var(--accent); color:var(--accent-ink);
+  display:flex; align-items:center; justify-content:center;
+}
+.flow-body b{ display:block; font-size:16.5px; margin-bottom:4px; }
+.flow-body span{ color:var(--muted); font-size:14.5px; }
+
+/* ---- twin split ---- */
+.twin-split{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:26px; }
+@media (max-width:560px){ .twin-split{ grid-template-columns:1fr; } }
+.twin-box{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:20px; box-shadow:var(--shadow); }
+.twin-box .k{ font-family:var(--font-mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent2); margin-bottom:8px; }
+.twin-box.real .k{ color:var(--accent); }
+.twin-box h4{ font-family:var(--font-display); font-weight:700; font-size:19px; text-transform:uppercase; margin:0 0 8px; }
+.twin-box p{ font-size:14px; color:var(--muted); margin:0; max-width:none; }
+.twin-arrow{ text-align:center; font-family:var(--font-mono); font-size:12px; color:var(--muted); margin:10px 0; letter-spacing:.05em; }
+
+/* ---- closing statement ---- */
+.closing{ padding:64px 0 90px; }
+.closing blockquote{
+  margin:0; font-family:var(--font-display); font-weight:800;
+  font-size:clamp(26px,5vw,40px); line-height:1.2; text-transform:uppercase;
+  letter-spacing:-.005em; text-wrap:balance;
+}
+.closing blockquote .accent{ color:var(--accent); }
+.closing .who{ margin-top:22px; font-family:var(--font-mono); font-size:13px; color:var(--muted); }
+
+@media (max-width:560px){
+  .hero{ padding:52px 0 32px; }
+  section{ padding:40px 0; }
+}
+</style>
+
+<div class="page">
+
+  <div class="hero">
+    <span class="eyebrow">한눈에 보기 · LabKeeper</span>
+    <h1>LabKeeper</h1>
+    <p class="tagline"><strong>실습실 물품, 빌리고 돌려주고 세어보는 일</strong>을 관리하는 웹 서비스예요. 로봇은 그 일을 대신 확인해주는 도우미고요.</p>
+  </div>
+
+  <section>
+    <span class="eyebrow">문제</span>
+    <h2>다들 한 번쯴 겪어본 일</h2>
+    <div class="pain-list">
+      <div class="pain">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+        <div><div class="t">그 부품, 어디 있지?</div><div class="d">누가 어디에 뒀는지 아무도 정확히 모른다. 선반을 다 뒤져야 찾는다.</div></div>
+      </div>
+      <div class="pain">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+        <div><div class="t">누가 빌려갔는지 기록이 없다</div><div class="d">종이에 적거나, 아예 안 적는다. 반납이 늦어도 아무도 모른다.</div></div>
+      </div>
+      <div class="pain">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        <div><div class="t">재고 파악은 늘 뒷전</div><div class="d">1년에 한 번 전수조사할 때만 실물과 장부가 맞는지 확인한다.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">해결</span>
+    <h2>웹만 있어도 충분해요</h2>
+    <p class="lead">LabKeeper는 로봇이 없어도 그 자체로 완결된 관리 서비스예요. 아래 기능만으로 실습실 운영이 실제로 굴러갑니다.</p>
+    <div class="feature-grid">
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/></svg>
+        <h3>물품 등록·검색</h3>
+        <p>사진, 위치, 수량, QR코드까지 붙여서 관리. 필요한 물건을 바로 찾는다.</p>
+      </div>
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="14" x2="13" y2="14"/></svg>
+        <h3>대여·반납 관리</h3>
+        <p>누가 언제 빌렸는지 자동 기록. 연체되면 알림이 간다.</p>
+      </div>
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-4 3 3 4-6" /></svg>
+        <h3>통계 대시보드</h3>
+        <p>많이 빌려가는 물건, 연체율, 재고 정확도를 한눈에 본다.</p>
+      </div>
+      <div class="feature">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v6"/><circle cx="12" cy="14" r="7"/><path d="M9 14l2 2 4-4"/></svg>
+        <h3>재고 실사 기록</h3>
+        <p>언제, 누가, 무엇을 확인했는지 남아서 "장부랑 실물이 맞다"는 게 증명된다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">확장</span>
+    <h2>여기에 로봇을 더하면</h2>
+    <p class="lead">Raspbot(라즈베리파이 로봇카)은 조종해서 갖고 노는 장난감이 아니라, <strong>재고 실사를 대신 해주는 직원</strong>이에요.</p>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-num">1</div>
+        <div class="flow-body"><b>정해진 길을 스스로 이동</b><span>바닥에 붙인 선을 따라 선반 사이를 돌아다닌다. 사람이나 장애물을 만나면 알아서 멈춘다.</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">2</div>
+        <div class="flow-body"><b>카메라로 QR을 스캔</b><span>각 선반 앞에 서서 물건에 붙은 QR코드를 카메라로 읽는다.</span></div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-num">3</div>
+        <div class="flow-body"><b>웹이 자동으로 대조·기록</b><span>스캔 결과가 실시간으로 웹에 전달돼서, 장부와 다르면 "불일치"로 자동 표시된다. 담당자는 결과만 확인하면 된다.</span></div>
+      </div>
+    </div>
+    <p style="margin-top:24px">대여소에는 작은 <strong>아두이노 게이트</strong>도 붙어요. 카드를 태그하면 웹이 대여 가능 여부를 확인해서 보관함을 열어주고, 연체 중이면 열어주지 않아요.</p>
+  </section>
+
+  <section>
+    <span class="eyebrow">개발 방식</span>
+    <h2>진짜 실습실 없이도 만든다</h2>
+    <p class="lead">진짜 랩과 로봇 여러 대를 구하기 어려워서, 컴퓨터 안에 <strong>가상 실습실</strong>을 만들어 먼저 개발하고, 완성된 기능만 실제 로봇 한 대로 최종 확인해요.</p>
+    <div class="twin-split">
+      <div class="twin-box">
+        <div class="k">Step 1</div>
+        <h4>가상 실습실</h4>
+        <p>컴퓨터 안에서 선반·로봇·QR을 통째로 재현. 마음껏 반복 실험하며 로직을 완성한다.</p>
+      </div>
+      <div class="twin-box real">
+        <div class="k">Step 2</div>
+        <h4>실제 Raspbot</h4>
+        <p>완성된 로직을 그대로 옮겨서, 작은 목업 위에서 실제로도 잘 되는지 최종 확인한다.</p>
+      </div>
+    </div>
+    <div class="twin-arrow">가상에서 검증한 로직 = 실물에서 그대로 재사용</div>
+  </section>
+
+  <div class="closing">
+    <blockquote>로봇카를 위한 웹이 아니라,<br><span class="accent">쓸 만한 웹</span>에 로봇을 연결해<br>현실까지 확장하는 프로젝트.</blockquote>
+    <div class="who">LabKeeper — 실습실 물품 대여·재고관리 시스템</div>
+  </div>
+
+</div>

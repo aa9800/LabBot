@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}물품 등록 · LabKeeper{% endblock %}
+{% block content %}
+<h1>물품 등록</h1>
+<form class="card" method="post" action="/items/new" style="max-width:420px;">
+  <label>이름</label>
+  <input type="text" name="name" required>
+  <label>카테고리</label>
+  <input type="text" name="category" required placeholder="예: 공구, 전자부품, 계측">
+  <label>위치</label>
+  <input type="text" name="location" required placeholder="예: A-1">
+  <label>수량</label>
+  <input type="number" name="total_qty" value="1" min="1">
+  <div style="margin-top:18px;">
+    <button class="btn" type="submit">등록</button>
+    <a class="btn secondary" href="/items">취소</a>
+  </div>
+</form>
+{% endblock %}

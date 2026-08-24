@@ -1,0 +1,941 @@
+<title>LabKeeper</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root{
+  --bg:#eff1ec;
+  --surface:#ffffff;
+  --surface-2:#e5e8e0;
+  --text:#1b2320;
+  --muted:#57625c;
+  --accent:#d9641e;
+  --accent-ink:#ffffff;
+  --accent2:#1f7a72;
+  --border:#c9cfc6;
+  --warn:#b23a2e;
+  --good:#2e7d46;
+  --code-bg:#e4e7df;
+  --shadow: 0 1px 0 rgba(27,35,32,0.06);
+  --font-display:'Big Shoulders Display', 'Arial Narrow', sans-serif;
+  --font-body:'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --font-mono:'IBM Plex Mono', 'Consolas', monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#141917;
+    --surface:#1b211d;
+    --surface-2:#232a24;
+    --text:#e8eae4;
+    --muted:#9aa39a;
+    --accent:#e8823f;
+    --accent-ink:#141917;
+    --accent2:#3fa69c;
+    --border:#333b34;
+    --warn:#e07468;
+    --good:#5cb87a;
+    --code-bg:#20261f;
+    --shadow: 0 1px 0 rgba(0,0,0,0.4);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141917;
+  --surface:#1b211d;
+  --surface-2:#232a24;
+  --text:#e8eae4;
+  --muted:#9aa39a;
+  --accent:#e8823f;
+  --accent-ink:#141917;
+  --accent2:#3fa69c;
+  --border:#333b34;
+  --warn:#e07468;
+  --good:#5cb87a;
+  --code-bg:#20261f;
+  --shadow: 0 1px 0 rgba(0,0,0,0.4);
+}
+
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font-body);
+  font-size:16px;
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{ background:var(--accent); color:var(--accent-ink); }
+
+.wrap{
+  display:grid;
+  grid-template-columns: 220px minmax(0,1fr);
+  gap:0;
+  max-width:1200px;
+  margin:0 auto;
+}
+@media (max-width:900px){
+  .wrap{ grid-template-columns: 1fr; }
+  .rail{ display:none; }
+}
+
+/* ---- rail / mini toc ---- */
+.rail{
+  position:sticky;
+  top:0;
+  align-self:start;
+  height:100vh;
+  overflow-y:auto;
+  padding:32px 18px 32px 28px;
+  border-right:1px solid var(--border);
+}
+.rail .tag{
+  font-family:var(--font-mono);
+  font-size:11px;
+  letter-spacing:.08em;
+  color:var(--muted);
+  text-transform:uppercase;
+  margin-bottom:14px;
+  display:block;
+}
+.rail nav a{
+  display:block;
+  font-size:13px;
+  color:var(--muted);
+  text-decoration:none;
+  padding:6px 0;
+  border-left:2px solid transparent;
+  padding-left:10px;
+  margin-left:-11px;
+  transition:color .15s, border-color .15s;
+}
+.rail nav a:hover, .rail nav a:focus-visible{
+  color:var(--text);
+  border-left-color:var(--accent);
+}
+
+/* ---- main column ---- */
+main{ padding: 0 0 100px; min-width:0; }
+
+.cover{
+  padding:56px 48px 40px;
+  border-bottom:1px solid var(--border);
+  background:
+    repeating-linear-gradient(135deg, var(--surface-2) 0 2px, transparent 2px 14px);
+  background-size:100% 100%;
+  position:relative;
+}
+.cover::before{
+  content:"";
+  position:absolute; inset:0;
+  background:var(--bg);
+  opacity:.94;
+}
+.cover-inner{ position:relative; }
+.cover .eyebrow{
+  font-family:var(--font-mono);
+  font-size:12px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--accent);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:18px;
+}
+.cover .eyebrow .chip{
+  border:1px solid var(--accent);
+  border-radius:3px;
+  padding:2px 8px;
+  color:var(--accent);
+}
+.cover h1{
+  font-family:var(--font-display);
+  font-weight:800;
+  font-size:clamp(44px, 7vw, 76px);
+  line-height:0.92;
+  letter-spacing:-.01em;
+  margin:0 0 12px;
+  text-wrap:balance;
+  text-transform:uppercase;
+}
+.cover .sub{
+  font-size:18px;
+  color:var(--muted);
+  max-width:640px;
+  margin:0 0 28px;
+  text-wrap:balance;
+}
+.meta-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:28px;
+  font-family:var(--font-mono);
+  font-size:12.5px;
+  color:var(--muted);
+  border-top:1px solid var(--border);
+  padding-top:18px;
+}
+.meta-row div b{ color:var(--text); display:block; font-size:13px; margin-bottom:2px;}
+
+section{
+  padding:44px 48px;
+  border-bottom:1px solid var(--border);
+  max-width:800px;
+}
+section.wide{ max-width:none; }
+
+.sec-label{
+  font-family:var(--font-mono);
+  font-size:12px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--accent2);
+  display:flex;
+  align-items:baseline;
+  gap:10px;
+  margin-bottom:10px;
+}
+.sec-label .num{ color:var(--accent); font-weight:600; }
+
+h2{
+  font-family:var(--font-display);
+  font-weight:800;
+  font-size:32px;
+  text-transform:uppercase;
+  letter-spacing:-.005em;
+  margin:0 0 18px;
+  text-wrap:balance;
+}
+h3{
+  font-family:var(--font-display);
+  font-weight:700;
+  font-size:20px;
+  text-transform:uppercase;
+  letter-spacing:.01em;
+  margin:28px 0 12px;
+}
+p{ margin:0 0 14px; max-width:65ch; }
+ul,ol{ margin:0 0 16px; padding-left:22px; }
+li{ margin-bottom:6px; max-width:65ch; }
+strong{ color:var(--text); }
+code{
+  font-family:var(--font-mono);
+  background:var(--code-bg);
+  padding:1px 6px;
+  border-radius:3px;
+  font-size:.9em;
+}
+
+.callout{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-left:3px solid var(--accent2);
+  border-radius:4px;
+  padding:16px 18px;
+  margin:18px 0;
+  font-size:14.5px;
+  box-shadow:var(--shadow);
+}
+.callout.warn{ border-left-color:var(--warn); }
+.callout b{ display:block; font-family:var(--font-mono); font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--warn); margin-bottom:6px;}
+.callout.warn b{ color:var(--warn); }
+.callout.note b{ color:var(--accent2); }
+
+.table-scroll{ overflow-x:auto; margin:18px 0; border:1px solid var(--border); border-radius:6px; }
+table{ border-collapse:collapse; width:100%; min-width:560px; font-size:14px; background:var(--surface); }
+th,td{ text-align:left; padding:10px 14px; border-bottom:1px solid var(--border); vertical-align:top; }
+thead th{
+  font-family:var(--font-mono);
+  font-size:11px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:var(--muted);
+  background:var(--surface-2);
+  white-space:nowrap;
+}
+tbody tr:last-child td{ border-bottom:none; }
+tbody tr:hover{ background:var(--surface-2); }
+td code, th code{ font-size:12.5px; }
+
+.pill{
+  display:inline-block;
+  font-family:var(--font-mono);
+  font-size:11px;
+  padding:2px 8px;
+  border-radius:20px;
+  border:1px solid var(--border);
+  color:var(--muted);
+  white-space:nowrap;
+}
+.pill.web{ border-color:var(--accent2); color:var(--accent2); }
+.pill.robot{ border-color:var(--accent); color:var(--accent); }
+.pill.mcu{ border-color:var(--warn); color:var(--warn); }
+
+.grid-cards{
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(220px,1fr));
+  gap:14px;
+  margin:18px 0;
+}
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:6px;
+  padding:16px 16px 14px;
+  box-shadow:var(--shadow);
+}
+.card .k{ font-family:var(--font-mono); font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
+.card .v{ font-family:var(--font-display); font-weight:700; font-size:19px; text-transform:uppercase; }
+.card p{ font-size:13.5px; color:var(--muted); margin:8px 0 0; max-width:none; }
+
+.diagram-frame{
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:var(--surface);
+  padding:20px;
+  overflow-x:auto;
+  margin:20px 0;
+  box-shadow:var(--shadow);
+}
+pre.mermaid{ margin:0; min-width:560px; }
+
+.phase-list{ list-style:none; padding:0; margin:20px 0; display:flex; flex-direction:column; gap:0; }
+.phase-list li{
+  display:grid;
+  grid-template-columns:64px 1fr;
+  gap:16px;
+  padding:16px 0;
+  border-top:1px solid var(--border);
+  max-width:none;
+}
+.phase-list li:first-child{ border-top:none; }
+.phase-num{ font-family:var(--font-display); font-weight:800; font-size:26px; color:var(--accent); }
+.phase-body b{ display:block; font-size:15px; margin-bottom:4px; }
+.phase-body span{ color:var(--muted); font-size:13.5px; }
+
+footer{
+  padding:36px 48px 60px;
+  font-family:var(--font-mono);
+  font-size:12px;
+  color:var(--muted);
+  display:flex;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+@media (max-width:640px){
+  .cover{ padding:40px 22px 28px; }
+  section{ padding:32px 22px; }
+  footer{ padding:28px 22px 48px; }
+}
+</style>
+
+<div class="wrap">
+  <aside class="rail">
+    <span class="tag">LabKeeper // Index</span>
+    <nav>
+      <a href="#overview">01 개요 &amp; 목표</a>
+      <a href="#arch">02 시스템 아키텍처</a>
+      <a href="#twin">03 디지털 트윈 &amp; 가상 연구실</a>
+      <a href="#web">04 웹 핵심 기능</a>
+      <a href="#data">05 데이터 모델</a>
+      <a href="#screens">06 화면 구성</a>
+      <a href="#api">07 API 개요</a>
+      <a href="#robot">08 라즈봇 연동</a>
+      <a href="#gate">09 아두이노 게이트</a>
+      <a href="#safety">10 Safety 모듈</a>
+      <a href="#stack">11 기술 스택</a>
+      <a href="#mockup">12 실물 목업 가이드</a>
+      <a href="#roadmap">13 개발 로드맵</a>
+      <a href="#risk">14 리스크 &amp; 고려사항</a>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="cover">
+      <div class="cover-inner">
+        <div class="eyebrow"><span class="chip">SPEC-001</span> 설계 문서 · 초안</div>
+        <h1>LabKeeper</h1>
+        <p class="sub">실습실·랩 물품의 대여와 재고를 관리하는 웹 서비스. 가상 연구실(디지털 트윈)에서 대규모로 개발·검증한 로직을 실제 Raspbot과 아두이노 게이트로 이식해 현실에서 확인한다.</p>
+        <div class="meta-row">
+          <div><b>대상</b>학과 실습실 / 메이커스페이스 / 랩</div>
+          <div><b>핵심</b>대여·반납 워크플로우 + 재고관리</div>
+          <div><b>확장</b>Raspberry Pi 5 (Raspbot) + Arduino 게이트</div>
+          <div><b>개발 형태</b>1인 홈 개발</div>
+        </div>
+      </div>
+    </div>
+
+    <section id="overview">
+      <div class="sec-label"><span class="num">01</span> 개요 &amp; 목표</div>
+      <h2>웹이 먼저, 로봇은 확장</h2>
+      <p>실습실이나 랩에서는 "이 부품이 지금 어디 있는지, 누가 빌려갔는지, 반납이 늦었는지"를 확인하는 일이 항상 번거롭다. LabKeeper는 이 문제를 푸는 <strong>독립적으로 완결된 관리 웹 서비스</strong>다. 로봇이나 아두이노가 없어도 등록·검색·대여·실사·통계 기능만으로 실사용 가치가 있어야 한다는 원칙을 그대로 따른다.</p>
+      <p>Raspbot과 아두이노는 이 웹의 <strong>실제 데이터를 갱신하는 물리적 대행자</strong> 역할을 한다. Raspbot은 라인트래킹으로 선반 사이를 돌며 QR을 스캔해 재고를 실사하고, 아두이노는 대여소 게이트에서 RFID로 대여·반납을 실물로 확인한다. 둘 다 웹의 대여/재고 레코드를 직접 갱신하며, 단순 조종 인터페이스로 끝나지 않는다.</p>
+      <div class="callout note">
+        <b>Design Principle</b>
+        웹 = 업무의 진실 원천(source of truth). 로봇/아두이노 = 그 진실을 자동으로 확인·갱신하는 센서·액추에이터. 로봇이 멈춰도 웹은 수동 입력으로 100% 동작해야 한다.
+      </div>
+      <h3>세 개의 층</h3>
+      <p>실제 랩 공간을 대규모로 확보하기 어렵기 때문에, 개발·검증은 소프트웨어 상의 가상 연구실에서 진행하고, 실제 하드웨어는 그 결과를 현실에서 확인하는 축소 검증대로 쓴다.</p>
+      <div class="grid-cards">
+        <div class="card"><div class="k">Layer 1</div><div class="v">웹 서비스</div><p>메인 서비스. 대여·재고·통계의 진실 원천. 로봇 유무와 무관하게 항상 동작</p></div>
+        <div class="card"><div class="k">Layer 2</div><div class="v">가상 연구실</div><p>대규모 실습실을 소프트웨어로 재현한 테스트베드. 여러 대의 가상 로봇으로 개발·반복 검증</p></div>
+        <div class="card"><div class="k">Layer 3</div><div class="v">실제 Raspbot</div><p>소규모 실측 환경에서 물리 동작(현실의 조명·마찰·오차)을 최종 검증하는 Physical AI 증명</p></div>
+      </div>
+    </section>
+
+    <section id="arch" class="wide">
+      <div class="sec-label"><span class="num">02</span> 시스템 아키텍처</div>
+      <h2>세 개의 축</h2>
+      <p style="max-width:800px">웹 서버가 유일한 진실 원천이며, Raspbot과 Arduino는 각자의 방식으로 REST API를 호출하는 클라이언트로 취급한다.</p>
+      <div class="diagram-frame">
+<pre class="mermaid">
+flowchart LR
+  subgraph WEB["웹 서비스"]
+    UI["React 대시보드"]
+    API["FastAPI 서버"]
+    DB[("PostgreSQL\nrobots / items / loans / audits")]
+    UI --> API --> DB
+  end
+
+  subgraph SIM["가상 연구실 (Sim Engine)"]
+    MAP["가상 지도\n선반·QR·라인트랙·장애물"]
+    SIMBOT["가상 로봇 N대"]
+    MAP --> SIMBOT
+  end
+
+  subgraph PI["Raspberry Pi 5 (실제 Raspbot)"]
+    REALBOT["실제 로봇 1대"]
+  end
+
+  subgraph CLIENT["로봇 클라이언트 (동일 코드)"]
+    PERC["perception.py\nQR / 얼굴 인식"]
+    CTRL["controller.py\n판단 로직"]
+    HAL["HAL\nreal_hal.py ↔ sim_hal.py"]
+    PERC --> CTRL --> HAL
+  end
+
+  subgraph GATE["대여소 게이트"]
+    RFID["RFID 리더"]
+    ARD["Arduino Uno 호환보드"]
+    BRIDGE["시리얼 브리지"]
+    RFID --> ARD --> BRIDGE
+  end
+
+  HAL -. "sim 모드" .-> SIMBOT
+  HAL -- "real 모드" --> REALBOT
+  CLIENT -- "HTTPS REST\n실사 결과 / 순찰 상태" --> API
+  BRIDGE -- "HTTPS REST\n대여 승인 요청/응답" --> API
+  API -- "WebSocket\n실시간 상태" --> UI
+</pre>
+      </div>
+      <p style="max-width:800px">로봇 클라이언트는 <strong>한 벌의 코드</strong>로 작성하고, HAL(하드웨어 추상화 계층)만 교체해 가상 로봇과 실제 Raspbot 양쪽에 동일하게 붙인다. 웹 API 입장에서는 호출자가 시뮬레이션인지 실물인지 구분하지 않는다. 아두이노 자체에는 Wi-Fi가 없으므로(SZH-EK013은 우노 호환보드) USB 시리얼로 라즈베리파이나 상시 켜진 PC에 연결하고, 그 브리지가 웹 API를 호출하는 구조를 권장한다.</p>
+    </section>
+
+    <section id="twin" class="wide">
+      <div class="sec-label"><span class="num">03</span> 디지털 트윈 &amp; 가상 연구실</div>
+      <h2>같은 코드, 다른 몸</h2>
+      <p style="max-width:800px">실제 랩 공간과 다수의 실물 로봇을 확보할 수 없으므로, 개발과 반복 검증은 소프트웨어로 만든 가상 연구실에서 진행한다. 핵심은 <strong>인식·판단 로직과 센서·구동 인터페이스를 분리</strong>하는 것이다 — 로직은 그대로 두고 아래쪽(HAL)만 시뮬레이션/실물로 바꿔 끼운다.</p>
+
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>모듈</th><th>역할</th><th>비고</th></tr></thead>
+          <tbody>
+            <tr><td><code>perception.py</code></td><td>QR/얼굴 인식 (OpenCV)</td><td>가상·실물 공통, 수정 없음</td></tr>
+            <tr><td><code>controller.py</code></td><td>라인트래킹 판단, 정지·스캔·회피 로직</td><td>가상·실물 공통, 수정 없음</td></tr>
+            <tr><td><code>hal/sim_hal.py</code></td><td>Sim Engine에 HTTP로 카메라 프레임·센서값 요청, 이동 명령 전송</td><td>가상환경 전용</td></tr>
+            <tr><td><code>hal/real_hal.py</code></td><td>Pi 카메라·GPIO(초음파/라인센서)·모터 PWM 직접 제어</td><td>실물 전용</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>가상 로봇이 제공하는 센서 인터페이스</h3>
+      <p style="max-width:800px">실제 Raspbot의 클라이언트가 읽는 값과 동일한 모양으로 가상 로봇도 값을 내려준다.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>엔드포인트</th><th>반환값</th><th>실물 대응</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET /sim/{id}/camera_frame</code></td><td>합성 카메라 이미지(PNG) — 거리·각도에 따라 QR 크기/회전/블러 반영</td><td>Pi 카메라</td></tr>
+            <tr><td><code>GET /sim/{id}/ultrasonic</code></td><td>레이캐스팅 거리값(노이즈 포함)</td><td>초음파 센서</td></tr>
+            <tr><td><code>GET /sim/{id}/line_sensor</code></td><td>4채널 라인 감지 값</td><td>4채널 라인트래킹 센서</td></tr>
+            <tr><td><code>POST /sim/{id}/move</code></td><td>이동 명령 반영, 다음 tick 위치 갱신</td><td>모터 PWM</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="max-width:800px">카메라 프레임은 단순히 "QR이 근처에 있다/없다"로 뭉개지 않고, 실제 <code>pyzbar</code>/OpenCV 디코더가 성공하거나 실패할 수 있는 합성 이미지를 렌더링한다 — 그래야 인식 파이프라인이 시뮬레이션 단계에서 진짜로 검증된다. 1차 거친 스캔(객체 인식)용으로는 구역 안 물건 개수·형태를 단순 도형으로 렌더링해 "몇 개가 감지되는가"까지 함께 검증한다.</p>
+
+      <h3>가상 지도 = 또 하나의 핵심 기능</h3>
+      <p style="max-width:800px">관리자가 선반·QR 태그 위치·라인트랙 경로·장애물을 직접 배치해 새로운 지점(랩 지점/브랜치)의 가상 실습실을 등록·관리할 수 있게 한다. 이건 부가기능이 아니라 웹의 정식 CRUD 기능이며, 동시에 여러 대의 가상 로봇을 굴려 대규모 환경을 저비용으로 재현하는 수단이 된다.</p>
+
+      <div class="callout note">
+        <b>Robot Fleet</b>
+        DB에 <code>robots</code> 테이블(id, type: <code>simulated</code>|<code>physical</code>, map_id, status, last_seen)을 두고, 관제 화면 하나에서 가상 로봇 여러 대와 실제 Raspbot 1대를 함께 모니터링한다.
+      </div>
+
+      <h3>개발 → 실증 파이프라인</h3>
+      <ol>
+        <li>가상 연구실에서 라인트래킹·정지판정·QR스캔·실사 로직을 반복 개발·검증 (<code>sim_hal.py</code> 사용)</li>
+        <li>같은 <code>perception.py</code>/<code>controller.py</code>를 그대로 두고 <code>real_hal.py</code>로 교체</li>
+        <li>실제 Raspbot + 소규모 실측 목업(책장 1~2단)에서 조명·마찰·인식 오차 등 현실 변수만 최종 검증</li>
+        <li>실측에서 드러난 보정치(정지 거리, 인식 임계값 등)를 로직에 반영하고 가상환경에도 동기화</li>
+      </ol>
+    </section>
+
+    <section id="web">
+      <div class="sec-label"><span class="num">04</span> 웹 핵심 기능</div>
+      <h2>로봇 없이도 완결되는 업무</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>기능</th><th>설명</th><th>비고</th></tr></thead>
+          <tbody>
+            <tr><td>장비 마스터 관리</td><td>이름/카테고리/위치/수량/상태/사진 등록, QR코드 자동 발급</td><td>관리자</td></tr>
+            <tr><td>검색 &amp; 필터</td><td>카테고리·위치·대여가능여부·키워드 검색, QR 스캔 즉시 조회</td><td>전체</td></tr>
+            <tr><td>대여/반납 워크플로우</td><td>신청 → (승인) → 대여중 → 반납, 연체 자동 판정</td><td>핵심 흐름</td></tr>
+            <tr><td>피킹 요청</td><td>특정 물품/카테고리 대여 신청 시 로봇이 위치까지 이동해 대여 가능한 개체를 확정, 잠깐 예약(hold)</td><td>Raspbot 연동</td></tr>
+            <tr><td>예약 캘린더</td><td>특정 장비의 시간대별 사용 예약</td><td>선택 기능</td></tr>
+            <tr><td>재고 실사</td><td>실사 세션 기록(수행자/시각/스캔 결과), 불일치 리포트</td><td>Raspbot 연동</td></tr>
+            <tr><td>알림</td><td>연체·예약 임박·재고 부족 알림</td><td>이메일/웹</td></tr>
+            <tr><td>통계 대시보드</td><td>인기 장비, 카테고리별 이용률, 연체율, 재고 정확도 추이</td><td>분석</td></tr>
+            <tr><td>감사 로그</td><td>모든 변경 이력 추적 및 내보내기(CSV)</td><td>관리자</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="data" class="wide">
+      <div class="sec-label"><span class="num">05</span> 데이터 모델</div>
+      <h2>ERD</h2>
+      <div class="diagram-frame">
+<pre class="mermaid">
+erDiagram
+  USER {
+    int id
+    string name
+    string student_no
+    string rfid_uid
+    string role
+  }
+  ITEM {
+    int id
+    string name
+    string category
+    string location
+    string qr_code
+    string status
+    int total_qty
+  }
+  LOAN {
+    int id
+    int user_id
+    int item_id
+    datetime borrowed_at
+    datetime due_at
+    datetime returned_at
+    string status
+  }
+  AUDIT_SESSION {
+    int id
+    datetime started_at
+    datetime finished_at
+    string performed_by
+    int scanned_count
+  }
+  AUDIT_MISMATCH {
+    int id
+    int session_id
+    int item_id
+    string expected_location
+    string note
+  }
+  GATE_EVENT {
+    int id
+    int user_id
+    string action
+    datetime occurred_at
+    string result
+  }
+
+  USER ||--o{ LOAN : "대여한다"
+  ITEM ||--o{ LOAN : "대여됨"
+  AUDIT_SESSION ||--o{ AUDIT_MISMATCH : "발견"
+  ITEM ||--o{ AUDIT_MISMATCH : "대상"
+  USER ||--o{ GATE_EVENT : "태그"
+</pre>
+      </div>
+    </section>
+
+    <section id="screens">
+      <div class="sec-label"><span class="num">06</span> 화면 구성</div>
+      <h2>주요 화면</h2>
+      <div class="grid-cards">
+        <div class="card"><div class="k">Screen</div><div class="v">대시보드</div><p>연체 현황, 실사 정확도, 인기 장비 요약</p></div>
+        <div class="card"><div class="k">Screen</div><div class="v">장비 목록/검색</div><p>필터, QR 스캔 조회, 상세 페이지</p></div>
+        <div class="card"><div class="k">Screen</div><div class="v">대여/반납</div><p>신청 처리, 상태 전환, 연체 표시</p></div>
+        <div class="card"><div class="k">Screen</div><div class="v">피킹 요청</div><p>신청 물품, 로봇 확정 결과, 예약(hold) 잔여시간</p></div>
+        <div class="card"><div class="k">Screen</div><div class="v">실사 세션</div><p>Raspbot 순찰 기록, 불일치 목록</p></div>
+        <div class="card"><div class="k">Screen</div><div class="v">게이트 로그</div><p>RFID 태그 이벤트 실시간 스트림</p></div>
+        <div class="card"><div class="k">Screen</div><div class="v">통계/리포트</div><p>추이 그래프, CSV 내보내기</p></div>
+      </div>
+    </section>
+
+    <section id="api" class="wide">
+      <div class="sec-label"><span class="num">07</span> API 개요</div>
+      <h2>핵심 엔드포인트</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>메서드</th><th>경로</th><th>설명</th><th>호출자</th></tr></thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><code>/items?category=&location=&q=</code></td><td>장비 검색</td><td><span class="pill web">웹</span></td></tr>
+            <tr><td><code>POST</code></td><td><code>/loans</code></td><td>대여 신청/승인</td><td><span class="pill web">웹</span> <span class="pill mcu">게이트</span></td></tr>
+            <tr><td><code>PATCH</code></td><td><code>/loans/{id}/return</code></td><td>반납 처리</td><td><span class="pill mcu">게이트</span></td></tr>
+            <tr><td><code>POST</code></td><td><code>/audit-sessions</code></td><td>실사 세션 시작</td><td><span class="pill web">웹</span></td></tr>
+            <tr><td><code>POST</code></td><td><code>/audit-sessions/{id}/scans</code></td><td>객체 인식(1차) / QR(2차 정밀) 스캔 결과 업로드</td><td><span class="pill robot">Raspbot</span></td></tr>
+            <tr><td><code>POST</code></td><td><code>/pick-requests</code></td><td>특정 물품/카테고리 대여 신청</td><td><span class="pill web">웹</span></td></tr>
+            <tr><td><code>POST</code></td><td><code>/pick-requests/{id}/result</code></td><td>로봇이 확정한 개체 QR 보고 → 자동 예약(hold)</td><td><span class="pill robot">Raspbot</span></td></tr>
+            <tr><td><code>POST</code></td><td><code>/gate/rfid-event</code></td><td>아두이노 브리지가 보낸 RFID UID 이벤트 기록</td><td><span class="pill mcu">게이트</span></td></tr>
+            <tr><td><code>POST</code></td><td><code>/gate/qr-event</code></td><td>XIAO ESP32S3가 보낸 물품 QR 이벤트 기록 → 최근 RFID 이벤트와 시간으로 결합해 대여/반납 자동 분기</td><td><span class="pill mcu">게이트</span></td></tr>
+            <tr><td><code>GET</code></td><td><code>/stats/overview</code></td><td>대시보드 집계</td><td><span class="pill web">웹</span></td></tr>
+            <tr><td><code>WS</code></td><td><code>/ws/status</code></td><td>순찰/게이트 실시간 상태</td><td><span class="pill web">웹</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="robot">
+      <div class="sec-label"><span class="num">08</span> 라즈봇 연동</div>
+      <h2>2단계 인식: 거칠게 훑고, 필요할 때만 정밀 확인</h2>
+      <p>Raspbot은 물건을 들거나 나르지 않는다(그리퍼 없음). 대신 <strong>이동 + 카메라 인식</strong>만으로 재고 확인이라는 실제 업무를 수행한다. 객체인식은 개체 단위 식별이 안 되므로(같은 종류 물건을 구별 못함), 순찰의 두 단계에 역할을 나눠 맡긴다.</p>
+
+      <div class="callout note">
+        <b>왜 나누나</b>
+        모든 선반마다 QR을 정밀하게 읽으려면 로봇이 매번 정확히 정차해야 해서 순찰이 느리다. 반대로 객체인식만 쓰면 "정확히 어떤 물건이 없어졌는지"는 알 수 없다. 그래서 <strong>1차는 빠른 객체인식으로 이상 구역만 걸러내고, 2차는 그 구역에서만 QR로 정밀 확인</strong>한다.
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>단계</th><th>인식 방식</th><th>하는 일</th><th>속도/정밀도</th></tr></thead>
+          <tbody>
+            <tr><td>1차 · 거친 순찰</td><td>객체 인식</td><td>구역별 예상 카테고리·개수와 실제 감지된 개수를 비교, 이상 구역만 표시</td><td>빠름 / 카테고리 단위</td></tr>
+            <tr><td>2차 · 정밀 확인</td><td>QR 인식</td><td>이상 표시된 구역에만 접근해 QR을 하나씩 읽어 정확히 무엇이 빠졌는지 확정</td><td>느림 / 개체 단위</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="diagram-frame">
+<pre class="mermaid">
+sequenceDiagram
+  participant Admin as 관리자(웹)
+  participant API as 웹 API
+  participant Bot as Raspbot
+  Admin->>API: 실사 시작 요청
+  API->>Bot: 순찰 시작 명령
+  loop 구역마다 (1차: 거친 스캔)
+    Bot->>Bot: 라인트래킹 이동
+    Bot->>Bot: 카메라로 객체 인식 (카테고리 + 개수)
+    Bot->>API: 감지 결과 업로드
+    API->>API: 예상 재고와 개수/카테고리 비교
+    alt 개수 불일치 or 미등록 물체
+      API->>API: 해당 구역 "정밀확인 필요"로 표시
+    end
+    Bot->>Bot: 초음파로 장애물 확인 후 다음 구간 이동
+  end
+  opt 정밀확인 필요 구역이 있으면 (2차: QR 확인)
+    loop 표시된 구역만
+      Bot->>Bot: 정지선까지 접근, 카메라로 QR 태그 하나씩 스캔
+      Bot->>API: QR 스캔 결과 업로드
+      API->>API: 정확히 어떤 개체가 문제인지 확정
+    end
+  end
+  Bot->>API: 순찰 완료 보고
+  API->>Admin: 실사 리포트 갱신(불일치 개체 목록 포함)
+</pre>
+      </div>
+      <h3>단계별 로직</h3>
+      <ol>
+        <li>라인트래킹 센서로 지정 경로(선반 통로)를 따라 이동하며 각 구역에서 객체 인식 실행</li>
+        <li>구역별 예상 재고(카테고리/개수)와 감지 결과를 대조 → 맞으면 통과, 다르면 "정밀확인 필요" 표시</li>
+        <li>정밀확인이 필요한 구역에만 다시 접근해 정지 후 QR 태그를 하나씩 스캔해 정확한 개체를 특정</li>
+        <li>초음파로 통로 장애물 감지 시 정지, 웹에 "일시정지" 상태 표시</li>
+        <li>(옵션) 얼굴 인식으로 무인시간대 사람 감지를 실사 로그에 병기</li>
+        <li>순찰 종료 후 실사 세션 레코드 생성 → 통계 페이지의 재고 정확도 추이에 반영</li>
+      </ol>
+
+      <div class="callout note">
+        <b>IMU(MPU6050) 추가</b>
+        Pi 5의 I2C 핀에 MPU6050을 추가하면, 모터 명령만으로 추정하던 헤딩(dead-reckoning)을 <strong>실제 측정값으로 보정</strong>할 수 있다. 바퀴 미끄러짐 때문에 생기는 라인트래킹 오차가 줄고, 급격한 기울임·충격을 감지해 "로봇 자체 안전" 이벤트(충돌/전복)로 기록할 수 있다 — <code>real_hal.py</code>의 <code>read_line_sensors</code>/이동 로직에 헤딩 보정을 추가할 자리다.
+      </div>
+
+      <h3>온디맨드 피킹 안내 (사용자가 특정 물품을 찾을 때)</h3>
+      <p>정기 실사와 별개로, 사용자가 웹에서 특정 물품을 대여 신청하면 로봇이 같은 2단계 인식 로직으로 그 자리에서 확인해준다. 그리퍼가 없어 직접 집어주지는 못하므로, 로봇의 역할은 <strong>"어떤 개체를 가져가야 하는지 확정해서 안내"</strong>하는 데 그친다.</p>
+      <div class="diagram-frame">
+<pre class="mermaid">
+sequenceDiagram
+  participant User as 사용자(웹)
+  participant API as 웹 API
+  participant Bot as Raspbot
+  participant Gate as 대여소 게이트
+  User->>API: "연필" 대여 신청
+  API->>Bot: 연필 구역으로 이동 명령
+  Bot->>Bot: 라인트래킹 이동
+  Bot->>Bot: 카메라로 객체 인식 (연필류 확인, 1차)
+  Bot->>Bot: 보이는 개체들 QR 순차 스캔 (2차)
+  Bot->>API: 스캔한 QR 목록 업로드
+  API->>API: 재고 상태 대조 → 대여 가능한 개체 1개 선정(예: 연필 QR-2) → 예약(hold) 처리
+  API->>User: "연필 QR-2, 3번 선반에서 가져가세요" 안내
+  User->>Gate: 직접 집어서 게이트로 이동
+  Gate->>API: RFID(사용자) + QR-2(물품) 재확인
+  API->>Gate: 대여 확정 승인
+</pre>
+      </div>
+      <div class="callout note">
+        <b>예약(hold) 처리</b>
+        로봇이 확정한 개체는 게이트에서 최종 스캔되기 전까지 "예약중" 상태로 걸어 다른 요청과 겹치지 않게 한다. 일정 시간(예: 10분) 안에 게이트 확인이 없으면 예약을 자동 해제해 다시 대여 가능 상태로 되돌린다.
+      </div>
+    </section>
+
+    <section id="gate">
+      <div class="sec-label"><span class="num">09</span> 아두이노 게이트</div>
+      <h2>스마트 대여소 게이트</h2>
+      <p>게이트는 물리적으로 두 개의 독립된 장치로 구성된다 — <strong>아두이노(RFID+릴레이+LCD+부저)</strong>와 <strong>XIAO ESP32S3 Sense(카메라+WiFi)</strong>. 둘을 직접 유선으로 연결하지 않고, 각자 웹 API를 호출하게 한 뒤 <strong>웹이 시간 기준으로 두 이벤트를 묶어서</strong> 대여/반납을 확정한다. 물품 QR을 스캔한 시점에 그 물품의 현재 상태가 "대여가능"이면 대여로, "대여중"이면 반납으로 <strong>자동 분기</strong>한다.</p>
+
+      <div class="callout warn">
+        <b>왜 둘을 직접 연결하지 않나</b>
+        아두이노 우노 호환보드는 5V 로직, XIAO ESP32S3는 3.3V 로직이다. UART로 직접 연결하면 레벨시프터 없이는 XIAO가 손상될 수 있다. 대신 아두이노는 기존처럼 USB 시리얼로 PC/Pi에 연결하고, XIAO는 자체 WiFi로 웹 API를 직접 호출하는 <strong>완전히 분리된 두 클라이언트</strong>로 둔다 — 배선 리스크 없이 더 단순해진다.
+      </div>
+
+      <h3>대여 흐름</h3>
+      <p>"누가"(RFID, 아두이노 경유)와 "무엇을"(물품 QR, XIAO 경유)이 <strong>몇 초 이내에 함께 들어와야</strong> 하나의 대여 요청으로 묶인다.</p>
+      <div class="diagram-frame">
+<pre class="mermaid">
+sequenceDiagram
+  participant Card as RFID 카드
+  participant Ard as Arduino
+  participant Bridge as 시리얼 브리지
+  participant Cam as XIAO ESP32S3 Sense
+  participant API as 웹 API
+  Card->>Ard: 카드 태그 (사용자 확인)
+  Ard->>Bridge: UID 전송(시리얼)
+  Bridge->>API: 사용자 UID 이벤트 전송
+  Cam->>Cam: 카메라로 물품 QR 촬영
+  Cam->>API: QR 값을 WiFi로 직접 전송 (물품 확인)
+  API->>API: 최근 수 초 내 UID·QR 이벤트를 하나의 대여 요청으로 결합
+  API->>Bridge: 승인 / 거절 + 사유
+  alt 승인
+    Bridge->>Ard: 잠금 해제 신호
+    Ard->>Ard: 릴레이로 보관함 개방, LCD "OO님 - 드라이버 대여완료", 부저
+  else 연체 등 거절
+    Ard->>Ard: 잠금 유지, LCD 경고, 부저 경고음
+  end
+</pre>
+      </div>
+
+      <h3>반납 흐름</h3>
+      <p>반납은 원래 빌린 사람이 아니어도 할 수 있어야 하므로, RFID는 "반납자 기록용"으로만 선택적으로 쓰고 <strong>물품 QR만으로도 반납이 성립</strong>하게 한다.</p>
+      <div class="diagram-frame">
+<pre class="mermaid">
+sequenceDiagram
+  participant User as 사용자
+  participant Cam as XIAO ESP32S3 Sense
+  participant Card as RFID 카드(선택)
+  participant Ard as Arduino
+  participant Bridge as 시리얼 브리지
+  participant API as 웹 API
+  User->>Cam: 반납할 물품 QR 촬영
+  Cam->>API: QR 값을 WiFi로 직접 전송
+  opt RFID 태그(선택, 반납자 기록용)
+    Card->>Ard: 카드 태그
+    Ard->>Bridge: UID 전송
+    Bridge->>API: 반납자 UID 이벤트 전송
+  end
+  API->>API: 해당 QR의 "대여중" 대출 건 조회
+  alt 대출 기록 있음
+    API->>API: returned_at 기록, 연체일 계산, 상태를 "반납완료"로 전환
+    API->>Bridge: 반납 처리 완료 + 연체 여부
+    Bridge->>Ard: 반납함 개방 신호
+    Ard->>Ard: 릴레이로 반납함 개방, LCD "반납 완료 (연체 0일)", 부저
+  else 매칭되는 대출 없음
+    API->>Bridge: 오류 - 대여 기록 없음
+    Ard->>Ard: LCD "확인 필요 - 관리자 문의", 경고 부저
+  end
+</pre>
+      </div>
+      <div class="callout note">
+        <b>HC-SR04 대기모드 (스트레치)</b>
+        게이트에 별도 초음파센서(HC-SR04)를 달아 사람이 다가올 때만 카메라·RFID를 활성화한다. 필수는 아니지만 시간이 남으면 붙이기 쉬운 개선이다.
+      </div>
+      <div class="callout note">
+        <b>반납 후</b>
+        반납된 물건이 정위치에 다시 놓이는지는 게이트가 보장하지 않는다. 다음 실사 순찰에서 Raspbot이 QR로 위치를 확인해 불일치가 있으면 리포트에 잡는다 — 08번 실사 로직을 그대로 재사용한다.
+      </div>
+    </section>
+
+    <section id="safety" class="wide">
+      <div class="sec-label"><span class="num">10</span> Safety 모듈 (LabFlow 통합)</div>
+      <h2>ROS2·Isaac Sim 대신, 이미 만든 것으로</h2>
+      <p style="max-width:800px">팀 내부 기획서(LabFlow v1.2, 14장 "실행 현실화 개정안")와 합의된 최종 결정을 여기 반영한다: <strong>ROS2와 Isaac Sim은 장기 비전으로만 남기고, v1은 지금 이미 동작하는 robot-sim(pygame)과 HAL 패턴을 정식 SIM/REAL 교체 인터페이스로 채택한다.</strong> 새 테이블도 LabFlow가 제안한 25개 이상의 엔터티가 아니라, 축소된 <code>SafetyEvent</code> + <code>ActionLog</code> 두 개만 추가한다 — 이미 <strong>구현하고 실제로 폐쇄루프까지 검증</strong>했다.</p>
+
+      <div class="callout note">
+        <b>SR-05/06/07은 새로 안 만든다</b>
+        위치 불일치·재고/대여 상태 불일치·점검 누락은 이미 <code>AuditMismatch</code>가 처리한다. 여기서 다루는 건 로봇이 실시간으로 감지하는 물리적 이상(SR-01 통로장애물, SR-08 충돌위험, SR-03 사람감지)뿐이다.
+      </div>
+
+      <h3>데이터 모델 (실제 구현됨)</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>테이블</th><th>필드</th><th>비고</th></tr></thead>
+          <tbody>
+            <tr><td rowspan="4"><strong>SafetyEvent</strong></td><td>rule_id, severity, status, source</td><td>규칙ID(SR-01 등), HIGH/MEDIUM/LOW, 상태, robot-sim/raspbot/manual</td></tr>
+            <tr><td>note, detected_at</td><td>감지 내용, 감지 시각</td></tr>
+            <tr><td>assignee_id, due_at</td><td>담당자, 조치 기한</td></tr>
+            <tr><td>resolution_note, resolved_at</td><td>해결 근거, 해결 시각</td></tr>
+            <tr><td><strong>ActionLog</strong></td><td>event_id, actor, action, note, created_at</td><td>모든 상태 변화의 감사이력</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>이벤트 상태 흐름</h3>
+      <div class="diagram-frame">
+<pre class="mermaid">
+stateDiagram-v2
+  [*] --> NEEDS_REVIEW: 로봇이 감지
+  NEEDS_REVIEW --> FALSE_POSITIVE: 오탐 확인
+  NEEDS_REVIEW --> OPEN: 사람이 확인
+  OPEN --> ASSIGNED: 담당자 지정
+  ASSIGNED --> IN_PROGRESS: 조치 시작
+  IN_PROGRESS --> RESOLVED: 해결 근거 등록
+  RESOLVED --> CLOSED: 안전관리자 승인
+  FALSE_POSITIVE --> [*]
+  CLOSED --> [*]
+</pre>
+      </div>
+      <p style="max-width:800px">로봇 감지는 항상 <code>NEEDS_REVIEW</code>로 시작한다 — AI/센서 판정은 오탐 가능성이 있으므로 "자동 확정"하지 않는다. <code>CLOSED</code>/<code>FALSE_POSITIVE</code> 상태는 사용자가 임의로 삭제하거나 되돌릴 수 없고, 모든 전이가 <code>ActionLog</code>에 남는다.</p>
+
+      <h3>robot-sim ↔ 웹 연동 (실제 동작 확인됨)</h3>
+      <div class="diagram-frame">
+<pre class="mermaid">
+sequenceDiagram
+  participant Ctrl as controller.py
+  participant Notify as notify.py
+  participant API as 웹 API
+  Ctrl->>Ctrl: 초음파 거리 < 임계값 → 정지
+  Ctrl->>Notify: on_obstacle(distance) — 새로 감지된 순간에만 1회
+  Notify->>API: POST /api/safety-events (SR-01)
+  API->>API: SafetyEvent 생성 (NEEDS_REVIEW)
+  Note over Ctrl: 장애물 있는 동안 매 프레임 재전송하지 않음(쿨다운)
+  Ctrl->>Ctrl: 장애물 제거 감지
+  Ctrl->>Notify: on_obstacle_cleared()
+</pre>
+      </div>
+      <p style="max-width:800px">실물 Raspbot이 오면 <code>real_hal.py</code>에서 같은 <code>/api/safety-events</code>를 호출하도록 채우기만 하면 된다. <code>controller.py</code>와 웹 쪽은 수정할 필요가 없다 — HAL 교체 원칙이 그대로 지켜진다.</p>
+
+      <h3>Robot Console 원칙</h3>
+      <ul>
+        <li>웹에서 <strong>원격으로 E-stop을 해제하는 기능은 제공하지 않는다</strong> — 현장 확인 후 로봇 쪽에서 수동으로만 재가동한다.</li>
+        <li>로봇 로컬 제어가 정지 판단을 우선한다. 통신이 끊겨도 로봇 스스로 멈출 수 있어야 한다.</li>
+      </ul>
+
+      <h3>시험 시나리오 (일부 이미 검증)</h3>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>시나리오</th><th>상태</th></tr></thead>
+          <tbody>
+            <tr><td>장애물 감지 → SafetyEvent 생성, 정지 유지 중 중복 전송 없음</td><td><span class="pill web">검증됨</span></td></tr>
+            <tr><td>장애물 제거 → 순찰 재개 로그</td><td><span class="pill web">검증됨</span></td></tr>
+            <tr><td>QR 체크포인트 순서대로 스캔 → 정상 종료</td><td><span class="pill web">검증됨</span> (이전 회차)</td></tr>
+            <tr><td>웹 서버 다운 상태에서도 시뮬레이터가 죽지 않음</td><td><span class="pill web">검증됨</span></td></tr>
+            <tr><td>오탐 처리(FALSE_POSITIVE) → 사유와 함께 종결</td><td><span class="pill robot">화면 구현됨, 실기기 시나리오는 추후</span></td></tr>
+            <tr><td>통신두절 시 로컬 정지, 재연결 후 중복 실행 없음</td><td><span class="pill mcu">실물 도착 후 시험</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="stack">
+      <div class="sec-label"><span class="num">11</span> 기술 스택</div>
+      <h2>선택과 이유</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>영역</th><th>선택</th><th>이유</th></tr></thead>
+          <tbody>
+            <tr><td>백엔드</td><td><code>FastAPI</code> + <code>PostgreSQL</code></td><td>Pi 쪽 OpenCV 코드도 Python → 언어 통일, 자동 API 문서화</td></tr>
+            <tr><td>프론트엔드</td><td><code>React</code> + <code>Chart.js</code></td><td>대시보드/표/그래프 구현 용이</td></tr>
+            <tr><td>실시간</td><td><code>WebSocket</code></td><td>순찰 상태·게이트 로그 실시간 반영</td></tr>
+            <tr><td>로봇 클라이언트</td><td><code>OpenCV</code> + <code>requests</code></td><td>perception/controller 공통 코드, QR/얼굴 인식, REST 호출</td></tr>
+            <tr><td>Sim Engine</td><td><code>Python</code> + <code>Pillow</code>/<code>pygame</code></td><td>가상 지도 렌더링, 합성 카메라 프레임 생성, 센서값 계산</td></tr>
+            <tr><td>Arduino 브리지</td><td><code>pyserial</code></td><td>USB 시리얼 ↔ 웹 API 중계</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="mockup">
+      <div class="sec-label"><span class="num">12</span> 실물 목업 가이드</div>
+      <h2>집에서 준비할 것</h2>
+      <p>대부분의 로직은 가상 연구실에서 이미 검증됐으므로, 실물 목업은 <strong>"현실에서도 똑같이 동작하는가"만 확인</strong>하는 최소 규모로 줄인다. 대규모 선반 배치를 집에 마련할 필요가 없다.</p>
+      <ul>
+        <li><strong>재고 물품:</strong> 방에 있는 책·부품·소품 10~20개에 QR 스티커 부착(직접 발급한 QR 이미지 인쇄)</li>
+        <li><strong>선반 목업:</strong> 책장 한 단 또는 박스로 2~3개 구역 구성, 각 구역 앞에 정지선 테이프</li>
+        <li><strong>라인트랙:</strong> 검은 절연테이프로 바닥에 경로 부착 (Raspbot 라인트래킹 센서용)</li>
+        <li><strong>RFID 카드:</strong> 본인 및 지인 2~3명의 카드/태그를 등록해 실제 사용자처럼 시연</li>
+        <li><strong>게이트 목업:</strong> 작은 상자 + 서보/솔레노이드 잠금장치로 "보관함" 표현, 실제 문이 아니어도 됨</li>
+        <li><strong>게이트 카메라:</strong> XIAO ESP32S3 Sense 1개 (자체 WiFi로 QR 이벤트를 웹 API에 직접 전송, PC 브리지 불필요)</li>
+        <li><strong>게이트 대기감지(선택):</strong> HC-SR04 초음파센서로 사람 접근 시에만 활성화</li>
+        <li><strong>Raspbot 헤딩 보정:</strong> MPU6050(IMU)을 I2C로 연결해 실제 회전각 측정, 충돌/전복 감지</li>
+      </ul>
+    </section>
+
+    <section id="roadmap">
+      <div class="sec-label"><span class="num">13</span> 개발 로드맵</div>
+      <h2>단계별 계획</h2>
+      <ul class="phase-list">
+        <li>
+          <span class="phase-num">01</span>
+          <span class="phase-body"><b>웹 MVP</b><span>장비 등록/검색/대여/반납/통계 — 로봇 없이 완전히 동작하는 상태까지 완성</span></span>
+        </li>
+        <li>
+          <span class="phase-num">02</span>
+          <span class="phase-body"><b>가상 연구실 구축 &amp; 로직 개발</b><span>Sim Engine, 가상 지도 에디터, HAL 설계 → 라인트래킹/정지판정/QR스캔/실사 로직을 가상 로봇으로 반복 검증</span></span>
+        </li>
+        <li>
+          <span class="phase-num">03</span>
+          <span class="phase-body"><b>실제 Raspbot 이식 &amp; 실측 검증</b><span><code>real_hal.py</code>로 교체, 소규모 목업(책장 1~2단)에서 조명·마찰 등 현실 변수 확인 후 보정치를 로직에 반영</span></span>
+        </li>
+        <li>
+          <span class="phase-num">04</span>
+          <span class="phase-body"><b>아두이노 게이트 연동</b><span>RFID 리더 + 시리얼 브리지 + 릴레이/LCD/부저 → 대여/반납 API 연동</span></span>
+        </li>
+        <li>
+          <span class="phase-num">05</span>
+          <span class="phase-body"><b>마감 &amp; 시연</b><span>실시간 대시보드 다듬기, 시연 스크립트 준비, 리포트/발표자료 정리</span></span>
+        </li>
+      </ul>
+    </section>
+
+    <section id="risk">
+      <div class="sec-label"><span class="num">14</span> 리스크 &amp; 고려사항</div>
+      <h2>미리 점검할 것</h2>
+      <div class="callout warn">
+        <b>범위 관리</b>
+        1인 개발이므로 1단계(웹 MVP)를 먼저 완전히 끝내고, 로봇/아두이노는 순차적으로 붙인다. 세 가지를 동시에 진행하면 어느 것도 완성도가 나오지 않는다.
+      </div>
+      <div class="callout note">
+        <b>네트워크</b>
+        Raspbot과 웹 서버가 같은 네트워크(또는 터널)에 있어야 한다. 집 와이파이 환경에서 고정 IP/포트포워딩 또는 ngrok류 터널을 미리 테스트한다.
+      </div>
+      <div class="callout note">
+        <b>인식 정확도</b>
+        조명/각도에 따라 QR·얼굴 인식률이 떨어질 수 있다. 정지 후 스캔(정지 상태에서만 인식)으로 오탐을 줄인다.
+      </div>
+      <div class="callout warn">
+        <b>Sim-to-Real Gap</b>
+        가상 연구실에서 완벽히 동작한 로직이 실물에서 그대로 통한다는 보장은 없다(조명 노이즈, 모터 오차, 마찰). 3단계(실제 Raspbot 검증)를 절대 생략하지 말고, 실측에서 얻은 보정치를 다시 Sim Engine에 반영해 가상환경의 신뢰도를 계속 끌어올린다.
+      </div>
+    </section>
+
+    <footer>
+      <span>LabKeeper — 실습실 물품 대여·재고관리 시스템</span>
+      <span>SPEC-001 · 설계 초안</span>
+    </footer>
+  </main>
+</div>
