@@ -20,6 +20,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const safetyDetail = document.getElementById("safetyDetail");
   const safetyStatusFilter = document.getElementById("safetyStatusFilter");
 
+  const auditChecklistBody = document.getElementById("auditChecklistBody");
+  const auditSelectedCount = document.getElementById("auditSelectedCount");
+  const auditSelectAllBtn = document.getElementById("auditSelectAllBtn");
+  const auditSubmitBtn = document.getElementById("auditSubmitBtn");
+  const auditSessionTableBody = document.getElementById("auditSessionTableBody");
+  const auditDetail = document.getElementById("auditDetail");
+
   function renderCategoryOptions() {
     categorySelect.innerHTML = LAB_CATEGORIES.filter((c) => c.key !== "all")
       .map((c) => `<option value="${c.key}">${c.label}</option>`)
@@ -317,6 +324,131 @@ document.addEventListener("DOMContentLoaded", async () => {
     setInterval(refreshRobotModeBadge, 3000);
   }
 
+  function updateAuditSelectedCount() {
+    const boxes = auditChecklistBody.querySelectorAll(".audit-check");
+    const checked = auditChecklistBody.querySelectorAll(".audit-check:checked");
+    auditSelectedCount.textContent = `${checked.length}/${boxes.length}개 확인함`;
+  }
+
+  async function renderAuditChecklist() {
+    let items;
+    try {
+      items = await loadAllItems();
+    } catch (err) {
+      alert("물품 목록을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    auditChecklistBody.innerHTML = items
+      .map(
+        (item) => `
+        <tr>
+          <td><input type="checkbox" class="audit-check" value="${item.id}" /></td>
+          <td>${item.name}</td>
+          <td>${item.categoryLabel}</td>
+          <td>${item.location}</td>
+        </tr>
+      `
+      )
+      .join("");
+
+    auditChecklistBody.querySelectorAll(".audit-check").forEach((cb) => {
+      cb.addEventListener("change", updateAuditSelectedCount);
+    });
+    updateAuditSelectedCount();
+  }
+
+  auditSelectAllBtn.addEventListener("click", () => {
+    const boxes = auditChecklistBody.querySelectorAll(".audit-check");
+    const allChecked = [...boxes].every((cb) => cb.checked);
+    boxes.forEach((cb) => (cb.checked = !allChecked));
+    updateAuditSelectedCount();
+  });
+
+  auditSubmitBtn.addEventListener("click", async () => {
+    const confirmedIds = [...auditChecklistBody.querySelectorAll(".audit-check:checked")].map((cb) =>
+      Number(cb.value)
+    );
+    const totalCount = auditChecklistBody.querySelectorAll(".audit-check").length;
+
+    if (
+      !confirm(
+        `확인한 ${confirmedIds.length}/${totalCount}개 물품으로 실사를 제출하시겠습니까?\n체크하지 않은 나머지 물품은 전부 "미확인"으로 기록됩니다.`
+      )
+    ) {
+      return;
+    }
+
+    auditSubmitBtn.disabled = true;
+    try {
+      await window.LabBotAudit.submitAudit(confirmedIds);
+      await renderAuditSessions();
+      alert("실사가 제출되었습니다.");
+    } catch (err) {
+      alert("실사 제출에 실패했습니다: " + (err.message || err));
+    } finally {
+      auditSubmitBtn.disabled = false;
+    }
+  });
+
+  async function renderAuditSessions() {
+    let sessions;
+    try {
+      sessions = await window.LabBotAudit.fetchAuditSessions();
+    } catch (err) {
+      alert("실사 이력을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    auditDetail.style.display = "none";
+
+    if (sessions.length === 0) {
+      auditSessionTableBody.innerHTML = `<tr><td colspan="5" class="mono" style="text-align:center; padding: 20px;">실사 이력이 없습니다.</td></tr>`;
+      return;
+    }
+
+    auditSessionTableBody.innerHTML = "";
+    sessions.forEach((s) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${s.performed_by}</td>
+        <td class="mono">${new Date(s.started_at).toLocaleString("ko-KR")}</td>
+        <td>${s.scanned_count}개</td>
+        <td>${s.mismatch_count}개</td>
+        <td><button type="button" class="btn btn-secondary btn-sm" data-action="detail">상세</button></td>
+      `;
+      row.querySelector('[data-action="detail"]').addEventListener("click", () => showAuditDetail(s.id));
+      auditSessionTableBody.appendChild(row);
+    });
+  }
+
+  async function showAuditDetail(sessionId) {
+    let mismatches;
+    try {
+      mismatches = await window.LabBotAudit.fetchAuditMismatches(sessionId);
+    } catch (err) {
+      alert("실사 상세를 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    auditDetail.style.display = "block";
+    auditDetail.innerHTML = `
+      <p class="label">미확인 물품 (${mismatches.length}개)</p>
+      <ul class="safety-log-list">
+        ${
+          mismatches.length === 0
+            ? "<li>미확인 물품이 없습니다 — 전체 물품을 확인했습니다.</li>"
+            : mismatches
+                .map(
+                  (m) =>
+                    `<li>${(m.items && m.items.name) || "삭제된 물품"} (${(m.items && m.items.location) || "-"}) — ${m.note}</li>`
+                )
+                .join("")
+        }
+      </ul>
+    `;
+  }
+
   addForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -363,6 +495,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     await renderStockTable();
     await renderHistoryTable();
     await renderSafetyTable();
+    await renderAuditChecklist();
+    await renderAuditSessions();
   }
 
   function showGate() {
