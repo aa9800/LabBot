@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LabBot – 연구실 물품 대여관리 시스템</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body data-page="login">
+  <header class="navbar">
+    <div class="navbar-inner">
+      <a class="logo" href="index.html">
+        <svg class="logo-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="1.6" />
+          <circle cx="12" cy="12" r="2" fill="currentColor" />
+          <path d="M12 2V5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M12 19V22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M2 12H5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M19 12H22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        <span class="logo-text">LabBot</span>
+        <span class="logo-tag">AI VISION</span>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" data-nav="home">홈</a>
+        <a href="items.html" data-nav="items">물품목록</a>
+        <a href="chatbot.html" data-nav="chatbot">챗봇</a>
+        <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
+        <a href="login.html" data-nav="login">로그인</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- TODO: 실제 관리자 인증 플로우 연결 (지금은 admin.html로 바로 이동) -->
+  <a href="admin.html" class="admin-login-link">관리자 로그인</a>
+
+  <main class="auth-page">
+    <div class="auth-card">
+      <div class="scan-line"></div>
+      <h1 class="logo-large">LabBot</h1>
+      <p class="auth-subtitle">AI 비전 기반 연구실 물품 대여관리 시스템</p>
+
+      <p class="auth-error" id="loginError" style="display: none;"></p>
+
+      <form id="loginForm">
+        <label for="email">이메일</label>
+        <input type="email" id="email" name="email" placeholder="you@example.com" required />
+
+        <label for="password">비밀번호</label>
+        <input type="password" id="password" name="password" placeholder="••••••••" required />
+
+        <div class="auth-actions">
+          <button type="submit" id="loginBtn" class="btn btn-primary">로그인</button>
+          <a href="signup.html" id="signupLink" class="btn btn-secondary">회원가입</a>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/transitions.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/login.js"></script>
+</body>
+</html>

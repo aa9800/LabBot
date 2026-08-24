@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LabBot – 연구실 물품 대여관리 시스템</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body data-page="chatbot">
+  <header class="navbar">
+    <div class="navbar-inner">
+      <a class="logo" href="index.html">
+        <svg class="logo-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="1.6" />
+          <circle cx="12" cy="12" r="2" fill="currentColor" />
+          <path d="M12 2V5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M12 19V22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M2 12H5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M19 12H22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        <span class="logo-text">LabBot</span>
+        <span class="logo-tag">AI VISION</span>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" data-nav="home">홈</a>
+        <a href="items.html" data-nav="items">물품목록</a>
+        <a href="chatbot.html" data-nav="chatbot">챗봇</a>
+        <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
+        <a href="login.html" data-nav="login">로그인</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- TODO: 실제 관리자 인증 플로우 연결 (지금은 admin.html로 바로 이동) -->
+  <a href="admin.html" class="admin-login-link">관리자 로그인</a>
+
+  <main class="page chat-page">
+    <div class="chat-window">
+      <p class="chat-guide">🔎 이용규칙이 궁금하거나, 어떤 실험에 어떤 물품이 필요한지 물어보세요</p>
+
+      <!-- TODO: 메시지 목록을 대화 이력 데이터로 동적 렌더링 -->
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-message chat-message-bot">
+          <span class="chat-avatar">AI</span>
+          <span class="chat-bubble">안녕하세요! 무엇을 도와드릴까요?</span>
+        </div>
+      </div>
+
+      <form class="chat-input-bar" id="chatForm">
+        <input type="text" id="chatInput" placeholder="메시지를 입력하세요" autocomplete="off" />
+        <button type="submit" class="btn btn-primary">전송</button>
+      </form>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/transitions.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/chatbot.js"></script>
+</body>
+</html>

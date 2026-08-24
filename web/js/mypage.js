@@ -1,0 +1,106 @@
+// LabBot - 마이페이지 스크립트
+// TODO: Supabase 연동 후 로컬 대여 기록 대신 실제 사용자별 대여 데이터를 불러올 것
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const session = await window.LabBotAuth.requireLogin("mypage.html");
+  if (!session) return;
+
+  const OVERDUE_DAYS = 7;
+
+  const profileAvatar = document.getElementById("profileAvatar");
+  const profileName = document.getElementById("profileName");
+  const profileEmail = document.getElementById("profileEmail");
+  const profileRole = document.getElementById("profileRole");
+  const statActiveCount = document.getElementById("statActiveCount");
+  const statTotalCount = document.getElementById("statTotalCount");
+
+  const activeListEl = document.getElementById("activeRentalList");
+  const activeEmptyEl = document.getElementById("activeRentalEmpty");
+  const historyBodyEl = document.getElementById("rentalHistoryBody");
+  const historyEmptyEl = document.getElementById("rentalHistoryEmpty");
+
+  profileAvatar.textContent = session.name.trim().charAt(0).toUpperCase() || "?";
+  profileName.textContent = session.name;
+  profileEmail.textContent = session.email;
+  profileRole.textContent = session.role === "admin" ? "관리자" : "일반 사용자";
+
+  function formatDateTime(iso) {
+    return new Date(iso).toLocaleString("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function daysSince(iso) {
+    const diffMs = Date.now() - new Date(iso).getTime();
+    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  }
+
+  function renderActiveCard(rental) {
+    const elapsed = daysSince(rental.rentedAt);
+    const overdue = elapsed >= OVERDUE_DAYS;
+
+    const card = document.createElement("article");
+    card.className = `rental-card${overdue ? " rental-card-overdue" : ""}`;
+    card.innerHTML = `
+      <div class="rental-card-main">
+        <span class="category-tag">${rental.category}</span>
+        <h3 class="rental-card-name">${rental.itemName}</h3>
+        <span class="item-row-location">${rental.location}</span>
+      </div>
+      <div class="rental-card-meta">
+        <span class="rental-card-date">대여일 ${formatDateTime(rental.rentedAt)} · ${elapsed}일째</span>
+        ${
+          overdue
+            ? '<span class="badge badge-overdue"><span class="badge-dot"></span>반납 권장</span>'
+            : '<span class="badge badge-available"><span class="badge-dot"></span>대여중</span>'
+        }
+        <button type="button" class="btn btn-secondary btn-sm" data-return-item="${rental.itemId}">반납하기</button>
+      </div>
+    `;
+
+    card.querySelector("[data-return-item]").addEventListener("click", () => {
+      const targetItem = LAB_ITEMS.find((i) => i.id === rental.itemId);
+      if (targetItem) {
+        targetItem.available = Math.min(targetItem.available + 1, targetItem.total);
+        saveLabItems(LAB_ITEMS);
+      }
+      window.LabBotRentals.returnRentalRecord(rental.itemId);
+      renderAll();
+    });
+
+    return card;
+  }
+
+  function renderAll() {
+    const rentals = window.LabBotRentals.getRentalsByUser(session.email);
+    const active = rentals.filter((r) => r.status === "rented");
+    const history = rentals
+      .filter((r) => r.status === "returned")
+      .sort((a, b) => new Date(b.returnedAt) - new Date(a.returnedAt));
+
+    statActiveCount.textContent = active.length;
+    statTotalCount.textContent = rentals.length;
+
+    activeListEl.innerHTML = "";
+    active.forEach((rental) => activeListEl.appendChild(renderActiveCard(rental)));
+    activeEmptyEl.style.display = active.length === 0 ? "block" : "none";
+
+    historyBodyEl.innerHTML = history
+      .map(
+        (rental) => `
+        <tr>
+          <td>${rental.itemName}</td>
+          <td>${formatDateTime(rental.rentedAt)}</td>
+          <td>${formatDateTime(rental.returnedAt)}</td>
+        </tr>
+      `
+      )
+      .join("");
+    historyEmptyEl.style.display = history.length === 0 ? "block" : "none";
+  }
+
+  renderAll();
+});

@@ -15,6 +15,9 @@ web/dist/
 web/build/
 web/*.db
 
+# 정적 사이트라 빌드 도구 없이 Supabase 접속 정보를 여기서 관리 (config.example.js가 템플릿)
+web/js/config.js
+
 # OS/에디터
 .DS_Store
 Thumbs.db

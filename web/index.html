@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LabBot – 연구실 물품 대여관리 시스템</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body data-page="home">
+  <header class="navbar">
+    <div class="navbar-inner">
+      <a class="logo" href="index.html">
+        <svg class="logo-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="1.6" />
+          <circle cx="12" cy="12" r="2" fill="currentColor" />
+          <path d="M12 2V5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M12 19V22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M2 12H5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M19 12H22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        <span class="logo-text">LabBot</span>
+        <span class="logo-tag">AI VISION</span>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" data-nav="home">홈</a>
+        <a href="items.html" data-nav="items">물품목록</a>
+        <a href="chatbot.html" data-nav="chatbot">챗봇</a>
+        <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
+        <a href="login.html" data-nav="login">로그인</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- TODO: 실제 관리자 인증 플로우 연결 (지금은 admin.html로 바로 이동) -->
+  <a href="admin.html" class="admin-login-link">관리자 로그인</a>
+
+  <main class="page home-page">
+    <!-- 히어로 영역: 연구실 · AI 비전 컨셉을 살린 장식 (CSS/SVG 애니메이션) -->
+    <section class="hero">
+      <div class="hero-text">
+        <span class="hero-eyebrow">AI VISION LAB MANAGEMENT</span>
+        <h1 class="hero-title">연구실 물품,<br />카메라가 알아서 확인합니다</h1>
+        <p class="hero-desc">
+          AI 비전으로 대여·반납 상태를 자동으로 인식하고, 실시간 재고를 한눈에 확인하세요.
+        </p>
+        <div class="hero-actions">
+          <a href="items.html" class="btn btn-primary">물품 목록 보기</a>
+          <a href="chatbot.html" class="btn btn-secondary">챗봇에게 물어보기</a>
+        </div>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <div class="scan-frame">
+          <svg class="flask-illustration" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M85 20H115V68L146 148C152 164 140 180 123 180H77C60 180 48 164 54 148L85 68V20Z"
+              stroke="var(--accent)"
+              stroke-width="3"
+              fill="rgba(56,189,248,0.08)"
+            />
+            <path d="M78 15H122" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" />
+            <path d="M66 128H134" stroke="var(--accent)" stroke-width="2" opacity="0.45" />
+            <circle class="bubble" cx="92" cy="150" r="4" fill="var(--accent)" />
+            <circle class="bubble bubble-2" cx="112" cy="160" r="3" fill="var(--accent)" />
+            <circle class="bubble bubble-3" cx="102" cy="140" r="2.5" fill="var(--accent)" />
+          </svg>
+        </div>
+        <span class="particle particle-1"></span>
+        <span class="particle particle-2"></span>
+        <span class="particle particle-3"></span>
+      </div>
+    </section>
+
+    <!-- 이용 방법 3단계 -->
+    <section class="how-it-works">
+      <h2 class="section-title">이용 방법</h2>
+      <div class="steps-row">
+        <div class="step-card">
+          <span class="step-number">1</span>
+          <span class="step-icon">📦</span>
+          <h3 class="step-title">물품 선택</h3>
+          <p class="step-desc">물품목록에서 필요한 물품을 확인하고 선택하세요</p>
+        </div>
+        <span class="step-arrow" aria-hidden="true">→</span>
+        <div class="step-card">
+          <span class="step-number">2</span>
+          <span class="step-icon">📷</span>
+          <h3 class="step-title">AI 카메라 인식</h3>
+          <p class="step-desc">카메라 앞에 물품을 비추면 AI가 자동으로 인식해요</p>
+        </div>
+        <span class="step-arrow" aria-hidden="true">→</span>
+        <div class="step-card">
+          <span class="step-number">3</span>
+          <span class="step-icon">✅</span>
+          <h3 class="step-title">대여 완료</h3>
+          <p class="step-desc">인식이 끝나면 대여·반납 기록이 자동으로 저장돼요</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- TODO: 클릭 시 챗봇 플로팅 창을 여는 방식으로 바꿀 수도 있음 (지금은 chatbot.html로 이동) -->
+  <a href="chatbot.html" class="fab" aria-label="챗봇 열기">💬</a>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/transitions.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/nav.js"></script>
+</body>
+</html>

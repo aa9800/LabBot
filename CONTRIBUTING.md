@@ -45,7 +45,7 @@ git push          # 끝나면 바로
 
 ## Supabase 협업 방법 (DB 접속 공유)
 
-GitHub 초대와는 **완전히 별개**입니다. 코드는 git으로 공유하고, **데이터(DB)는 다 같이 같은 Supabase 프로젝트에 접속**해서 공유합니다. 그래서 `.env`(진짜 접속 정보)는 git에 올리지 않고, 각자 Supabase에 직접 로그인해서 값을 확인합니다.
+GitHub 초대와는 **완전히 별개**입니다. 코드는 git으로 공유하고, **데이터(DB)는 다 같이 같은 Supabase 프로젝트에 접속**해서 공유합니다. `web/`은 번들러 없는 순수 정적 사이트라 브라우저가 `.env`를 읽을 수 없어서, 대신 `web/js/config.js`(진짜 접속 정보, git에 올리지 않음)로 관리합니다.
 
 ### 프로젝트 소유자(지훈님)가 할 일 — 한 번만
 
@@ -58,7 +58,16 @@ GitHub 초대와는 **완전히 별개**입니다. 코드는 git으로 공유하
 1. 이메일로 온 초대 확인 → 수락 (Supabase 계정 없으면 이때 가입)
 2. 로그인 후 그 프로젝트 열기 → **Project Settings → API Keys**
 3. **"Publishable and secret API keys"** 탭에서 **Project URL**과 **Publishable key**(`sb_publishable_...`로 시작) 확인 — 이게 예전 이름 "anon key"와 같은 역할입니다
-4. `web/.env.example`을 복사해서 같은 폴더에 `web/.env`로 저장하고, 방금 확인한 값을 채워넣기 (`.env`는 git에 올라가지 않으니 그냥 로컬에 저장하면 됨)
+4. `web/js/config.example.js`를 복사해서 같은 폴더에 `web/js/config.js`로 저장하고, 방금 확인한 Project URL과 Publishable key를 채워넣기 (`config.js`는 git에 올라가지 않으니 그냥 로컬에 저장하면 됨. `web/`은 번들러 없는 정적 사이트라 브라우저가 `.env`를 읽지 못해서 `.env` 대신 이 방식을 씁니다)
+
+### 첫 관리자 계정 만들기
+
+회원가입으로 만든 계정은 전부 `role='user'`로 시작합니다(트리거가 자동 생성). 관리자 권한은 코드가 아니라 DB에서만 부여할 수 있게 일부러 막아뒀으므로, 첫 관리자는 Supabase 대시보드 → **SQL Editor**에서 직접 올려야 합니다:
+
+```sql
+update profiles set role = 'admin'
+where id = (select id from auth.users where email = '관리자로만들이메일@example.com');
+```
 
 ### 지켜야 할 것
 

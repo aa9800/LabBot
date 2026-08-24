@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LabBot – 연구실 물품 대여관리 시스템</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body data-page="admin">
+  <header class="navbar">
+    <div class="navbar-inner">
+      <a class="logo" href="index.html">
+        <svg class="logo-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="7.5" stroke="currentColor" stroke-width="1.6" />
+          <circle cx="12" cy="12" r="2" fill="currentColor" />
+          <path d="M12 2V5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M12 19V22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M2 12H5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <path d="M19 12H22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+        <span class="logo-text">LabBot</span>
+        <span class="logo-tag">AI VISION</span>
+      </a>
+      <nav class="nav-links">
+        <a href="index.html" data-nav="home">홈</a>
+        <a href="items.html" data-nav="items">물품목록</a>
+        <a href="chatbot.html" data-nav="chatbot">챗봇</a>
+        <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
+        <a href="login.html" data-nav="login">로그인</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- 관리자 로그인 게이트 -->
+  <main class="page" id="adminGate">
+    <div class="auth-page auth-page-inline">
+      <div class="auth-card">
+        <div class="scan-line"></div>
+        <h1 class="logo-large">관리자</h1>
+        <p class="auth-subtitle">관리자 계정으로 로그인하세요</p>
+
+        <p class="auth-error" id="adminLoginError" style="display: none;"></p>
+
+        <form id="adminLoginForm">
+          <label for="adminEmail">이메일</label>
+          <input type="email" id="adminEmail" name="adminEmail" placeholder="you@example.com" required />
+
+          <label for="adminPassword">비밀번호</label>
+          <input type="password" id="adminPassword" name="adminPassword" placeholder="••••••••" required />
+
+          <div class="auth-actions">
+            <button type="submit" class="btn btn-primary">관리자 로그인</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <!-- 관리자 패널 -->
+  <main class="page" id="adminPanel" style="display: none;">
+    <div class="page-header-row">
+      <div>
+        <h1 class="page-title">관리자</h1>
+        <p class="page-subtitle">재고 · 대여 이력 · 파손 신고를 한 곳에서 확인하세요</p>
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" id="adminLogoutBtn">로그아웃</button>
+    </div>
+
+    <div class="tabs">
+      <button type="button" class="tab-btn active" data-tab="stock">재고 · 물품 관리</button>
+      <button type="button" class="tab-btn" data-tab="history">대여·반납 이력</button>
+      <button type="button" class="tab-btn" data-tab="damage">파손 신고 목록</button>
+    </div>
+
+    <!-- 재고 · 물품 관리 -->
+    <section class="tab-panel active" id="tab-stock">
+      <form class="item-manage-form" id="itemAddForm">
+        <input type="text" id="newItemName" placeholder="물품명" required />
+        <select id="newItemCategory"></select>
+        <input type="text" id="newItemLocation" placeholder="위치" required />
+        <input type="number" id="newItemTotal" placeholder="총 수량" min="1" required />
+        <button type="submit" class="btn btn-primary btn-sm">물품 추가</button>
+      </form>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>물품명</th>
+              <th>카테고리</th>
+              <th>위치</th>
+              <th>대여가능</th>
+              <th>총 수량</th>
+              <th>작업</th>
+            </tr>
+          </thead>
+          <tbody id="stockTableBody">
+            <!-- js/admin.js에서 LAB_ITEMS 기준으로 렌더링 -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 대여·반납 이력 -->
+    <section class="tab-panel" id="tab-history">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>사용자</th>
+              <th>물품명</th>
+              <th>구분(대여/반납)</th>
+              <th>시각</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody">
+            <!-- js/admin.js에서 LabBotRentals 기준으로 렌더링 -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 파손 신고 목록 -->
+    <section class="tab-panel" id="tab-damage">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>물품명</th>
+              <th>신고시각</th>
+              <th>사진</th>
+              <th>AI 분석 결과</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- TODO: 파손 신고 데이터 + Gemini AI 분석 결과 렌더링 -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/supabase-client.js"></script>
+  <script src="js/transitions.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/nav.js"></script>
+  <script src="js/items-data.js"></script>
+  <script src="js/rentals.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>
