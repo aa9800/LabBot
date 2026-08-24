@@ -3,17 +3,17 @@ __pycache__/
 *.pyc
 *.pyo
 
-# SQLite 실행 데이터베이스 (seed.py가 자동으로 다시 만들어줌)
-web/labkeeper.db
-
-# 실행 중 자동 생성되는 QR 이미지 (ensure_qr_image가 그때그때 다시 만듦)
-web/app/static/qrcodes/
-
 # 문서 검토용 렌더링 잔여물 (PDF -> PNG 변환 중간 산출물, 소스가 아님)
 docs/_qa_*/
 
-# 웹은 로컬(labkeeper-web-local/)에서 따로 관리 — 이 저장소엔 안 들어가야 함
-/web/
+# 웹(web/) — 지훈님 코드. 비밀키/의존성 폴더는 절대 커밋하지 않음
+web/node_modules/
+web/.env
+web/.env.local
+web/.env.*.local
+web/dist/
+web/build/
+web/*.db
 
 # OS/에디터
 .DS_Store
