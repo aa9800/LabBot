@@ -15,13 +15,14 @@ robot-sim/     Raspbot 실물 도착 전 연습용 시뮬레이터 (라인트래
 
 | 문서 | 용도 |
 |---|---|
-| `docs/LabBot_기능요구사항.html` | **웹 개발 시작할 때 여기부터.** 데이터 모델·화면별 요구사항 정리 |
-| `docs/labbot_schema.sql` | Supabase SQL Editor에 붙여넣을 DB 스키마 (테이블+RLS 정책) |
+| `docs/LabBot_기능요구사항.html` | **웹 개발 시작할 때 여기부터.** 데이터 모델·기능 로직 정리 (최신본) |
+| `docs/labbot_schema.sql` | Supabase SQL Editor에 붙여넣을 DB 스키마 (테이블+RLS 정책, 최신본) |
 | `docs/LabKeeper_설계문서.html` | 전체 아키텍처, 로봇 연동, Safety 모듈 설계 (장기 참고용) |
 | `docs/LabKeeper_프로젝트계획서.html` | 일정, 역할분담, 예산 |
-| `docs/LabKeeper_웹기능명세서.html` | 웹 기능 상세 명세 |
 | `docs/LabKeeper_브리핑.html` | 프로젝트 쉬운 소개 자료 |
-| `docs/LabFlow_*.docx` | 안전관리 관련 기획 문서 (버전별 개정 이력) |
+| `docs/LabFlow_LabKeeper_실행현실화_기획서_v1.2.docx` | 안전관리 기획 최종본 (v1.0·v1.1은 v1.2에 통합되어 삭제됨) |
+
+옛 FastAPI 프로토타입(`labkeeper-web-local/`, git 미포함) 전용 문서인 `LabKeeper_웹기능명세서.html`은 그 폴더로 옮겼습니다.
 
 ## robot-sim 실행
 

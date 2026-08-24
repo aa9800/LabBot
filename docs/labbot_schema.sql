@@ -57,7 +57,9 @@ create table if not exists loans (
   borrowed_at timestamptz not null default now(),
   due_at timestamptz not null,
   returned_at timestamptz,
-  status text not null default '대여중' check (status in ('대여중', '반납완료'))
+  status text not null default '대여중' check (status in ('대여중', '반납완료')),
+  source text not null default 'manual' check (source in ('manual', 'chatbot'))
+  -- source: 물품목록에서 직접 신청('manual') vs 챗봇 추천 → 장바구니 → 일괄대여('chatbot')
 );
 
 create index if not exists idx_loans_user on loans(user_id);

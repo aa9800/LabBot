@@ -100,7 +100,7 @@ footer{ padding:26px 0 10px; border-top:1px solid var(--border-soft); font-famil
         <tbody>
           <tr><td><strong>profiles</strong></td><td>id, name, role</td><td>role: user | admin</td></tr>
           <tr><td><strong>items</strong></td><td>id, name, category, location, qr_code, total_qty, available_qty, status</td><td>status: 정상|고장|폐기</td></tr>
-          <tr><td><strong>loans</strong></td><td>id, user_id, item_id, borrowed_at, due_at, returned_at, status</td><td>status: 대여중|반납완료</td></tr>
+          <tr><td><strong>loans</strong></td><td>id, user_id, item_id, borrowed_at, due_at, returned_at, status, source</td><td>status: 대여중|반납완료 / source: manual|chatbot</td></tr>
           <tr><td><strong>audit_sessions</strong></td><td>id, performed_by, started_at, finished_at, scanned_count</td><td></td></tr>
           <tr><td><strong>audit_mismatches</strong></td><td>id, session_id, item_id, note</td><td></td></tr>
           <tr><td><strong>safety_events</strong></td><td>id, rule_id, severity, status, source, note, detected_at, assignee_id, due_at, resolution_note, resolved_at</td><td></td></tr>
