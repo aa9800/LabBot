@@ -42,8 +42,11 @@
       <div class="search-box">
         <input type="text" id="itemSearch" placeholder="물품 이름으로 검색" autocomplete="off" />
       </div>
+      <select id="itemLocationFilter" class="location-filter-select">
+        <option value="all">전체 위치</option>
+        <!-- js/items.js에서 실제 등록된 위치 목록으로 채움 -->
+      </select>
       <div class="category-filters" id="categoryFilters">
-        <!-- TODO: 카테고리 목록도 실제 데이터 기준으로 동적 생성 가능 (지금은 js/items-data.js 기준) -->
         <button type="button" class="category-filter-btn active" data-category="all">전체</button>
         <button type="button" class="category-filter-btn" data-category="optical">광학기기</button>
         <button type="button" class="category-filter-btn" data-category="separation">분리기기</button>
@@ -53,7 +56,6 @@
       </div>
     </div>
 
-    <!-- TODO: 아래 목록은 Supabase 물품 테이블 데이터로 동적 렌더링될 예정 (지금은 js/items-data.js 예시 데이터) -->
     <section class="item-list" id="itemList"></section>
     <p class="item-empty-state" id="itemEmptyState">검색 결과가 없습니다.</p>
   </main>

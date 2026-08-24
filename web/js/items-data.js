@@ -1,8 +1,5 @@
-// LabBot - 물품 목록 데이터
-// TODO: Supabase 물품 테이블에서 실시간으로 불러오는 방식으로 교체할 것
-// (지금은 localStorage에 저장된 데이터를 사용하고, 없으면 아래 기본 예시 데이터로 초기화)
-
-const LAB_ITEMS_STORAGE_KEY = "labbot_items";
+// LabBot - 물품 데이터 (Supabase items 테이블 연동)
+// 등록/검색/재고수정/삭제 규칙은 web/docs/labbot_schema.sql의 items 테이블 + 제약조건이 최종 근거.
 
 const LAB_CATEGORIES = [
   { key: "all", label: "전체" },
@@ -13,31 +10,97 @@ const LAB_CATEGORIES = [
   { key: "safety", label: "안전장비" },
 ];
 
-const LAB_ITEMS_DEFAULT = [
-  { id: "mic-a", name: "현미경 A", category: "optical", categoryLabel: "광학기기", location: "3층 실험실 A", available: 2, total: 3 },
-  { id: "mic-b", name: "형광현미경 B", category: "optical", categoryLabel: "광학기기", location: "3층 실험실 A", available: 0, total: 1 },
-  { id: "centrifuge", name: "원심분리기", category: "separation", categoryLabel: "분리기기", location: "2층 실험실 B", available: 0, total: 1 },
-  { id: "shaker", name: "진탕배양기", category: "separation", categoryLabel: "분리기기", location: "2층 실험실 B", available: 1, total: 2 },
-  { id: "scale", name: "전자저울", category: "measurement", categoryLabel: "측정기기", location: "2층 실험실 C", available: 3, total: 3 },
-  { id: "ph-meter", name: "pH미터", category: "measurement", categoryLabel: "측정기기", location: "2층 실험실 C", available: 1, total: 2 },
-  { id: "pipette-set", name: "피펫 세트", category: "consumable", categoryLabel: "소모품", location: "3층 실험실 A", available: 5, total: 6 },
-  { id: "test-tube-set", name: "시험관 세트", category: "consumable", categoryLabel: "소모품", location: "3층 실험실 A", available: 8, total: 10 },
-  { id: "goggles", name: "안전고글 세트", category: "safety", categoryLabel: "안전장비", location: "1층 안전관리실", available: 10, total: 10 },
-  { id: "lab-gown", name: "실험용 가운", category: "safety", categoryLabel: "안전장비", location: "1층 안전관리실", available: 4, total: 8 },
-];
+function categoryLabelOf(key) {
+  const found = LAB_CATEGORIES.find((c) => c.key === key);
+  return found ? found.label : key;
+}
 
-function loadLabItems() {
-  try {
-    const raw = localStorage.getItem(LAB_ITEMS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    // 저장된 데이터가 손상된 경우 기본값으로 대체
+// 검색: 이름 부분일치 + category/location 필터를 동시에(AND) 적용
+async function searchItems({ name = "", category = "all", location = "all" } = {}) {
+  let query = supabaseClient.from("items").select("*").order("name", { ascending: true });
+
+  const trimmedName = name.trim();
+  if (trimmedName) {
+    query = query.ilike("name", `%${trimmedName}%`);
   }
-  return LAB_ITEMS_DEFAULT.map((item) => ({ ...item }));
+  if (category && category !== "all") {
+    query = query.eq("category", category);
+  }
+  if (location && location !== "all") {
+    query = query.eq("location", location);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return data.map((item) => ({ ...item, categoryLabel: categoryLabelOf(item.category) }));
 }
 
-function saveLabItems(items) {
-  localStorage.setItem(LAB_ITEMS_STORAGE_KEY, JSON.stringify(items));
+async function fetchItemById(id) {
+  const { data, error } = await supabaseClient.from("items").select("*").eq("id", id).single();
+  if (error) throw error;
+  return { ...data, categoryLabel: categoryLabelOf(data.category) };
 }
 
-let LAB_ITEMS = loadLabItems();
+// 검색/필터용 위치 목록 (현재 등록된 물품 기준 중복제거)
+async function fetchLocations() {
+  const { data, error } = await supabaseClient.from("items").select("location");
+  if (error) throw error;
+  return [...new Set(data.map((row) => row.location))].sort();
+}
+
+// 등록: qr_code는 DB 트리거가 서버에서 랜덤 발급, available_qty는 total_qty로 시작
+async function createItem({ name, category, location, total_qty }) {
+  const { data, error } = await supabaseClient
+    .from("items")
+    .insert({ name, category, location, total_qty, available_qty: total_qty })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return { ...data, categoryLabel: categoryLabelOf(data.category) };
+}
+
+// 재고 수정: available_qty <= total_qty를 항상 유지 (DB CHECK 제약이 최종 방어선)
+async function updateItemStock(id, { available_qty, total_qty }) {
+  if (available_qty > total_qty) {
+    throw new Error("대여가능 수량은 총 수량을 넘을 수 없습니다.");
+  }
+
+  const { data, error } = await supabaseClient
+    .from("items")
+    .update({ available_qty, total_qty })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === "23514") {
+      throw new Error("대여가능 수량은 총 수량을 넘을 수 없습니다.");
+    }
+    throw error;
+  }
+  return { ...data, categoryLabel: categoryLabelOf(data.category) };
+}
+
+// 삭제: 해당 물품에 대여 이력(loans)이 있으면 DB가 FK 제약으로 삭제를 막는다(이력 보존)
+async function deleteItem(id) {
+  const { error } = await supabaseClient.from("items").delete().eq("id", id);
+
+  if (error) {
+    if (error.code === "23503") {
+      throw new Error("대여 이력이 있는 물품은 삭제할 수 없습니다.");
+    }
+    throw error;
+  }
+}
+
+window.LabBotItems = {
+  searchItems,
+  fetchItemById,
+  fetchLocations,
+  createItem,
+  updateItemStock,
+  deleteItem,
+  categoryLabelOf,
+};

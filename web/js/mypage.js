@@ -61,14 +61,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       </div>
     `;
 
-    card.querySelector("[data-return-item]").addEventListener("click", () => {
-      const targetItem = LAB_ITEMS.find((i) => i.id === rental.itemId);
-      if (targetItem) {
-        targetItem.available = Math.min(targetItem.available + 1, targetItem.total);
-        saveLabItems(LAB_ITEMS);
+    card.querySelector("[data-return-item]").addEventListener("click", async (e) => {
+      const button = e.currentTarget;
+      button.disabled = true;
+
+      try {
+        const targetItem = await window.LabBotItems.fetchItemById(rental.itemId);
+        await window.LabBotItems.updateItemStock(targetItem.id, {
+          available_qty: Math.min(targetItem.available_qty + 1, targetItem.total_qty),
+          total_qty: targetItem.total_qty,
+        });
+        window.LabBotRentals.returnRentalRecord(rental.itemId);
+        renderAll();
+      } catch (err) {
+        alert(err.message || "반납 처리에 실패했습니다.");
+        button.disabled = false;
       }
-      window.LabBotRentals.returnRentalRecord(rental.itemId);
-      renderAll();
     });
 
     return card;

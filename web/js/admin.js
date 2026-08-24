@@ -1,5 +1,5 @@
-// LabBot - 관리자 화면 스크립트
-// TODO: 대여·반납 이력 / 파손 신고 목록은 Supabase 연동 후 실제 데이터로 렌더링할 것
+// LabBot - 관리자 화면 스크립트 (Supabase items 테이블 연동)
+// TODO: 파손 신고 목록은 Supabase 연동 후 실제 데이터로 렌더링할 것
 
 document.addEventListener("DOMContentLoaded", async () => {
   const gate = document.getElementById("adminGate");
@@ -16,57 +16,85 @@ document.addEventListener("DOMContentLoaded", async () => {
   const stockTableBody = document.getElementById("stockTableBody");
   const historyTableBody = document.getElementById("historyTableBody");
 
-  function categoryLabelOf(key) {
-    const found = LAB_CATEGORIES.find((c) => c.key === key);
-    return found ? found.label : key;
-  }
-
   function renderCategoryOptions() {
     categorySelect.innerHTML = LAB_CATEGORIES.filter((c) => c.key !== "all")
       .map((c) => `<option value="${c.key}">${c.label}</option>`)
       .join("");
   }
 
-  function renderStockTable() {
+  async function loadAllItems() {
+    return window.LabBotItems.searchItems({});
+  }
+
+  async function renderStockTable() {
+    let items;
+    try {
+      items = await loadAllItems();
+    } catch (err) {
+      alert("물품 목록을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
     stockTableBody.innerHTML = "";
 
-    LAB_ITEMS.forEach((item) => {
+    items.forEach((item) => {
       const row = document.createElement("tr");
       row.innerHTML = `
         <td>${item.name}</td>
-        <td>${categoryLabelOf(item.category)}</td>
+        <td>${item.categoryLabel}</td>
         <td>${item.location}</td>
-        <td><input type="number" class="stock-input" min="0" value="${item.available}" data-field="available" /></td>
-        <td><input type="number" class="stock-input" min="0" value="${item.total}" data-field="total" /></td>
+        <td class="mono">${item.qr_code}</td>
+        <td><input type="number" class="stock-input" min="0" value="${item.available_qty}" data-field="available" /></td>
+        <td><input type="number" class="stock-input" min="0" value="${item.total_qty}" data-field="total" /></td>
         <td class="stock-actions">
           <button type="button" class="btn btn-secondary btn-sm" data-action="save">저장</button>
           <button type="button" class="btn btn-danger btn-sm" data-action="delete">삭제</button>
         </td>
       `;
 
-      row.querySelector('[data-action="save"]').addEventListener("click", () => {
+      row.querySelector('[data-action="save"]').addEventListener("click", async (e) => {
+        const button = e.currentTarget;
         const availableInput = row.querySelector('[data-field="available"]');
         const totalInput = row.querySelector('[data-field="total"]');
 
-        const available = Number(availableInput.value);
-        const total = Number(totalInput.value);
+        const available_qty = Number(availableInput.value);
+        const total_qty = Number(totalInput.value);
 
-        if (!Number.isFinite(available) || !Number.isFinite(total) || available < 0 || total < 0) {
+        if (
+          !Number.isFinite(available_qty) ||
+          !Number.isFinite(total_qty) ||
+          available_qty < 0 ||
+          total_qty < 0
+        ) {
           alert("재고 수량은 0 이상의 숫자여야 합니다.");
           return;
         }
 
-        item.available = Math.min(available, total);
-        item.total = total;
-        availableInput.value = item.available;
-        saveLabItems(LAB_ITEMS);
+        if (available_qty > total_qty) {
+          alert("대여가능 수량은 총 수량을 넘을 수 없습니다.");
+          return;
+        }
+
+        button.disabled = true;
+        try {
+          await window.LabBotItems.updateItemStock(item.id, { available_qty, total_qty });
+        } catch (err) {
+          alert(err.message || "재고 수정에 실패했습니다.");
+        } finally {
+          button.disabled = false;
+        }
+        await renderStockTable();
       });
 
-      row.querySelector('[data-action="delete"]').addEventListener("click", () => {
+      row.querySelector('[data-action="delete"]').addEventListener("click", async () => {
         if (!confirm(`"${item.name}"을(를) 삭제하시겠습니까?`)) return;
-        LAB_ITEMS = LAB_ITEMS.filter((i) => i.id !== item.id);
-        saveLabItems(LAB_ITEMS);
-        renderStockTable();
+
+        try {
+          await window.LabBotItems.deleteItem(item.id);
+          await renderStockTable();
+        } catch (err) {
+          alert(err.message || "삭제에 실패했습니다.");
+        }
       });
 
       stockTableBody.appendChild(row);
@@ -100,32 +128,31 @@ document.addEventListener("DOMContentLoaded", async () => {
       .join("");
   }
 
-  addForm.addEventListener("submit", (e) => {
+  addForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const name = document.getElementById("newItemName").value.trim();
     const category = categorySelect.value;
     const location = document.getElementById("newItemLocation").value.trim();
-    const total = Number(document.getElementById("newItemTotal").value);
+    const total_qty = Number(document.getElementById("newItemTotal").value);
 
-    if (!name || !location || !Number.isFinite(total) || total < 1) {
+    if (!name || !location || !Number.isFinite(total_qty) || total_qty < 1) {
       alert("모든 항목을 올바르게 입력해주세요.");
       return;
     }
 
-    LAB_ITEMS.push({
-      id: `item-${Date.now()}`,
-      name,
-      category,
-      categoryLabel: categoryLabelOf(category),
-      location,
-      available: total,
-      total,
-    });
+    const submitBtn = addForm.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
 
-    saveLabItems(LAB_ITEMS);
-    renderStockTable();
-    addForm.reset();
+    try {
+      await window.LabBotItems.createItem({ name, category, location, total_qty });
+      addForm.reset();
+      await renderStockTable();
+    } catch (err) {
+      alert("물품 등록에 실패했습니다: " + (err.message || err));
+    } finally {
+      submitBtn.disabled = false;
+    }
   });
 
   tabButtons.forEach((btn) => {
@@ -140,11 +167,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
-  function showPanel() {
+  async function showPanel() {
     gate.style.display = "none";
     panel.style.display = "block";
     renderCategoryOptions();
-    renderStockTable();
+    await renderStockTable();
     renderHistoryTable();
   }
 
@@ -176,7 +203,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    showPanel();
+    await showPanel();
   });
 
   logoutBtn.addEventListener("click", async () => {
@@ -190,7 +217,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const session = await window.LabBotAuth.getSession();
   if (session && session.role === "admin") {
-    showPanel();
+    await showPanel();
   } else {
     showGate();
   }

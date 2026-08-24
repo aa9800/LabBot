@@ -195,3 +195,43 @@ create policy "damage_insert_own" on damage_reports
 -- service_role 키는 RLS를 통째로 우회하므로 위 정책과 무관하게 항상 쓸 수 있다.
 -- 단, 이 키는 절대 프론트엔드(JS) 코드에 넣으면 안 되고, 로봇 쪽 서버/스크립트에만 둔다.
 -- =============================================================
+
+-- =============================================================
+-- 7. items 물품관리 보강 — QR 코드 서버 발급 + 재고 정합성
+--    이미 위 CREATE TABLE을 한 번 실행한 프로젝트에도 안전하게 다시 실행 가능.
+-- =============================================================
+
+-- qr_code는 클라이언트가 정하지 않는다 — INSERT할 때마다 서버(DB)가 항상 새로 발급한다.
+create or replace function public.generate_item_qr_code()
+returns text as $$
+  select 'LB-' || upper(substr(md5(random()::text || clock_timestamp()::text), 1, 8));
+$$ language sql volatile;
+
+create or replace function public.items_set_qr_code()
+returns trigger as $$
+begin
+  new.qr_code := public.generate_item_qr_code();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_items_set_qr_code on items;
+create trigger trg_items_set_qr_code
+  before insert on items
+  for each row execute function public.items_set_qr_code();
+
+-- available_qty는 total_qty를 절대 넘을 수 없다 (등록/수정 어느 경로로 와도 여기서 최종 차단)
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'items_available_le_total'
+  ) then
+    alter table items
+      add constraint items_available_le_total check (available_qty <= total_qty);
+  end if;
+end $$;
+
+-- 참고: loans.item_id가 items(id)를 참조할 때 ON DELETE를 지정하지 않았으므로
+-- (기본값 NO ACTION) 대여 이력이 있는 물품은 삭제 시 DB가 자동으로 막는다
+-- (foreign_key_violation, 에러코드 23503). 프론트엔드는 이 에러를 잡아서
+-- "대여 이력이 있어 삭제할 수 없습니다" 안내만 보여주면 된다 (web/js/items-data.js 참고).
