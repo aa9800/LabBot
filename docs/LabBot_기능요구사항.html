@@ -85,6 +85,7 @@ footer{ padding:26px 0 10px; border-top:1px solid var(--border-soft); font-famil
       <li><a href="#audit">재고 실사</a></li>
       <li><a href="#safety">Safety 이벤트</a></li>
       <li><a href="#damage">파손 신고</a></li>
+      <li><a href="#chatbot">챗봇 (실험 물품 추천)</a></li>
       <li><a href="#robot">로봇 연동 참고</a></li>
       <li><a href="#priority">우선순위</a></li>
     </ol>
@@ -188,8 +189,30 @@ footer{ padding:26px 0 10px; border-top:1px solid var(--border-soft); font-famil
     </ul>
   </section>
 
+  <section id="chatbot">
+    <h2><span class="n">08</span> 챗봇 (실험 물품 추천)</h2>
+    <p class="section-sub">단순 Q&amp;A가 아니라 <strong>실험 설명 → 필요 물품 추천 → 장바구니 → 일괄 대여</strong>까지 이어지는 기능.</p>
+    <ol class="plain">
+      <li>사용자가 하려는 실험/작업을 자연어로 입력 (예: "LED 회로 실험하려는데 뭐 필요해?")</li>
+      <li>Gemini가 입력을 해석해 필요한 물품 카테고리/키워드를 추론</li>
+      <li>그 키워드로 <strong>실제 <code>items</code> 테이블을 검색</strong> — Gemini가 지어낸 물품이 아니라 실재 재고 중에서만 추천</li>
+      <li>사용자가 추천 목록에서 원하는 항목을 선택 → 장바구니에 담기 (서버에 저장할 필요 없는 임시 상태)</li>
+      <li>"일괄 대여 신청" → 선택된 물품들에 대해 <code>loans</code>를 한 번에 여러 건 생성 (4장의 대여 로직을 항목별로 반복 적용)</li>
+    </ol>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>규칙</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td>추천 범위</td><td>DB에 실제 존재하고 <code>available_qty &gt; 0</code>인 물품만 추천</td></tr>
+          <tr><td>재고 없는 경우</td><td>추천에는 표시하되 "재고 없음"으로 별도 표시, 장바구니 담기 비활성화</td></tr>
+          <tr><td>재고 확정</td><td>Gemini는 추천만 하고, 실제 대여 가능 여부/재고 차감은 항상 서버(DB) 기준으로 판단</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <section id="robot">
-    <h2><span class="n">08</span> 로봇 연동 참고 (지금 안 만들어도 됨)</h2>
+    <h2><span class="n">09</span> 로봇 연동 참고 (지금 안 만들어도 됨)</h2>
     <p class="section-sub">나중에 로봇이 붙을 때 이 모양으로 맞추면 웹 수정이 최소화된다는 참고용.</p>
     <div class="table-scroll">
       <table>
@@ -204,7 +227,7 @@ footer{ padding:26px 0 10px; border-top:1px solid var(--border-soft); font-famil
   </section>
 
   <section id="priority">
-    <h2><span class="n">09</span> 우선순위</h2>
+    <h2><span class="n">10</span> 우선순위</h2>
     <div class="table-scroll">
       <table>
         <thead><tr><th>항목</th><th>시점</th></tr></thead>
@@ -213,6 +236,7 @@ footer{ padding:26px 0 10px; border-top:1px solid var(--border-soft); font-famil
           <tr><td>audit_sessions / audit_mismatches</td><td><span class="pill now">지금</span></td></tr>
           <tr><td>safety_events / action_logs</td><td><span class="pill next">다음</span> (테이블만 먼저 만들어둬도 됨)</td></tr>
           <tr><td>damage_reports + AI 분석</td><td><span class="pill next">다음</span></td></tr>
+          <tr><td>챗봇 물품 추천 + 장바구니</td><td><span class="pill next">다음</span> (Gemini 연동 필요)</td></tr>
           <tr><td>로봇 연동 API</td><td><span class="pill next">다음</span></td></tr>
         </tbody>
       </table>
