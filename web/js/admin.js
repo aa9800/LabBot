@@ -105,14 +105,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  function renderHistoryTable() {
-    const rentals = window.LabBotRentals.loadRentals();
+  async function renderHistoryTable() {
+    let loans;
+    try {
+      loans = await window.LabBotRentals.fetchAllLoans();
+    } catch (err) {
+      alert("대여 이력을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
     const rows = [];
 
-    rentals.forEach((r) => {
-      rows.push({ user: r.userName, item: r.itemName, type: "대여", time: r.rentedAt });
-      if (r.returnedAt) {
-        rows.push({ user: r.userName, item: r.itemName, type: "반납", time: r.returnedAt });
+    loans.forEach((loan) => {
+      const userName = (loan.profiles && loan.profiles.name) || "알 수 없음";
+      const itemName = (loan.items && loan.items.name) || "삭제된 물품";
+      const overdue = window.LabBotRentals.isOverdue(loan);
+
+      rows.push({
+        user: userName,
+        item: itemName,
+        type: overdue ? "대여중(연체)" : "대여",
+        badgeKey: overdue ? "overdue" : "inuse",
+        time: loan.borrowed_at,
+      });
+      if (loan.returned_at) {
+        rows.push({ user: userName, item: itemName, type: "반납", badgeKey: "available", time: loan.returned_at });
       }
     });
 
@@ -124,7 +141,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         <tr>
           <td>${row.user}</td>
           <td>${row.item}</td>
-          <td><span class="badge badge-${row.type === "대여" ? "inuse" : "available"}"><span class="badge-dot"></span>${row.type}</span></td>
+          <td><span class="badge badge-${row.badgeKey}"><span class="badge-dot"></span>${row.type}</span></td>
           <td>${new Date(row.time).toLocaleString("ko-KR")}</td>
         </tr>
       `
@@ -283,7 +300,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     panel.style.display = "block";
     renderCategoryOptions();
     await renderStockTable();
-    renderHistoryTable();
+    await renderHistoryTable();
     await renderSafetyTable();
   }
 

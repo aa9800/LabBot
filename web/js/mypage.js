@@ -1,11 +1,8 @@
-// LabBot - 마이페이지 스크립트
-// TODO: Supabase 연동 후 로컬 대여 기록 대신 실제 사용자별 대여 데이터를 불러올 것
+// LabBot - 마이페이지 스크립트 (Supabase loans 테이블 연동)
 
 document.addEventListener("DOMContentLoaded", async () => {
   const session = await window.LabBotAuth.requireLogin("mypage.html");
   if (!session) return;
-
-  const OVERDUE_DAYS = 7;
 
   const profileAvatar = document.getElementById("profileAvatar");
   const profileName = document.getElementById("profileName");
@@ -38,41 +35,37 @@ document.addEventListener("DOMContentLoaded", async () => {
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
   }
 
-  function renderActiveCard(rental) {
-    const elapsed = daysSince(rental.rentedAt);
-    const overdue = elapsed >= OVERDUE_DAYS;
+  function renderActiveCard(loan) {
+    const item = loan.items;
+    const overdue = window.LabBotRentals.isOverdue(loan);
+    const elapsed = daysSince(loan.borrowed_at);
 
     const card = document.createElement("article");
     card.className = `rental-card${overdue ? " rental-card-overdue" : ""}`;
     card.innerHTML = `
       <div class="rental-card-main">
-        <span class="category-tag">${rental.category}</span>
-        <h3 class="rental-card-name">${rental.itemName}</h3>
-        <span class="item-row-location">${rental.location}</span>
+        <span class="category-tag">${window.LabBotItems.categoryLabelOf(item.category)}</span>
+        <h3 class="rental-card-name">${item.name}</h3>
+        <span class="item-row-location">${item.location}</span>
       </div>
       <div class="rental-card-meta">
-        <span class="rental-card-date">대여일 ${formatDateTime(rental.rentedAt)} · ${elapsed}일째</span>
+        <span class="rental-card-date">대여일 ${formatDateTime(loan.borrowed_at)} · ${elapsed}일째 · 반납예정 ${formatDateTime(loan.due_at)}</span>
         ${
           overdue
-            ? '<span class="badge badge-overdue"><span class="badge-dot"></span>반납 권장</span>'
+            ? '<span class="badge badge-overdue"><span class="badge-dot"></span>연체</span>'
             : '<span class="badge badge-available"><span class="badge-dot"></span>대여중</span>'
         }
-        <button type="button" class="btn btn-secondary btn-sm" data-return-item="${rental.itemId}">반납하기</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-return-loan="${loan.id}">반납하기</button>
       </div>
     `;
 
-    card.querySelector("[data-return-item]").addEventListener("click", async (e) => {
+    card.querySelector("[data-return-loan]").addEventListener("click", async (e) => {
       const button = e.currentTarget;
       button.disabled = true;
 
       try {
-        const targetItem = await window.LabBotItems.fetchItemById(rental.itemId);
-        await window.LabBotItems.updateItemStock(targetItem.id, {
-          available_qty: Math.min(targetItem.available_qty + 1, targetItem.total_qty),
-          total_qty: targetItem.total_qty,
-        });
-        window.LabBotRentals.returnRentalRecord(rental.itemId);
-        renderAll();
+        await window.LabBotRentals.returnLoan(loan.id);
+        await renderAll();
       } catch (err) {
         alert(err.message || "반납 처리에 실패했습니다.");
         button.disabled = false;
@@ -82,27 +75,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     return card;
   }
 
-  function renderAll() {
-    const rentals = window.LabBotRentals.getRentalsByUser(session.email);
-    const active = rentals.filter((r) => r.status === "rented");
-    const history = rentals
-      .filter((r) => r.status === "returned")
-      .sort((a, b) => new Date(b.returnedAt) - new Date(a.returnedAt));
+  async function renderAll() {
+    let loans;
+    try {
+      loans = await window.LabBotRentals.fetchMyLoans(session.id);
+    } catch (err) {
+      alert("대여 목록을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    const active = loans.filter((l) => l.status === "대여중");
+    const history = loans
+      .filter((l) => l.status === "반납완료")
+      .sort((a, b) => new Date(b.returned_at) - new Date(a.returned_at));
 
     statActiveCount.textContent = active.length;
-    statTotalCount.textContent = rentals.length;
+    statTotalCount.textContent = loans.length;
 
     activeListEl.innerHTML = "";
-    active.forEach((rental) => activeListEl.appendChild(renderActiveCard(rental)));
+    active.forEach((loan) => activeListEl.appendChild(renderActiveCard(loan)));
     activeEmptyEl.style.display = active.length === 0 ? "block" : "none";
 
     historyBodyEl.innerHTML = history
       .map(
-        (rental) => `
+        (loan) => `
         <tr>
-          <td>${rental.itemName}</td>
-          <td>${formatDateTime(rental.rentedAt)}</td>
-          <td>${formatDateTime(rental.returnedAt)}</td>
+          <td>${loan.items.name}</td>
+          <td>${formatDateTime(loan.borrowed_at)}</td>
+          <td>${formatDateTime(loan.returned_at)}</td>
         </tr>
       `
       )
@@ -110,5 +110,5 @@ document.addEventListener("DOMContentLoaded", async () => {
     historyEmptyEl.style.display = history.length === 0 ? "block" : "none";
   }
 
-  renderAll();
+  await renderAll();
 });
