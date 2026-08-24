@@ -235,3 +235,48 @@ end $$;
 -- (기본값 NO ACTION) 대여 이력이 있는 물품은 삭제 시 DB가 자동으로 막는다
 -- (foreign_key_violation, 에러코드 23503). 프론트엔드는 이 에러를 잡아서
 -- "대여 이력이 있어 삭제할 수 없습니다" 안내만 보여주면 된다 (web/js/items-data.js 참고).
+
+-- =============================================================
+-- 8. loans 대여/반납 보강 — 반납예정일 기본값 + 재고 증감 서버 처리
+--    이미 위 CREATE TABLE을 한 번 실행한 프로젝트에도 안전하게 다시 실행 가능.
+--    "연체"는 여기서 컬럼으로 저장하지 않는다 — 조회 시점에 매번
+--    (returned_at is null and now() > due_at)로 계산하는 파생값이다
+--    (web/js/rentals.js의 isOverdue 참고).
+-- =============================================================
+
+-- due_at을 클라이언트가 안 넘기면 서버가 "오늘 + 7일"을 기본값으로 채운다.
+alter table loans alter column due_at set default (now() + interval '7 days');
+
+-- 대여(loans row 생성) 시 해당 물품의 available_qty를 서버가 직접 -1 한다.
+-- items.available_qty >= 0 제약(기존 CHECK)이 있어서, 재고가 없는데 동시에
+-- 대여가 몰리는 경쟁 상황이 와도 여기서 막히고 loans insert 자체가 롤백된다.
+-- security definer 필수: items 쓰기는 관리자만 허용하는 RLS가 걸려 있어서,
+-- 일반 사용자 권한으로 트리거가 돌면 이 UPDATE가 조용히 0건 적용되고 만다.
+create or replace function public.loans_decrement_stock()
+returns trigger as $fn$
+begin
+  update items set available_qty = available_qty - 1 where id = new.item_id;
+  return new;
+end;
+$fn$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists trg_loans_decrement_stock on loans;
+create trigger trg_loans_decrement_stock
+  after insert on loans
+  for each row execute function public.loans_decrement_stock();
+
+-- 반납(status: 대여중 -> 반납완료) 시 서버가 available_qty를 +1 한다. (역시 security definer 필수)
+create or replace function public.loans_increment_stock()
+returns trigger as $fn$
+begin
+  if old.status = '대여중' and new.status = '반납완료' then
+    update items set available_qty = available_qty + 1 where id = new.item_id;
+  end if;
+  return new;
+end;
+$fn$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists trg_loans_increment_stock on loans;
+create trigger trg_loans_increment_stock
+  after update on loans
+  for each row execute function public.loans_increment_stock();

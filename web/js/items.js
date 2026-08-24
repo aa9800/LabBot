@@ -1,5 +1,6 @@
 // LabBot - 물품목록 페이지 스크립트 (Supabase items 테이블 연동)
-// TODO: "대여하기"/"반납하기" 클릭 시 AI 비전 확인 절차를 추가로 연결할 것
+// TODO: "대여하기" 클릭 시 AI 비전 확인 절차를 추가로 연결할 것
+// 반납은 개별 대여 건(loans) 단위라 여기가 아니라 mypage.html "내 대여 목록"에서 처리한다.
 
 document.addEventListener("DOMContentLoaded", async () => {
   const session = await window.LabBotAuth.requireLogin("items.html");
@@ -16,8 +17,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function statusOf(item) {
     return item.available_qty > 0
-      ? { key: "available", label: "대여가능", buttonLabel: "대여하기", buttonClass: "btn-primary" }
-      : { key: "inuse", label: "대여중", buttonLabel: "반납하기", buttonClass: "btn-secondary" };
+      ? { key: "available", label: "대여가능" }
+      : { key: "inuse", label: "대여중" };
   }
 
   function renderRow(item) {
@@ -25,6 +26,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     const row = document.createElement("article");
     row.className = "item-row";
     row.dataset.category = item.category;
+
+    const actionHtml =
+      status.key === "available"
+        ? `<button type="button" class="btn btn-primary btn-sm">대여하기</button>`
+        : `<button type="button" class="btn btn-secondary btn-sm" disabled>대여불가</button>`;
 
     row.innerHTML = `
       <div class="item-row-main">
@@ -35,35 +41,25 @@ document.addEventListener("DOMContentLoaded", async () => {
       <div class="item-row-meta">
         <span class="stock-count">재고 ${item.available_qty}/${item.total_qty}</span>
         <span class="badge badge-${status.key}"><span class="badge-dot"></span>${status.label}</span>
-        <button type="button" class="btn ${status.buttonClass} btn-sm">${status.buttonLabel}</button>
+        ${actionHtml}
       </div>
     `;
 
-    row.querySelector("button").addEventListener("click", async (e) => {
-      const button = e.currentTarget;
-      button.disabled = true;
+    const button = row.querySelector("button");
+    if (status.key === "available") {
+      button.addEventListener("click", async (e) => {
+        const target = e.currentTarget;
+        target.disabled = true;
 
-      try {
-        const nextAvailable =
-          status.key === "available" ? item.available_qty - 1 : item.available_qty + 1;
-
-        await window.LabBotItems.updateItemStock(item.id, {
-          available_qty: nextAvailable,
-          total_qty: item.total_qty,
-        });
-
-        if (status.key === "available") {
-          window.LabBotRentals.addRentalRecord(item, session);
-        } else {
-          window.LabBotRentals.returnRentalRecord(item.id);
+        try {
+          await window.LabBotRentals.createLoan(item, session);
+          await renderList();
+        } catch (err) {
+          alert(err.message || "대여 처리 중 오류가 발생했습니다.");
+          target.disabled = false;
         }
-
-        await renderList();
-      } catch (err) {
-        alert(err.message || "처리 중 오류가 발생했습니다.");
-        button.disabled = false;
-      }
-    });
+      });
+    }
 
     return row;
   }
