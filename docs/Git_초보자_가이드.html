@@ -1,0 +1,156 @@
+<title>Git 초보자 가이드</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root{
+  --bg:#090d16;
+  --surface:#121a2b;
+  --surface-2:#17233b;
+  --border:#223052;
+  --border-soft:#1a2438;
+  --text:#e7ecfb;
+  --muted:#90a0c4;
+  --faint:#57648a;
+  --accent:#38bdf8;
+  --accent-dark:#0ea5e9;
+  --accent-soft:rgba(56,189,248,0.14);
+  --accent-glow:rgba(56,189,248,0.45);
+  --accent-ink:#04141f;
+  --good:#34d399;
+  --warn:#f59e0b;
+  --font-display:'Space Grotesk','Segoe UI',sans-serif;
+  --font-body:'Inter','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  --font-mono:'JetBrains Mono','Consolas',monospace;
+}
+*{box-sizing:border-box;}
+body{ margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body); font-size:16px; line-height:1.7; -webkit-font-smoothing:antialiased; }
+::selection{ background:var(--accent); color:var(--accent-ink); }
+
+.doc{ max-width:700px; margin:0 auto; padding:0 26px 90px; }
+
+.cover{ padding:44px 0 26px; border-bottom:1px solid var(--border-soft); }
+.cover .eyebrow{ font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin-bottom:12px; }
+.cover h1{ font-family:var(--font-display); font-weight:700; font-size:clamp(28px,4.5vw,38px); margin:0 0 10px; line-height:1.15; }
+.cover .sub{ font-size:15.5px; color:var(--muted); margin:0; max-width:56ch; }
+
+section{ margin:34px 0; }
+h2{ font-family:var(--font-display); font-weight:600; font-size:19px; margin:0 0 10px; display:flex; align-items:baseline; gap:9px; }
+h2 .n{ font-family:var(--font-mono); color:var(--accent); font-size:14px; }
+p{ margin:0 0 12px; max-width:64ch; }
+ul,ol{ margin:0 0 12px; padding-left:22px; }
+li{ margin-bottom:7px; max-width:62ch; }
+strong{ color:var(--accent); }
+
+.say-box{ background:var(--surface); border:1px solid var(--accent); border-radius:10px; padding:14px 18px; margin:12px 0; box-shadow:0 0 24px -10px var(--accent-glow); }
+.say-box .label{ font-family:var(--font-mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); margin-bottom:6px; }
+.say-box .text{ font-family:var(--font-mono); font-size:14px; color:var(--text); }
+
+pre{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px 16px; overflow-x:auto; font-family:var(--font-mono); font-size:13px; color:var(--text); }
+code{ font-family:var(--font-mono); background:var(--surface-2); border:1px solid var(--border-soft); padding:1px 6px; border-radius:3px; font-size:.9em; }
+
+.steps{ list-style:none; margin:0; padding:0; counter-reset:step; }
+.steps li{ position:relative; padding-left:38px; margin-bottom:16px; }
+.steps li::before{ counter-increment:step; content:counter(step); position:absolute; left:0; top:0; width:26px; height:26px; border-radius:50%; background:var(--accent-soft); color:var(--accent); font-family:var(--font-mono); font-weight:600; font-size:13px; display:flex; align-items:center; justify-content:center; }
+
+.summary-card{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:16px 0; }
+.summary-card div{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px; text-align:center; }
+.summary-card .k{ font-family:var(--font-mono); font-size:11px; color:var(--faint); }
+.summary-card .v{ font-family:var(--font-display); font-weight:700; font-size:16px; margin-top:4px; color:var(--accent); }
+@media (max-width:520px){ .summary-card{ grid-template-columns:1fr; } }
+
+.glossary{ display:grid; gap:8px; }
+.glossary div{ background:var(--surface); border:1px solid var(--border-soft); border-radius:8px; padding:10px 14px; font-size:13.5px; }
+.glossary b{ color:var(--accent); }
+
+footer{ padding:24px 0 10px; border-top:1px solid var(--border-soft); font-family:var(--font-mono); font-size:11px; color:var(--faint); }
+</style>
+
+<div class="doc">
+  <div class="cover">
+    <div class="eyebrow">완전 초보자용</div>
+    <h1>Git, 이렇게만 하면 됩니다</h1>
+    <p class="sub">지훈님도 Claude Code를 쓰시니, git 명령어를 몰라도 됩니다. <strong>아래 문장을 그대로 복사해서 Claude한테 붙여넣으면</strong> Claude가 대신 처리해줍니다.</p>
+  </div>
+
+  <section id="s0">
+    <h2><span class="n">0</span> 시작 전에 딱 한 번, 직접 할 일</h2>
+    <p>이 두 가지는 Claude가 대신 못 해줘서 직접 해야 해요.</p>
+    <ol class="steps">
+      <li>GitHub 계정이 없으면 <a href="https://github.com" style="color:var(--accent);">github.com</a>에서 가입</li>
+      <li>초대 이메일 또는 GitHub 알림 확인 → <strong>Accept invitation(초대 수락)</strong> 클릭</li>
+    </ol>
+  </section>
+
+  <section id="s1">
+    <h2><span class="n">1</span> 저장소 받기 — 딱 한 번만</h2>
+    <p>Claude 채팅창에 이렇게 입력하세요:</p>
+    <div class="say-box">
+      <div class="label">클로드에게 말하기</div>
+      <div class="text">https://github.com/aa9800/LabBot 이 저장소를 내 컴퓨터에 클론해줘</div>
+    </div>
+    <p>어디에 받을지 물어보면 원하는 위치(예: 바탕화면)를 말해주면 됩니다. 이 작업은 <strong>딱 한 번만</strong> 하면 됩니다.</p>
+  </section>
+
+  <section id="s2">
+    <h2><span class="n">2</span> 작업 시작하기 전 — 매번</h2>
+    <p>다른 사람이 먼저 올린 내용을 받아오는 단계예요. 작업 시작 전에 항상 먼저 하세요.</p>
+    <div class="say-box">
+      <div class="label">클로드에게 말하기</div>
+      <div class="text">LabBot 저장소 최신 상태로 pull 해줘</div>
+    </div>
+  </section>
+
+  <section id="s3">
+    <h2><span class="n">3</span> 작업 다 끝나고 — 매번</h2>
+    <p>내가 고친 내용을 저장하고 다른 사람도 볼 수 있게 올리는 단계예요.</p>
+    <div class="say-box">
+      <div class="label">클로드에게 말하기</div>
+      <div class="text">지금까지 작업한 거 커밋하고 push해줘. 커밋 메시지는 "로그인 화면 작업"으로 해줘</div>
+    </div>
+    <p>커밋 메시지는 예시일 뿐, <strong>그날 뭘 했는지 한 줄로 바꿔서</strong> 말하면 됩니다.</p>
+  </section>
+
+  <section id="s4">
+    <h2><span class="n">4</span> 뭔가 이상하거나 에러가 나면</h2>
+    <div class="say-box">
+      <div class="label">클로드에게 말하기</div>
+      <div class="text">지금 git 상태 좀 확인해줘</div>
+    </div>
+    <p>또는 화면에 뜬 에러 메시지를 그대로 복사해서 붙여넣고 <strong>"이거 무슨 뜻이야? 어떻게 해결해?"</strong>라고 물어보세요. "merge conflict"라는 말이 떠도 당황하지 마세요 — 흔한 일이고, Claude가 대부분 바로 풀어줄 수 있습니다.</p>
+  </section>
+
+  <section id="s5">
+    <h2><span class="n">5</span> 이 세 단계만 기억하면 끝</h2>
+    <div class="summary-card">
+      <div><div class="k">시작 전</div><div class="v">pull</div></div>
+      <div><div class="k">작업</div><div class="v">코드 수정</div></div>
+      <div><div class="k">끝나고</div><div class="v">commit + push</div></div>
+    </div>
+  </section>
+
+  <section id="s6">
+    <h2><span class="n">6</span> (참고) 최소한의 용어</h2>
+    <div class="glossary">
+      <div><b>저장소(repository)</b> — 프로젝트 파일들이 모여있는 곳. 지금 우리껀 <code>aa9800/LabBot</code></div>
+      <div><b>커밋(commit)</b> — "이 시점 상태를 저장"하는 것. 사진 찍듯 스냅샷을 남기는 개념</div>
+      <div><b>푸시(push)</b> — 내 컴퓨터의 내용을 GitHub(온라인)에 올리는 것</div>
+      <div><b>풀(pull)</b> — GitHub에 있는 최신 내용을 내 컴퓨터로 받아오는 것</div>
+      <div><b>충돌(conflict)</b> — 같은 부분을 두 명이 동시에 고쳤을 때 나는 알림. Claude한테 물어보면 대부분 해결됨</div>
+    </div>
+  </section>
+
+  <section id="s7">
+    <h2><span class="n">7</span> (선택) 직접 명령어로 해보고 싶다면</h2>
+    <p>Claude 없이 터미널에 직접 입력해도 됩니다 — 필수는 아니에요.</p>
+    <pre>git clone https://github.com/aa9800/LabBot.git
+cd LabBot
+git pull
+git add -A
+git commit -m "무슨 작업했는지"
+git push</pre>
+  </section>
+
+  <footer>
+    처음 시작할 땐 README.md · CONTRIBUTING.md도 저장소에 있으니 참고하세요.
+  </footer>
+</div>
