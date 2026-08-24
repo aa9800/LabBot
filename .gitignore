@@ -18,6 +18,10 @@ web/*.db
 # 정적 사이트라 빌드 도구 없이 Supabase 접속 정보를 여기서 관리 (config.example.js가 템플릿)
 web/js/config.js
 
+# Webots — 창 배치/썸네일 같은 개인 UI 상태 파일 (프로젝트 소스 아님)
+robot-sim/webots_project/worlds/.*.wbproj
+robot-sim/webots_project/worlds/.*.jpg
+
 # OS/에디터
 .DS_Store
 Thumbs.db

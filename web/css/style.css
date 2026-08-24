@@ -818,6 +818,141 @@ h2 {
   }
 }
 
+/* ---------- Safety 이벤트 배지(심각도/상태) ---------- */
+
+.badge-sev-high {
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+.badge-sev-high .badge-dot {
+  background: #f87171;
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
+}
+
+.badge-sev-medium {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+.badge-sev-medium .badge-dot {
+  background: #fbbf24;
+}
+
+.badge-sev-low {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.badge-sev-low .badge-dot {
+  background: var(--text-faint);
+}
+
+.badge-st-needs_review {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fcd34d;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+.badge-st-needs_review .badge-dot {
+  background: #fbbf24;
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+.badge-st-open,
+.badge-st-assigned {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+.badge-st-open .badge-dot,
+.badge-st-assigned .badge-dot {
+  background: var(--accent);
+}
+
+.badge-st-in_progress {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+.badge-st-in_progress .badge-dot {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+.badge-st-resolved {
+  background: rgba(74, 222, 128, 0.12);
+  color: #86efac;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+.badge-st-resolved .badge-dot {
+  background: #4ade80;
+}
+
+.badge-st-closed,
+.badge-st-false_positive {
+  background: var(--surface-2);
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+}
+.badge-st-closed .badge-dot,
+.badge-st-false_positive .badge-dot {
+  background: var(--text-faint);
+}
+
+.safety-detail {
+  margin-top: 16px;
+  padding: 18px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.safety-detail-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 0.88rem;
+}
+
+.safety-detail-row .label {
+  color: var(--text-faint);
+  min-width: 84px;
+}
+
+.safety-log-list {
+  margin: 12px 0;
+  padding-left: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.safety-log-list li {
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border-soft);
+}
+
+.safety-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.safety-note-input {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+}
+
 /* ---------- 플로팅 챗봇 버튼 ---------- */
 
 .fab {

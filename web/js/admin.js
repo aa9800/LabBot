@@ -16,6 +16,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const stockTableBody = document.getElementById("stockTableBody");
   const historyTableBody = document.getElementById("historyTableBody");
 
+  const safetyTableBody = document.getElementById("safetyTableBody");
+  const safetyDetail = document.getElementById("safetyDetail");
+  const safetyStatusFilter = document.getElementById("safetyStatusFilter");
+
   function renderCategoryOptions() {
     categorySelect.innerHTML = LAB_CATEGORIES.filter((c) => c.key !== "all")
       .map((c) => `<option value="${c.key}">${c.label}</option>`)
@@ -128,6 +132,113 @@ document.addEventListener("DOMContentLoaded", async () => {
       .join("");
   }
 
+  function severityBadge(severity) {
+    const label = LabBotSafety.SAFETY_SEVERITY_LABEL[severity] || severity;
+    return `<span class="badge badge-sev-${severity.toLowerCase()}"><span class="badge-dot"></span>${label}</span>`;
+  }
+
+  function statusBadge(status) {
+    const label = LabBotSafety.SAFETY_STATUS_LABEL[status] || status;
+    return `<span class="badge badge-st-${status.toLowerCase()}"><span class="badge-dot"></span>${label}</span>`;
+  }
+
+  async function renderSafetyTable() {
+    let events;
+    try {
+      events = await window.LabBotSafety.fetchSafetyEvents({ status: safetyStatusFilter.value });
+    } catch (err) {
+      alert("안전 이벤트를 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    safetyTableBody.innerHTML = "";
+
+    if (events.length === 0) {
+      safetyTableBody.innerHTML = `<tr><td colspan="6" class="mono" style="text-align:center; padding: 20px;">해당하는 안전 이벤트가 없습니다.</td></tr>`;
+      return;
+    }
+
+    events.forEach((ev) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td class="mono">${ev.rule_id}</td>
+        <td>${severityBadge(ev.severity)}</td>
+        <td>${statusBadge(ev.status)}</td>
+        <td>${ev.source}</td>
+        <td class="mono">${new Date(ev.detected_at).toLocaleString("ko-KR")}</td>
+        <td><button type="button" class="btn btn-secondary btn-sm" data-action="detail">상세</button></td>
+      `;
+      row.querySelector('[data-action="detail"]').addEventListener("click", () => showSafetyDetail(ev.id));
+      safetyTableBody.appendChild(row);
+    });
+  }
+
+  async function showSafetyDetail(id) {
+    let event, logs;
+    try {
+      ({ event, logs } = await window.LabBotSafety.fetchSafetyEventDetail(id));
+    } catch (err) {
+      alert("상세 정보를 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    const nextActions = window.LabBotSafety.SAFETY_NEXT_ACTIONS[event.status] || [];
+
+    safetyDetail.style.display = "block";
+    safetyDetail.innerHTML = `
+      <div class="safety-detail-row"><span class="label">규칙</span><span class="mono">${event.rule_id}</span></div>
+      <div class="safety-detail-row"><span class="label">심각도</span>${severityBadge(event.severity)}</div>
+      <div class="safety-detail-row"><span class="label">상태</span>${statusBadge(event.status)}</div>
+      <div class="safety-detail-row"><span class="label">출처</span><span>${event.source}</span></div>
+      <div class="safety-detail-row"><span class="label">감지시각</span><span class="mono">${new Date(event.detected_at).toLocaleString("ko-KR")}</span></div>
+      <div class="safety-detail-row"><span class="label">감지 메모</span><span>${event.note || "-"}</span></div>
+      ${event.resolved_at ? `<div class="safety-detail-row"><span class="label">조치 메모</span><span>${event.resolution_note || "-"}</span></div>` : ""}
+
+      <p class="label" style="margin-top: 14px;">처리 이력</p>
+      <ul class="safety-log-list">
+        ${logs.length === 0 ? "<li>아직 처리 이력이 없습니다.</li>" : logs.map((l) => `<li>[${new Date(l.created_at).toLocaleString("ko-KR")}] ${l.actor} — ${window.LabBotSafety.SAFETY_STATUS_LABEL[l.action] || l.action}${l.note ? " (" + l.note + ")" : ""}</li>`).join("")}
+      </ul>
+
+      ${
+        nextActions.length > 0
+          ? `
+        <textarea class="safety-note-input" id="safetyNoteInput" placeholder="조치 메모 (선택 — 예: 담당자, 조치 내용)" rows="2"></textarea>
+        <div class="safety-actions">
+          ${nextActions
+            .map(
+              (a) =>
+                `<button type="button" class="btn ${a.action === "FALSE_POSITIVE" ? "btn-secondary" : "btn-primary"} btn-sm" data-next="${a.action}">${a.label}</button>`
+            )
+            .join("")}
+        </div>`
+          : `<p class="mono" style="margin-top: 10px; color: var(--text-faint);">이미 종결된 이벤트라 더 이상 상태를 바꿀 수 없습니다.</p>`
+      }
+    `;
+
+    safetyDetail.querySelectorAll("[data-next]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const nextStatus = btn.dataset.next;
+        const note = document.getElementById("safetyNoteInput").value.trim();
+        btn.disabled = true;
+        try {
+          const session = await window.LabBotAuth.getSession();
+          await window.LabBotSafety.transitionSafetyEvent(id, {
+            nextStatus,
+            actorName: (session && session.name) || "관리자",
+            note,
+          });
+          await renderSafetyTable();
+          await showSafetyDetail(id);
+        } catch (err) {
+          alert("상태 변경에 실패했습니다: " + (err.message || err));
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  safetyStatusFilter.addEventListener("change", renderSafetyTable);
+
   addForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -173,6 +284,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderCategoryOptions();
     await renderStockTable();
     renderHistoryTable();
+    await renderSafetyTable();
   }
 
   function showGate() {

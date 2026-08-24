@@ -1,0 +1,244 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/gctronic/e-puck/protos/E-puck.proto"
+
+WorldInfo {
+  info [
+    "LabKeeper LAB-A 순찰 데모"
+    "체크포인트 3곳(선반A/B/C), 장애물 1개, 통제구역/충전구역 표시"
+  ]
+  title "LabKeeper LAB-A"
+}
+Viewpoint {
+  orientation 0.5573943043444614 -0.5106890538760314 -0.6546054382111092 4.377872257643378
+  position -0.20929960897854283 -1.1897950209448267 3.7639976901945547
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 2 1.5
+  floorAppearance PBRAppearance {
+    baseColor 0.82 0.82 0.8
+    roughness 0.6
+    metalness 0
+  }
+}
+DEF TRACK_AB Solid {
+  translation 0 -0.5 0.0007
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.05 0.05 0.05
+        roughness 0.8
+        metalness 0
+      }
+      geometry DEF SEG_H Box {
+        size 1.4 0.02 0.001
+      }
+    }
+  ]
+  name "track segment AB"
+}
+DEF TRACK_BC Solid {
+  translation 0.7 0 0.0007
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.05 0.05 0.05
+        roughness 0.8
+        metalness 0
+      }
+      geometry DEF SEG_V Box {
+        size 0.02 1 0.001
+      }
+    }
+  ]
+  name "track segment BC"
+}
+DEF TRACK_CD Solid {
+  translation 0 0.5 0.0007
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.05 0.05 0.05
+        roughness 0.8
+        metalness 0
+      }
+      geometry USE SEG_H
+    }
+  ]
+  name "track segment CD"
+}
+DEF TRACK_DA Solid {
+  translation -0.7 0 0.0007
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.05 0.05 0.05
+        roughness 0.8
+        metalness 0
+      }
+      geometry USE SEG_V
+    }
+  ]
+  name "track segment DA"
+}
+DEF CP_A Solid {
+  translation 0 -0.5 0.0009
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.6 0.55
+        transparency 0.3
+        roughness 0.5
+      }
+      geometry Cylinder {
+        height 0.001
+        radius 0.08
+      }
+    }
+  ]
+  name "checkpoint 선반A"
+}
+DEF CP_B Solid {
+  translation 0.7 0 0.0009
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.6 0.55
+        transparency 0.3
+        roughness 0.5
+      }
+      geometry Cylinder {
+        height 0.001
+        radius 0.08
+      }
+    }
+  ]
+  name "checkpoint 선반B"
+}
+DEF CP_C Solid {
+  translation 0 0.5 0.0009
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.6 0.55
+        transparency 0.3
+        roughness 0.5
+      }
+      geometry Cylinder {
+        height 0.001
+        radius 0.08
+      }
+    }
+  ]
+  name "checkpoint 선반C"
+}
+DEF SHELF_1 Solid {
+  translation -0.95 -0.5 0.15
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.55 0.4 0.25
+        roughness 0.7
+      }
+      geometry DEF SHELF_BOX Box {
+        size 0.08 0.3 0.3
+      }
+    }
+  ]
+  name "선반 A 실물함"
+  boundingObject USE SHELF_BOX
+}
+DEF SHELF_2 Solid {
+  translation 0.95 0.5 0.15
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.55 0.4 0.25
+        roughness 0.7
+      }
+      geometry USE SHELF_BOX
+    }
+  ]
+  name "선반 C 실물함"
+  boundingObject USE SHELF_BOX
+}
+DEF RESTRICTED_ZONE Solid {
+  translation -0.85 0.55 0.0006
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.8 0.15 0.1
+        transparency 0.5
+        roughness 0.6
+      }
+      geometry Box {
+        size 0.3 0.3 0.001
+      }
+    }
+  ]
+  name "restricted zone"
+}
+DEF CHARGING_ZONE Solid {
+  translation 0.85 -0.55 0.0006
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.15 0.7 0.2
+        transparency 0.5
+        roughness 0.6
+      }
+      geometry Box {
+        size 0.3 0.3 0.001
+      }
+    }
+  ]
+  name "charging zone"
+}
+DEF OBSTACLE_1 Solid {
+  translation 0.7 0.15 0.04
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.85 0.35 0.1
+        roughness 0.5
+      }
+      geometry DEF OBST_BOX Box {
+        size 0.08 0.08 0.08
+      }
+    }
+  ]
+  name "obstacle box"
+  boundingObject USE OBST_BOX
+}
+DEF LABKEEPER_ROBOT E-puck {
+  hidden position_0_0 62.002632747821934
+  hidden position_0_1 62.00263274762451
+  hidden linearVelocity_0 9.133246142118471e-05 -8.876162408655215e-12 4.046563413823567e-08
+  hidden angularVelocity_0 5.919858694687264e-10 0.006088750433381057 2.904679468242781e-12
+  hidden rotation_1 0 -1 0 0.8292203239739302
+  hidden linearVelocity_1 0.00012177540577038918 -1.1834500346161395e-11 1.1447243193772365e-11
+  hidden angularVelocity_1 5.915915231759958e-10 0.0060887504498992225 2.527548596876254e-10
+  hidden rotation_2 0 -1 0 0.8292203241713545
+  hidden linearVelocity_2 0.00012177540512623865 -1.1836807466657797e-11 1.0918599362739105e-11
+  hidden angularVelocity_2 5.917817567502865e-10 0.006088750449873511 -2.4694519871979803e-10
+  translation 0.5412878401100492 -0.5000000604368737 -6.394591604184409e-05
+  rotation 1.3146016358517517e-06 0.9999999973191185 -7.321225925918491e-05 0.001304923733246593
+  name "labkeeper_robot"
+  controller "labkeeper_controller"
+  supervisor TRUE
+  turretSlot [
+    GPS {
+    }
+    GPS {
+      translation 0.05 0 0
+      name "gps_front"
+    }
+  ]
+}

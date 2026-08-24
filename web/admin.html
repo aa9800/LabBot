@@ -70,6 +70,7 @@
       <button type="button" class="tab-btn active" data-tab="stock">재고 · 물품 관리</button>
       <button type="button" class="tab-btn" data-tab="history">대여·반납 이력</button>
       <button type="button" class="tab-btn" data-tab="damage">파손 신고 목록</button>
+      <button type="button" class="tab-btn" data-tab="safety">안전 이벤트</button>
     </div>
 
     <!-- 재고 · 물품 관리 -->
@@ -139,6 +140,50 @@
         </table>
       </div>
     </section>
+
+    <!-- 안전 이벤트 (로봇/AI가 감지 -> 사람이 검토·조치·종결하는 폐쇄루프) -->
+    <section class="tab-panel" id="tab-safety">
+      <div class="page-header-row" style="margin-bottom: 12px;">
+        <p class="page-subtitle" style="margin: 0;">
+          로봇(Webots/Raspbot)이나 실사에서 감지된 이상은 전부 "검토 필요" 상태로 먼저 들어옵니다 —
+          자동으로 확정되지 않고, 관리자가 직접 확인 후 접수/오탐 처리를 결정합니다.
+        </p>
+        <div class="tabs" style="margin: 0; border: none;">
+          <select id="safetyStatusFilter" class="stock-input" style="width: auto;">
+            <option value="all">전체 상태</option>
+            <option value="NEEDS_REVIEW">검토 필요</option>
+            <option value="OPEN">접수됨</option>
+            <option value="ASSIGNED">담당자 배정</option>
+            <option value="IN_PROGRESS">조치 중</option>
+            <option value="RESOLVED">조치 완료</option>
+            <option value="CLOSED">종결</option>
+            <option value="FALSE_POSITIVE">오탐</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>규칙</th>
+              <th>심각도</th>
+              <th>상태</th>
+              <th>출처</th>
+              <th>감지시각</th>
+              <th>작업</th>
+            </tr>
+          </thead>
+          <tbody id="safetyTableBody">
+            <!-- js/admin.js에서 LabBotSafety 기준으로 렌더링 -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="safety-detail" id="safetyDetail" style="display: none;">
+        <!-- js/admin.js가 선택한 이벤트의 상세/이력/상태변경 버튼을 여기 채워넣음 -->
+      </div>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -149,6 +194,7 @@
   <script src="js/nav.js"></script>
   <script src="js/items-data.js"></script>
   <script src="js/rentals.js"></script>
+  <script src="js/safety-data.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

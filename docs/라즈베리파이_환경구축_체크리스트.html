@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>라즈베리파이 환경구축 체크리스트</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; max-width: 780px; margin: 40px auto; padding: 0 20px; line-height: 1.7; color: #222; }
+  h1 { color: #0f5c56; border-bottom: 3px solid #0f5c56; padding-bottom: 10px; }
+  h2 { color: #14746c; margin-top: 36px; border-left: 4px solid #14746c; padding-left: 10px; }
+  .box { background: #f3f8f7; border: 1px solid #cfe4e1; border-radius: 8px; padding: 16px 20px; margin: 14px 0; }
+  .warn { background: #fff4ec; border: 1px solid #f0c9a0; }
+  code { background: #eee; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  ol, ul { padding-left: 22px; }
+  .step { font-weight: 600; color: #0f5c56; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; }
+  th { background: #eef6f4; }
+</style>
+</head>
+<body>
+
+<h1>라즈베리파이 5 / Raspbot 환경구축 체크리스트</h1>
+
+<p>Raspbot + Raspberry Pi 5 실물이 아직 도착하지 않아서, <b>지금은 준비만</b> 해두고
+물건이 오면 이 문서 순서대로 진행하면 됩니다.</p>
+
+<div class="box">
+<b>이미 준비된 것 (지금 PC에서 완료)</b>
+<ul>
+  <li>Raspberry Pi Imager 설치 완료 — SD카드에 OS를 구울 때 씀</li>
+  <li><code>robot-sim/real_hal.py</code> — 5개 메서드 뼈대(TODO)만 미리 만들어 둠</li>
+</ul>
+</div>
+
+<h2>왜 필요한가</h2>
+<p>지금까지 만든 <code>controller.py</code>(판단 로직)는 하드웨어를 몰라도 되도록 설계했지만,
+실제로 모터를 돌리고 초음파·라인센서를 읽는 코드는 <b>라즈베리파이 안에서</b> 직접 실행돼야 합니다
+(원격으로 PC에서 명령을 보내면 지연 때문에 안전정지 같은 반응이 느려짐). 그래서 라즈베리파이에
+자체적으로 OS와 필요한 라이브러리를 설치하는 작업이 따로 필요합니다.</p>
+
+<h2>물건 도착 후 순서</h2>
+
+<div class="box">
+<p class="step">1단계 — SD카드에 OS 설치</p>
+<ol>
+  <li>Raspberry Pi Imager 실행</li>
+  <li>OS: <b>Raspberry Pi OS (64-bit)</b> 선택 (Yahboom 예제가 32bit 기준일 수도 있으니, 예제 실행이 안 되면 64bit → 32bit로 바꿔서 재시도)</li>
+  <li>설정(⚙) 에서 미리 <b>SSH 활성화</b>, 와이파이 정보, 호스트명(예: <code>labkeeper-pi</code>) 입력해두면 모니터 없이도 바로 접속 가능</li>
+</ol>
+</div>
+
+<div class="box">
+<p class="step">2단계 — 첫 부팅 & 접속 확인</p>
+<ol>
+  <li>SD카드 꽂고 부팅 → 같은 와이파이에서 <code>ssh labkeeper-pi.local</code> (또는 IP 주소)로 접속</li>
+  <li><code>sudo raspi-config</code> 에서 <b>Camera</b>, <b>I2C</b> 인터페이스 활성화</li>
+</ol>
+</div>
+
+<div class="box">
+<p class="step">3단계 — Yahboom 공식 자료 받기</p>
+<ol>
+  <li><a href="https://www.yahboom.net/study/Raspbot">yahboom.net/study/Raspbot</a> 학습 페이지 접속</li>
+  <li>다운로드 섹션에서 <b>Code(예제 코드) 폴더</b> + 설명 매뉴얼(PDF) 받기 — 여기에 실제 모터/센서
+  제어 함수 이름이 들어있음 (지금은 이 문서에서 정확한 함수명을 확정할 수 없어서, 실물 도착 후
+  이 자료를 직접 열어서 확인해야 함)</li>
+  <li>매뉴얼대로 필요한 파이썬 라이브러리 설치 (보통 <code>pip install</code> 한두 줄)</li>
+  <li>Yahboom 예제를 하나씩 따로 실행해서 아래를 개별 확인:
+    <ul>
+      <li>모터 좌/우 바퀴 각각 회전하는지</li>
+      <li>초음파 센서 값이 실제 거리에 맞게 나오는지</li>
+      <li>라인(적외선) 센서 4개가 흰 바닥/검은 선을 구분하는지</li>
+      <li>카메라로 사진이 찍히는지 (OpenCV)</li>
+    </ul>
+  </li>
+</ol>
+</div>
+
+<div class="box">
+<p class="step">4단계 — 우리 코드 올리기</p>
+<ol>
+  <li>라즈베리파이에서 <code>git clone https://github.com/aa9800/LabBot.git</code></li>
+  <li><code>robot-sim/real_hal.py</code>를 열어서, 3단계에서 확인한 Yahboom 실제 함수를
+  이용해 5개 메서드(<code>read_line_sensors / read_ultrasonic / try_read_qr / set_motion / stop</code>)를 채움
+  — <b>이름과 반환값 형태는 <code>sim/hal_sim.py</code>와 똑같이 유지</b>해야 <code>controller.py</code>를 안 고쳐도 됨</li>
+  <li>새 진입점 스크립트(또는 <code>main.py</code> 복사본)에서 <code>SimHAL</code> 대신 <code>RealHAL()</code>을 넣어서 실행</li>
+</ol>
+</div>
+
+<div class="box warn">
+<b>안전 주의사항</b>
+<ul>
+  <li>처음 실물 테스트는 반드시 <b>저속</b> + <b>사람이 바로 옆에서 지켜보며</b> 진행</li>
+  <li>바퀴를 바닥에서 띄운 상태(또는 받침대 위)에서 모터 회전 먼저 확인하고, 그 다음에 바닥에 내려서 이동 테스트</li>
+  <li>이 단계는 <b>발표 이후 작업</b>입니다 — 월요일 발표는 Webots 시뮬레이션만으로 완결됩니다</li>
+</ul>
+</div>
+
+<h2>참고 링크 (사용자가 보내준 구매처)</h2>
+<table>
+<tr><th>부품</th><th>링크</th></tr>
+<tr><td>Raspberry Pi 5 로봇카(Raspbot)</td><td><a href="https://www.icbanq.com/P016883920">icbanq P016883920</a></td></tr>
+<tr><td>Raspbot 활용 학습자료</td><td><a href="https://www.yahboom.net/study/Raspbot">yahboom.net/study/Raspbot</a></td></tr>
+<tr><td>Raspberry Pi 5 본체</td><td><a href="https://www.icbanq.com/P015956549">icbanq P015956549</a></td></tr>
+<tr><td>XIAO ESP32S3 Sense</td><td><a href="https://www.devicemart.co.kr/goods/view?no=14991199">devicemart 14991199</a></td></tr>
+<tr><td>초음파 센서</td><td><a href="https://www.devicemart.co.kr/goods/view?no=1312774">devicemart 1312774</a></td></tr>
+<tr><td>IMU(MPU6050)</td><td>쿠팡 구매처</td></tr>
+<tr><td>아두이노 전자부품 키트</td><td><a href="https://www.devicemart.co.kr/goods/view?no=1264627">devicemart 1264627</a></td></tr>
+</table>
+
+</body>
+</html>
