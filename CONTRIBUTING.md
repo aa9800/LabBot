@@ -56,12 +56,12 @@ GitHub 초대와는 **완전히 별개**입니다. 코드는 git으로 공유하
 ### 초대받은 사람이 할 일 — 한 번만
 
 1. 이메일로 온 초대 확인 → 수락 (Supabase 계정 없으면 이때 가입)
-2. 로그인 후 그 프로젝트 열기 → **Project Settings → API**
-3. **Project URL**, **anon public key** 값을 확인
+2. 로그인 후 그 프로젝트 열기 → **Project Settings → API Keys**
+3. **"Publishable and secret API keys"** 탭에서 **Project URL**과 **Publishable key**(`sb_publishable_...`로 시작) 확인 — 이게 예전 이름 "anon key"와 같은 역할입니다
 4. `web/.env.example`을 복사해서 같은 폴더에 `web/.env`로 저장하고, 방금 확인한 값을 채워넣기 (`.env`는 git에 올라가지 않으니 그냥 로컬에 저장하면 됨)
 
 ### 지켜야 할 것
 
-- **`service_role` 키는 절대 채팅방·코드·`.env`에도 그냥 붙여넣지 않습니다.** 브라우저에서 실행되는 코드는 전부 anon key만 씁니다. service_role이 정말 필요한 경우(로봇 서버 연동 등)는 지훈님께 개인적으로 별도 요청하세요.
+- **Secret key(`sb_secret_...`, 예전 이름 service_role)는 절대 채팅방·코드·`.env`에도 그냥 붙여넣지 않습니다.** 브라우저에서 실행되는 코드는 전부 Publishable key만 씁니다. Secret key가 정말 필요한 경우(로봇 서버 연동 등)는 지훈님께 개인적으로 별도 요청하세요.
 - DB **테이블 구조**를 바꿀 땐(컬럼 추가/삭제 등) 미리 채팅으로 한마디 하기 — 다 같은 DB를 보고 있어서 한 명이 스키마를 바꾸면 전원에게 바로 영향이 갑니다.
 - 반대로 **데이터(물품 몇 개 추가 등)** 는 실시간으로 서로 바로 보이니, 그건 자유롭게 테스트하면 됩니다.
