@@ -280,3 +280,22 @@ drop trigger if exists trg_loans_increment_stock on loans;
 create trigger trg_loans_increment_stock
   after update on loans
   for each row execute function public.loans_increment_stock();
+
+-- =============================================================
+-- 9. items 생명공학 물품 필드 보강 — item_type/재고최소치/보관조건/유효기간/점검상태
+--    (자세한 시딩 데이터는 docs/labbot_seed_items.sql 참고)
+-- =============================================================
+
+alter table items
+  add column if not exists item_type text check (item_type in ('EQUIPMENT','REAGENT','CONSUMABLE','PPE','SAFETY')),
+  add column if not exists unit text,
+  add column if not exists minimum_qty integer,
+  add column if not exists storage_condition text,
+  add column if not exists expires_at date,
+  add column if not exists manual_status text check (manual_status in ('MAINTENANCE')),
+  add column if not exists notes text default '';
+
+-- manual_status: 관리자가 직접 정하는 예외 상태만 저장(null 또는 'MAINTENANCE').
+-- OUT_OF_STOCK/LOW_STOCK/EXPIRED/EXPIRING_SOON/AVAILABLE은 저장하지 않고, 매번
+-- available_qty/minimum_qty/expires_at 기준으로 새로 계산한다 —
+-- web/js/items-data.js의 computeStockStatus()가 유일한 계산 지점이다.

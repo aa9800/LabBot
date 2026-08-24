@@ -42,12 +42,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     stockTableBody.innerHTML = "";
 
     items.forEach((item) => {
+      const statusKey = window.LabBotItems.computeStockStatus(item);
+      const statusLabel = window.LabBotItems.STOCK_STATUS_LABEL[statusKey];
+      const badgeClass = window.LabBotItems.STOCK_STATUS_BADGE_CLASS[statusKey];
+
       const row = document.createElement("tr");
       row.innerHTML = `
         <td>${item.name}</td>
         <td>${item.categoryLabel}</td>
         <td>${item.location}</td>
         <td class="mono">${item.qr_code}</td>
+        <td><span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span></td>
         <td><input type="number" class="stock-input" min="0" value="${item.available_qty}" data-field="available" /></td>
         <td><input type="number" class="stock-input" min="0" value="${item.total_qty}" data-field="total" /></td>
         <td class="stock-actions">

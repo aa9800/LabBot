@@ -15,38 +15,42 @@ document.addEventListener("DOMContentLoaded", async () => {
   let activeCategory = "all";
   let activeLocation = "all";
 
-  function statusOf(item) {
-    return item.available_qty > 0
-      ? { key: "available", label: "대여가능" }
-      : { key: "inuse", label: "대여중" };
-  }
-
   function renderRow(item) {
-    const status = statusOf(item);
+    // 재고상태는 items-data.js의 computeStockStatus() 한 곳에서만 계산한다 —
+    // 여기서 available_qty만 보고 다시 판단하지 않는다(유효기간/점검중 케이스를 놓치게 됨).
+    const statusKey = window.LabBotItems.computeStockStatus(item);
+    const statusLabel = window.LabBotItems.STOCK_STATUS_LABEL[statusKey];
+    const badgeClass = window.LabBotItems.STOCK_STATUS_BADGE_CLASS[statusKey];
+    const rentable = window.LabBotItems.canRentItem(item);
+
     const row = document.createElement("article");
     row.className = "item-row";
     row.dataset.category = item.category;
 
-    const actionHtml =
-      status.key === "available"
-        ? `<button type="button" class="btn btn-primary btn-sm">대여하기</button>`
-        : `<button type="button" class="btn btn-secondary btn-sm" disabled>대여불가</button>`;
+    const actionHtml = rentable
+      ? `<button type="button" class="btn btn-primary btn-sm">대여하기</button>`
+      : `<button type="button" class="btn btn-secondary btn-sm" disabled>대여불가</button>`;
+
+    const expiresHtml = item.expires_at
+      ? `<span class="item-row-location">유효기간 ${item.expires_at}</span>`
+      : "";
 
     row.innerHTML = `
       <div class="item-row-main">
         <span class="category-tag">${item.categoryLabel}</span>
         <h3 class="item-row-name">${item.name}</h3>
-        <span class="item-row-location">${item.location}</span>
+        <span class="item-row-location">${item.location} · ${item.storage_condition || "-"}</span>
+        ${expiresHtml}
       </div>
       <div class="item-row-meta">
-        <span class="stock-count">재고 ${item.available_qty}/${item.total_qty}</span>
-        <span class="badge badge-${status.key}"><span class="badge-dot"></span>${status.label}</span>
+        <span class="stock-count">재고 ${item.available_qty}/${item.total_qty} ${item.unit || ""}</span>
+        <span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span>
         ${actionHtml}
       </div>
     `;
 
     const button = row.querySelector("button");
-    if (status.key === "available") {
+    if (rentable) {
       button.addEventListener("click", async (e) => {
         const target = e.currentTarget;
         target.disabled = true;
