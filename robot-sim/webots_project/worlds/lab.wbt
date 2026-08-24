@@ -201,30 +201,22 @@ DEF CHARGING_ZONE Solid {
   ]
   name "charging zone"
 }
-DEF OBSTACLE_1 Solid {
-  translation 0.7 0.15 0.04
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.85 0.35 0.1
-        roughness 0.5
-      }
-      geometry DEF OBST_BOX Box {
-        size 0.08 0.08 0.08
-      }
-    }
-  ]
-  name "obstacle box"
-  boundingObject USE OBST_BOX
-}
 DEF LABKEEPER_ROBOT E-puck {
-  translation -0.7 -0.5 0
-  rotation 0 0 1 0
+  hidden position_0_0 2641.589180917917
+  hidden position_0_1 3077.01301582014
+  hidden linearVelocity_0 0.06814228221771464 -0.0015755776273455896 -4.2309517453774206e-08
+  hidden angularVelocity_0 -0.00020370589885500886 -0.008810203626084163 6.306284648974287e-09
+  hidden rotation_1 0 0.9999999999999999 0 2.651351902490699
+  hidden linearVelocity_1 0.06809823103139775 -0.0015745590938773821 5.563993713098517e-11
+  hidden angularVelocity_1 0.07872799842877219 3.404911539497909 8.216686043982153e-08
+  hidden rotation_2 0 -0.9999999999999999 0 1.7477846978573475
+  hidden linearVelocity_2 0.0680982313248332 -0.00157455910076553 -7.1011817995268e-11
+  hidden angularVelocity_2 0.07872791045258076 3.404911541543821 -7.870842114364404e-08
+  translation 0.22478374523523492 -0.4940350616159936 -6.39568124218854e-05
+  rotation -0.00037363540629957323 -0.032328069672035394 0.999477241515715 -0.023129849777029143
   name "labkeeper_robot"
   controller "labkeeper_controller"
   supervisor TRUE
-  camera_width 240
-  camera_height 180
   turretSlot [
     GPS {
     }
