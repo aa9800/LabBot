@@ -12,6 +12,9 @@ web/app/static/qrcodes/
 # 문서 검토용 렌더링 잔여물 (PDF -> PNG 변환 중간 산출물, 소스가 아님)
 docs/_qa_*/
 
+# 웹은 로컬(labkeeper-web-local/)에서 따로 관리 — 이 저장소엔 안 들어가야 함
+/web/
+
 # OS/에디터
 .DS_Store
 Thumbs.db
