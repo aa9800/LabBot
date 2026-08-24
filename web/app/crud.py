@@ -43,6 +43,28 @@ def create_item(db: Session, name: str, category: str, location: str, total_qty:
     return item
 
 
+def update_item_stock(db: Session, item_id: int, available_qty: int, total_qty: int):
+    item = get_item(db, item_id)
+    if not item:
+        return None
+    item.total_qty = max(total_qty, 0)
+    item.available_qty = max(min(available_qty, item.total_qty), 0)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+def delete_item(db: Session, item_id: int):
+    item = get_item(db, item_id)
+    if not item:
+        return False
+    if db.query(models.Loan).filter(models.Loan.item_id == item_id).count() > 0:
+        return False  # 대여 이력이 있으면 삭제 대신 보존 (이력 무결성)
+    db.delete(item)
+    db.commit()
+    return True
+
+
 def distinct_categories(db: Session):
     return [r[0] for r in db.query(models.Item.category).distinct().order_by(models.Item.category).all()]
 

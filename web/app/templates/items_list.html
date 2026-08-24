@@ -1,9 +1,12 @@
 {% extends "base.html" %}
-{% block title %}물품 · LabKeeper{% endblock %}
+{% block title %}물품목록 · LabBot{% endblock %}
 {% block content %}
 <div class="topline">
-  <h1>물품</h1>
-  <a class="btn" href="/items/new">+ 물품 등록</a>
+  <div>
+    <h1>물품 목록</h1>
+    <p class="hint">실시간 재고 상태를 확인하고 대여·반납을 관리하세요</p>
+  </div>
+  <a class="btn secondary small" href="/admin">관리자로 등록하기</a>
 </div>
 
 <form class="filters" method="get">
@@ -19,25 +22,26 @@
   <button class="btn secondary" type="submit">검색</button>
 </form>
 
-<div class="table-wrap">
-<table>
-  <thead><tr><th>이름</th><th>카테고리</th><th>위치</th><th>재고</th><th>상태</th><th></th></tr></thead>
-  <tbody>
-    {% for item in items %}
-    <tr>
-      <td><a href="/items/{{ item.id }}">{{ item.name }}</a></td>
-      <td>{{ item.category }}</td>
-      <td>{{ item.location }}</td>
-      <td>{{ item.available_qty }} / {{ item.total_qty }}</td>
-      <td>
-        {% if item.available_qty > 0 %}<span class="pill ok">대여가능</span>{% else %}<span class="pill warn">전량대여중</span>{% endif %}
-      </td>
-      <td><a class="btn small secondary" href="/items/{{ item.id }}">상세</a></td>
-    </tr>
-    {% else %}
-    <tr><td colspan="6">등록된 물품이 없습니다.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
+<section>
+  {% for item in items %}
+  <article class="item-row">
+    <div class="item-row-main">
+      <span class="category-tag">{{ item.category }}</span>
+      <h3 class="item-row-name">{{ item.name }}</h3>
+      <span class="item-row-location">{{ item.location }}</span>
+    </div>
+    <div class="item-row-meta">
+      <span class="stock-count">재고 {{ item.available_qty }}/{{ item.total_qty }}</span>
+      {% if item.available_qty > 0 %}
+      <span class="badge badge-available"><span class="badge-dot"></span>대여가능</span>
+      {% else %}
+      <span class="badge badge-inuse"><span class="badge-dot"></span>전량대여중</span>
+      {% endif %}
+      <a class="btn small secondary" href="/items/{{ item.id }}">상세보기</a>
+    </div>
+  </article>
+  {% else %}
+  <p class="card">검색 결과가 없습니다.</p>
+  {% endfor %}
+</section>
 {% endblock %}

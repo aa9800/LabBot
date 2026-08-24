@@ -1,6 +1,12 @@
 {% extends "base.html" %}
-{% block title %}메인 · LabKeeper{% endblock %}
+{% block title %}LabBot — 연구실 물품 대여관리{% endblock %}
 {% block content %}
+
+<div class="hero-banner">
+  <div class="hero-eyebrow">AI VISION LAB MANAGEMENT</div>
+  <h1>연구실 물품, 필요한 순간 바로 찾고 빌리세요</h1>
+  <p>QR·카메라로 실시간 재고를 확인하고, 대여·반납·실사까지 한 곳에서 처리합니다.</p>
+</div>
 
 <form class="search-hero" method="get" action="/items">
   <input type="text" name="q" placeholder="빌리고 싶은 물품 이름으로 찾기 (예: 드라이버, 오실로스코프)" autofocus>
@@ -68,53 +74,5 @@
   {% else %}
   <p class="hint">등록된 물품이 없습니다.</p>
   {% endfor %}
-</div>
-
-<div class="quick-actions">
-  <a class="btn secondary" href="/items">전체 물품 보기</a>
-  <a class="btn secondary" href="/items/new">+ 물품 등록</a>
-  <a class="btn secondary" href="/audits/new">+ 새 실사 시작</a>
-</div>
-
-<h2>운영 현황</h2>
-<div class="grid">
-  <div class="card stat"><div class="k">전체 물품</div><div class="v">{{ stats.total_items }}</div></div>
-  <div class="card stat"><div class="k">대여중</div><div class="v">{{ stats.active_loans }}</div></div>
-  <div class="card stat"><div class="k">연체</div><div class="v">{{ stats.overdue_count }}</div></div>
-  <div class="card stat"><div class="k">최근 실사 정확도</div><div class="v">{% if stats.accuracy is not none %}{{ stats.accuracy }}%{% else %}-{% endif %}</div></div>
-  <div class="card stat"><div class="k">미조치 Safety 이벤트</div><div class="v">{{ stats.open_safety }}</div></div>
-</div>
-
-<h3>많이 나가는 물품 <span class="hint">— 재입고 참고용</span></h3>
-<div class="table-wrap">
-<table>
-  <thead><tr><th>물품</th><th>대여 횟수</th></tr></thead>
-  <tbody>
-    {% for item, cnt in stats.popular %}
-    <tr><td><a href="/items/{{ item.id }}">{{ item.name }}</a></td><td>{{ cnt }}</td></tr>
-    {% else %}
-    <tr><td colspan="2">아직 대여 기록이 없습니다.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-
-<h3>최근 대여</h3>
-<div class="table-wrap">
-<table>
-  <thead><tr><th>물품</th><th>사용자</th><th>상태</th><th>대여일</th></tr></thead>
-  <tbody>
-    {% for loan in recent_loans %}
-    <tr>
-      <td>{{ loan.item.name }}</td>
-      <td>{{ loan.user.name }}</td>
-      <td>{{ loan.status }}</td>
-      <td>{{ loan.borrowed_at.strftime("%Y-%m-%d") }}</td>
-    </tr>
-    {% else %}
-    <tr><td colspan="4">대여 기록이 없습니다.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
 </div>
 {% endblock %}

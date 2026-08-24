@@ -223,3 +223,53 @@ def safety_resolve(event_id: int, resolution_note: str = Form(...), db: Session 
 def safety_close(event_id: int, db: Session = Depends(get_db)):
     crud.close_safety_event(db, event_id, actor="안전관리자")
     return RedirectResponse(url=f"/safety/{event_id}", status_code=303)
+
+
+# ---- admin (LabBot 스타일 탭 페이지 — 재고관리/대여이력/실사/Safety) ----------
+
+
+@router.get("/admin")
+def admin_page(request: Request, db: Session = Depends(get_db)):
+    return templates.TemplateResponse(
+        request,
+        "admin.html",
+        {
+            "stats": crud.dashboard_stats(db),
+            "items": crud.list_items(db),
+            "categories": crud.distinct_categories(db),
+            "loans": crud.list_loans(db),
+            "audit_sessions": crud.list_audit_sessions(db)[:10],
+            "safety_events": crud.list_safety_events(db)[:10],
+        },
+    )
+
+
+@router.post("/admin/items")
+def admin_item_add(
+    name: str = Form(...),
+    category: str = Form(...),
+    location: str = Form(...),
+    total_qty: int = Form(1),
+    db: Session = Depends(get_db),
+):
+    qr_code = secrets.token_hex(4).upper()
+    item = crud.create_item(db, name, category, location, total_qty, qr_code)
+    ensure_qr_image(item.qr_code)
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.post("/admin/items/{item_id}/update")
+def admin_item_update(
+    item_id: int,
+    available_qty: int = Form(...),
+    total_qty: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    crud.update_item_stock(db, item_id, available_qty, total_qty)
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@router.post("/admin/items/{item_id}/delete")
+def admin_item_delete(item_id: int, db: Session = Depends(get_db)):
+    crud.delete_item(db, item_id)
+    return RedirectResponse(url="/admin", status_code=303)
