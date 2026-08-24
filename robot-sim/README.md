@@ -92,6 +92,20 @@ controller.py (그대로, 수정 없음)
 4. `LabKeeper/web`(FastAPI) 서버를 먼저 띄워두면, 장애물을 감지할 때마다 `notify.py`를 통해
    `/api/safety-events`로 SR-01 이벤트가 그대로 전송됩니다 — pygame 버전과 동일한 연동입니다.
 
+**웹 DB와 연동(중요)**: 체크포인트는 더 이상 하드코딩이 아니라, 실제 웹(Supabase)에
+등록된 물품들의 위치(location)를 그대로 가져와서 자동으로 만든다 — 물품을 웹에서
+새로 등록하면 다음 실행부터 그 위치가 체크포인트가 된다. 이걸 쓰려면 먼저:
+
+1. `robot-sim/.env.example`을 복사해서 `robot-sim/.env`로 저장
+2. Supabase 대시보드 > Project Settings > API Keys > **Secret key**(Owner/Admin만 보임,
+   안 보이면 지훈님께 요청)를 확인해서 `.env`에 채움 — publishable key가 아니라
+   **secret key**를 써야 한다. 로그인 세션이 없는 로봇 스크립트는 RLS를 통과 못 해서,
+   RLS를 우회하는 secret key로만 물품 목록을 읽고 안전이벤트를 쓸 수 있다.
+3. `.env`는 git에 안 올라간다 — 이 secret key는 절대 `web/`(브라우저 코드)에 넣지 않는다.
+
+`.env`가 없거나 값이 비어 있으면 콘솔에 안내 메시지가 뜨고, 체크포인트는 `선반A/B/C`
+(고정값)로 대체돼서 그래도 동작은 한다.
+
 **구성 요소**
 
 - 체크포인트 3곳(선반A/B/C), 라인 감지, 장애물 감지 — 전부 **물리 센서가 아니라 좌표 계산**으로

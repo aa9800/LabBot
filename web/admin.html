@@ -25,6 +25,7 @@
         <a href="index.html" data-nav="home">홈</a>
         <a href="items.html" data-nav="items">물품목록</a>
         <a href="chatbot.html" data-nav="chatbot">챗봇</a>
+        <a href="admin.html" data-nav="admin" class="nav-admin-link">관리자</a>
         <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
         <a href="login.html" data-nav="login">로그인</a>
       </nav>
@@ -162,6 +163,31 @@
         </div>
       </div>
 
+      <!-- Robot Console: 문제 상황 시 카메라로 직접 확인 + 필요하면 수동조작 -->
+      <div class="safety-detail" id="robotConsole" style="margin-bottom: 16px;">
+        <div class="page-header-row" style="margin-bottom: 10px;">
+          <h3 style="margin: 0;">Robot Console</h3>
+          <span class="badge badge-st-open" id="robotModeBadge"><span class="badge-dot"></span>-</span>
+        </div>
+        <img
+          id="robotCameraImg"
+          alt="로봇 카메라 스냅샷"
+          style="width: 100%; max-width: 360px; border-radius: 8px; border: 1px solid var(--border); display: block; margin-bottom: 12px; background: var(--bg);"
+        />
+        <div class="safety-actions">
+          <button type="button" class="btn btn-secondary btn-sm" data-drive="forward">▲ 전진</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-drive="left">◀ 좌회전</button>
+          <button type="button" class="btn btn-danger btn-sm" data-drive="stop">■ 정지</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-drive="right">▶ 우회전</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-drive="backward">▼ 후진</button>
+          <button type="button" class="btn btn-primary btn-sm" id="robotAutoBtn">자동 순찰로 복귀</button>
+        </div>
+        <p class="mono" style="color: var(--text-faint); margin-top: 10px;">
+          카메라는 실시간 영상이 아니라 몇 초 간격 스냅샷입니다. 수동조작 중에도 장애물 앞에서는
+          로봇이 안전을 위해 스스로 멈춥니다 — 원격으로도 이 정지를 풀 수는 없습니다(현장 확인 필요).
+        </p>
+      </div>
+
       <div class="table-wrap">
         <table>
           <thead>
@@ -195,6 +221,7 @@
   <script src="js/items-data.js"></script>
   <script src="js/rentals.js"></script>
   <script src="js/safety-data.js"></script>
+  <script src="js/robot-console-data.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

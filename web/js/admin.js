@@ -239,6 +239,67 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   safetyStatusFilter.addEventListener("change", renderSafetyTable);
 
+  // ---------- Robot Console (카메라 스냅샷 + 수동조작) ----------
+  const robotCameraImg = document.getElementById("robotCameraImg");
+  const robotModeBadge = document.getElementById("robotModeBadge");
+  const robotAutoBtn = document.getElementById("robotAutoBtn");
+  const driveButtons = document.querySelectorAll("[data-drive]");
+
+  const DRIVE_VALUES = {
+    forward: { speed: 70, turn: 0 },
+    backward: { speed: -70, turn: 0 },
+    left: { speed: 0, turn: -90 },
+    right: { speed: 0, turn: 90 },
+    stop: { speed: 0, turn: 0 },
+  };
+
+  function refreshRobotCamera() {
+    robotCameraImg.src = window.LabBotRobotConsole.cameraSnapshotUrl();
+  }
+
+  async function refreshRobotModeBadge() {
+    try {
+      const cmd = await window.LabBotRobotConsole.fetchRobotCommand();
+      const isManual = cmd.mode === "manual";
+      robotModeBadge.className = `badge ${isManual ? "badge-st-in_progress" : "badge-st-resolved"}`;
+      robotModeBadge.innerHTML = `<span class="badge-dot"></span>${isManual ? "수동조작 중" : "자동순찰 중"}`;
+    } catch (err) {
+      robotModeBadge.className = "badge badge-st-closed";
+      robotModeBadge.innerHTML = `<span class="badge-dot"></span>연결 확인 필요`;
+    }
+  }
+
+  driveButtons.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const values = DRIVE_VALUES[btn.dataset.drive];
+      try {
+        await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", ...values });
+        await refreshRobotModeBadge();
+      } catch (err) {
+        alert("원격조작 명령을 보내지 못했습니다: " + (err.message || err));
+      }
+    });
+  });
+
+  robotAutoBtn.addEventListener("click", async () => {
+    try {
+      await window.LabBotRobotConsole.setRobotCommand({ mode: "auto", speed: 0, turn: 0 });
+      await refreshRobotModeBadge();
+    } catch (err) {
+      alert("자동 모드로 전환하지 못했습니다: " + (err.message || err));
+    }
+  });
+
+  let robotConsoleStarted = false;
+  function startRobotConsolePolling() {
+    if (robotConsoleStarted) return; // showPanel()이 여러 번 불려도 인터벌이 중복 생기지 않게
+    robotConsoleStarted = true;
+    refreshRobotCamera();
+    refreshRobotModeBadge();
+    setInterval(refreshRobotCamera, 2000);
+    setInterval(refreshRobotModeBadge, 3000);
+  }
+
   addForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 

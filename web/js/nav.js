@@ -31,8 +31,4 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  const adminLink = document.querySelector(".admin-login-link");
-  if (adminLink && session && session.role === "admin") {
-    adminLink.textContent = "관리자 페이지";
-  }
 });
