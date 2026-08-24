@@ -282,8 +282,38 @@ create trigger trg_loans_increment_stock
   for each row execute function public.loans_increment_stock();
 
 -- =============================================================
--- 9. items 생명공학 물품 필드 보강 — item_type/재고최소치/보관조건/유효기간/점검상태
---    (자세한 시딩 데이터는 docs/labbot_seed_items.sql 참고)
+-- 9. 재고실사(audit) — 확인 목록 제출 -> 세션 생성 + 미확인 물품 자동 기록
+--    사람이 체크리스트로 확인해서 만든 item_id 목록이든, 나중에 로봇이 스캔해서
+--    만든 item_id 목록이든 이 함수 하나만 호출하면 된다 — 로직은 완전히 동일하다.
+--    audit_sessions/audit_mismatches는 이미 RLS로 관리자만 쓸 수 있게 막혀 있어서
+--    (audit_admin_only, audit_mismatch_admin_only) 이 함수는 security definer가
+--    필요 없다 — 호출자 본인이 이미 관리자 권한으로 두 테이블에 쓸 수 있다.
+-- =============================================================
+create or replace function public.run_inventory_audit(confirmed_item_ids bigint[])
+returns bigint as $fn$
+declare
+  new_session_id bigint;
+  performer text;
+begin
+  select coalesce(name, '알 수 없음') into performer from profiles where id = auth.uid();
+
+  insert into audit_sessions (performed_by, started_at, finished_at, scanned_count)
+  values (performer, now(), now(), coalesce(array_length(confirmed_item_ids, 1), 0))
+  returning id into new_session_id;
+
+  -- 전체 물품 중 확인 목록(confirmed_item_ids)에 없는 것은 전부 미확인으로 자동 기록
+  insert into audit_mismatches (session_id, item_id, note)
+  select new_session_id, id, '실사 시 미확인'
+  from items
+  where id <> all(confirmed_item_ids);
+
+  return new_session_id;
+end;
+$fn$ language plpgsql;
+
+-- =============================================================
+-- 10. items 생명공학 물품 필드 보강 — item_type/재고최소치/보관조건/유효기간/점검상태
+--     (자세한 시딩 데이터는 docs/labbot_seed_items.sql 참고)
 -- =============================================================
 
 alter table items

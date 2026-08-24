@@ -72,6 +72,7 @@
       <button type="button" class="tab-btn" data-tab="history">대여·반납 이력</button>
       <button type="button" class="tab-btn" data-tab="damage">파손 신고 목록</button>
       <button type="button" class="tab-btn" data-tab="safety">안전 이벤트</button>
+      <button type="button" class="tab-btn" data-tab="audit">재고 실사</button>
     </div>
 
     <!-- 재고 · 물품 관리 -->
@@ -211,6 +212,60 @@
         <!-- js/admin.js가 선택한 이벤트의 상세/이력/상태변경 버튼을 여기 채워넣음 -->
       </div>
     </section>
+
+    <!-- 재고 실사 (사람이 체크리스트로 확인하거나, 로봇이 스캔한 목록으로 제출 — 로직은 동일) -->
+    <section class="tab-panel" id="tab-audit">
+      <div class="page-header-row" style="margin-bottom: 12px;">
+        <p class="page-subtitle" style="margin: 0;">
+          실제로 확인한 물품에 체크한 뒤 제출하세요. 체크하지 않은 나머지 전체 물품은
+          이번 실사에서 "미확인"으로 자동 기록됩니다.
+        </p>
+        <button type="button" class="btn btn-secondary btn-sm" id="auditSelectAllBtn">전체 선택/해제</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 40px;"></th>
+              <th>물품명</th>
+              <th>카테고리</th>
+              <th>위치</th>
+            </tr>
+          </thead>
+          <tbody id="auditChecklistBody">
+            <!-- js/admin.js에서 전체 물품 기준으로 체크박스 렌더링 -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="page-header-row" style="margin: 16px 0;">
+        <span class="mono" id="auditSelectedCount">0/0개 확인함</span>
+        <button type="button" class="btn btn-primary btn-sm" id="auditSubmitBtn">실사 제출</button>
+      </div>
+
+      <h2 class="section-heading">최근 실사 결과</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>수행자</th>
+              <th>실시일시</th>
+              <th>확인</th>
+              <th>미확인</th>
+              <th>작업</th>
+            </tr>
+          </thead>
+          <tbody id="auditSessionTableBody">
+            <!-- js/admin.js에서 LabBotAudit 기준으로 렌더링 -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="safety-detail" id="auditDetail" style="display: none;">
+        <!-- js/admin.js가 선택한 실사 세션의 미확인 물품 목록을 여기 채워넣음 -->
+      </div>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -223,6 +278,7 @@
   <script src="js/rentals.js"></script>
   <script src="js/safety-data.js"></script>
   <script src="js/robot-console-data.js"></script>
+  <script src="js/audit-data.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>
