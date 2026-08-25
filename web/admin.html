@@ -94,7 +94,7 @@
       </button>
       <button type="button" class="summary-card summary-card-danger" data-goto-tab="safety">
         <span class="summary-card-value" id="summaryNeedsReview">-</span>
-        <span class="summary-card-label">Safety 검토 필요</span>
+        <span class="summary-card-label">안전 이벤트 검토 필요</span>
       </button>
     </div>
 
@@ -247,12 +247,13 @@
           <button type="button" class="btn btn-secondary btn-sm" data-drive="backward">▼ 후진</button>
           <button type="button" class="btn btn-primary btn-sm" id="robotAutoBtn">자동 순찰로 복귀</button>
         </div>
-        <p class="mono" style="color: var(--text-faint); margin-top: 10px;">
-          방향 버튼은 누르고 있는 동안 계속 이동하는 게 아니라, 한 번 클릭하면 그 방향으로 움직이기
-          시작해서 <strong>명령이 3초 이상 갱신되지 않으면 로봇이 자동으로 멈춥니다</strong>(연결이
-          끊겨도 계속 움직이는 사고를 막기 위함) — 계속 이동하려면 같은 버튼을 반복해서 눌러주세요.
-          카메라는 실시간 영상이 아니라 몇 초 간격 스냅샷입니다. 수동조작 중에도 장애물 앞에서는
-          로봇이 안전을 위해 스스로 멈춥니다 — 원격으로도 이 정지를 풀 수는 없습니다(현장 확인 필요).
+        <p class="robot-console-key-note" style="margin-top: 10px;">
+          ⏱ 명령이 <strong>3초</strong> 이상 갱신되지 않으면 자동 정지 · 🛑 <strong>장애물 앞에서는 강제 정지</strong>(원격으로 해제 불가 — 현장 확인 필요)
+        </p>
+        <p class="mono" style="color: var(--text-faint); margin-top: 6px;">
+          방향 버튼은 누르고 있는 동안 이동하는 게 아니라, 한 번 클릭하면 그 방향으로 움직이기
+          시작하는 방식입니다(연결이 끊겨도 계속 움직이는 사고를 막기 위함) — 계속 이동하려면 같은
+          버튼을 반복해서 눌러주세요. 카메라는 실시간 영상이 아니라 몇 초 간격 스냅샷입니다.
         </p>
       </div>
 

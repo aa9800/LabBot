@@ -2054,6 +2054,13 @@ tbody tr:hover td {
   color: var(--text-faint);
 }
 
+.robot-console-key-note {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
 /* ---------- 로봇 안내 + QR 스캔 모달 (마이페이지 수령/반납) ---------- */
 
 .guide-modal-card {
