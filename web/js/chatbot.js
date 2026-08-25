@@ -13,6 +13,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 로그인 안 한 사용자도 챗봇 자체는 그냥 쓸 수 있게 requireLogin으로 막지는 않는다.
   const session = await window.LabBotAuth.getSession();
 
+  // items 테이블 RLS(items_select_all)가 로그인한 사용자만 조회를 허용해서, 비로그인
+  // 상태에서는 물품 목록이 항상 빈 채로 내려온다 — 챗봇이 "등록된 물품이 없다"고 답하면
+  // 헷갈리니, 애초에 로그인이 필요하다는 걸 화면에 미리 안내한다.
+  if (!session) {
+    document.getElementById("chatLoginNotice").style.display = "block";
+  }
+
   // 물품 목록(id 포함)을 매번 최신으로 유지 — 대여/사용 직후 재고가 바뀌어도 다음 질문엔 반영되게.
   let itemsById = new Map();
   async function refreshItems() {

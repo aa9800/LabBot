@@ -149,46 +149,66 @@ returns boolean as $$
   );
 $$ language sql security definer stable;
 
+-- 아래 정책들은 전부 "drop policy if exists" 뒤에 "create policy"를 붙인다 — 이미 정책이
+-- 있는 기존 Supabase 프로젝트에서 이 스키마 파일을 처음부터 다시 실행해도 "정책이 이미
+-- 있습니다" 에러로 중간에 멈추지 않고 끝까지 재현 가능하게 하기 위해서다(GPT 리뷰가 지적한
+-- 문제). 정책 내용 자체는 안 바뀌니 재실행해도 동작은 그대로다.
+
 -- profiles: 본인 것만 보고 고치기, 관리자는 전체 조회
+drop policy if exists "profiles_select_own_or_admin" on profiles;
 create policy "profiles_select_own_or_admin" on profiles
   for select using (id = auth.uid() or is_admin());
+drop policy if exists "profiles_update_own" on profiles;
 create policy "profiles_update_own" on profiles
   for update using (id = auth.uid());
 
 -- items: 로그인한 사람은 전부 조회, 등록/수정/삭제는 관리자만
+drop policy if exists "items_select_all" on items;
 create policy "items_select_all" on items
   for select using (auth.role() = 'authenticated');
+drop policy if exists "items_admin_write" on items;
 create policy "items_admin_write" on items
   for all using (is_admin()) with check (is_admin());
 
 -- loans: 본인 대여 내역만 보고/만들고, 관리자는 전체 열람·수정
+drop policy if exists "loans_select_own_or_admin" on loans;
 create policy "loans_select_own_or_admin" on loans
   for select using (user_id = auth.uid() or is_admin());
+drop policy if exists "loans_insert_own" on loans;
 create policy "loans_insert_own" on loans
   for insert with check (user_id = auth.uid());
+drop policy if exists "loans_update_own_or_admin" on loans;
 create policy "loans_update_own_or_admin" on loans
   for update using (user_id = auth.uid() or is_admin());
 
 -- audit_sessions / audit_mismatches: 관리자 전용
 -- (로봇은 아래 안내처럼 service_role 키로 접근하므로 이 정책과 무관하게 항상 통과됨)
+drop policy if exists "audit_admin_only" on audit_sessions;
 create policy "audit_admin_only" on audit_sessions
   for all using (is_admin()) with check (is_admin());
+drop policy if exists "audit_mismatch_admin_only" on audit_mismatches;
 create policy "audit_mismatch_admin_only" on audit_mismatches
   for all using (is_admin()) with check (is_admin());
 
 -- safety_events / action_logs: 로그인하면 읽기 가능(투명성), 쓰기는 관리자만
+drop policy if exists "safety_select_all" on safety_events;
 create policy "safety_select_all" on safety_events
   for select using (auth.role() = 'authenticated');
+drop policy if exists "safety_admin_write" on safety_events;
 create policy "safety_admin_write" on safety_events
   for all using (is_admin()) with check (is_admin());
+drop policy if exists "action_log_select_all" on action_logs;
 create policy "action_log_select_all" on action_logs
   for select using (auth.role() = 'authenticated');
+drop policy if exists "action_log_admin_write" on action_logs;
 create policy "action_log_admin_write" on action_logs
   for all using (is_admin()) with check (is_admin());
 
 -- damage_reports: 본인이 올린 신고 + 관리자는 전체
+drop policy if exists "damage_select_own_or_admin" on damage_reports;
 create policy "damage_select_own_or_admin" on damage_reports
   for select using (reported_by = auth.uid() or is_admin());
+drop policy if exists "damage_insert_own" on damage_reports;
 create policy "damage_insert_own" on damage_reports
   for insert with check (reported_by = auth.uid());
 
@@ -505,3 +525,15 @@ end;
 $$ language plpgsql;
 -- security definer를 안 붙였다 — 호출자(로그인한 관리자)의 권한 그대로 실행되어야
 -- safety_admin_write/action_log_admin_write RLS 정책(is_admin() 체크)이 그대로 적용된다.
+
+-- =============================================================
+-- 15. damage-photos 버킷 용량·MIME 제한 (GPT 리뷰 지적 — 제한이 전혀 없었음)
+--     web/js/damage-data.js에서도 같은 제한을 클라이언트에서 먼저 검사하지만, 그건
+--     사용자에게 바로 알려주기 위한 것일 뿐이고 실제 방어선은 여기(버킷 설정)다 —
+--     클라이언트 코드는 우회 가능해도 버킷 설정은 스토리지 서버가 강제한다.
+-- =============================================================
+
+update storage.buckets
+set file_size_limit = 5242880, -- 5MB
+    allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/heic']
+where id = 'damage-photos';

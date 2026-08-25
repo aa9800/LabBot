@@ -185,6 +185,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       const itemName = (loan.items && loan.items.name) || "삭제된 물품";
       const overdue = window.LabBotRentals.isOverdue(loan);
 
+      // 시약/소모품 "사용하기"는 대여-반납이 아니라 한 번에 끝나는 소모라서(rentals.js의
+      // consumeItem 참고 — borrowed_at과 returned_at이 똑같이 찍힌다), 대여+반납 두 줄로
+      // 보이면 "빌렸다가 바로 반납했나?" 헷갈린다. 소모품이면 "사용" 한 줄로만 보여준다.
+      const isConsumableLoan = loan.items && window.LabBotRentals.isConsumable({ item_type: loan.items.category });
+
+      if (isConsumableLoan) {
+        rows.push({ user: userName, item: itemName, type: "사용", badgeKey: "available", time: loan.borrowed_at });
+        return;
+      }
+
       rows.push({
         user: userName,
         item: itemName,

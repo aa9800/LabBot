@@ -1051,6 +1051,22 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 
+/* 비로그인 사용자에게 재고 기반 추천·사용/대여는 로그인이 필요하다고 미리 알려주는 안내 —
+   비로그인 상태로 물어봐도 챗봇이 "등록된 물품이 없다"고 답해서 헷갈리는 걸 막는다. */
+.chat-login-notice {
+  margin: 0;
+  padding: 10px 18px;
+  font-size: 0.8rem;
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.08);
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-login-notice a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .chat-messages {
   flex: 1;
   overflow-y: auto;

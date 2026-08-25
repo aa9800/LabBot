@@ -26,9 +26,21 @@ const DAMAGE_STATUS_LABEL = {
   failed: "분석 실패",
 };
 
+const MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024; // 5MB — 휴대폰 카메라 사진 정도는 넉넉히 통과, 원본 RAW급은 차단
+
 // 사진을 damage-photos 버킷에 올리고 공개 URL을 돌려준다.
 // 파일명에 타임스탬프+랜덤을 섞어서 같은 이름을 두 번 올려도 서로 덮어쓰지 않게 한다.
+// 크기·MIME 제한은 클라이언트(여기)와 스토리지 버킷 설정(docs/labbot_schema.sql 15번 섹션)
+// 양쪽에 걸어둔다 — 여기 검사는 사용자에게 바로 알려주기 위함이고, 버킷 설정이 실제 방어선이다
+// (클라이언트 코드는 우회할 수 있어도 버킷 설정은 서버에서 강제되니까).
 async function uploadDamagePhoto(file, session) {
+  if (!file.type || !file.type.startsWith("image/")) {
+    throw new Error("이미지 파일만 업로드할 수 있습니다.");
+  }
+  if (file.size > MAX_PHOTO_SIZE_BYTES) {
+    throw new Error("사진 용량은 5MB를 넘을 수 없습니다.");
+  }
+
   const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
   const path = `${session.id}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
