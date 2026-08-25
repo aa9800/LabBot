@@ -32,9 +32,11 @@
   경고가 뜨는 물품이 없게 함(발표 중 헷갈릴 수 있는 요소 제거 — 사용자 직접 요청).
 
 ### 뒤늦게 정리한 것
-- `items.category` 레거시값(id 48, HPLC 시스템 → EQUIPMENT)과 테스트용 loans 4건(id 3,4,7,8)
+- `items.category` 레거시값(HPLC 시스템, id 11 → EQUIPMENT)과 테스트용 loans 4건(id 3,4,7,8)
   + 그로 인한 1.5 mL microtube 재고 오차(29→30) — 처음엔 안전장치가 막았다가, 사용자가
-  직접 채팅으로 재확인해준 뒤 재시도해서 전부 정리 완료.
+  직접 채팅으로 재확인해준 뒤 재시도해서 정리 완료. (참고: 최초 시도 때 HPLC의 id를 48로
+  잘못 기억해서 엉뚱한 물품(Vortex mixer, 이미 EQUIPMENT라 무해한 실수)을 먼저 고쳤다가,
+  실제 `category = 'separation'`인 행을 다시 조회해서 진짜 id(11)를 찾아 정정함.)
 
 ### 아직 안 한 것 (다음 차례)
 - `damage-photos`/`robot-camera` storage를 비공개+서명URL 방식으로 전환
