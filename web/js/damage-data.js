@@ -28,8 +28,9 @@ const DAMAGE_STATUS_LABEL = {
 
 const MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024; // 5MB — 휴대폰 카메라 사진 정도는 넉넉히 통과, 원본 RAW급은 차단
 
-// 사진을 damage-photos 버킷에 올리고 공개 URL을 돌려준다.
-// 파일명에 타임스탬프+랜덤을 섞어서 같은 이름을 두 번 올려도 서로 덮어쓰지 않게 한다.
+// 사진을 damage-photos 버킷에 올리고 "경로"만 돌려준다(공개 URL이 아님 — 버킷이
+// 비공개라 URL만으로는 못 열고, 매번 서명 URL을 새로 발급해야 한다. docs/labbot_schema.sql
+// 19번 섹션 참고). 파일명에 타임스탬프+랜덤을 섞어서 같은 이름을 두 번 올려도 안 덮어쓴다.
 // 크기·MIME 제한은 클라이언트(여기)와 스토리지 버킷 설정(docs/labbot_schema.sql 15번 섹션)
 // 양쪽에 걸어둔다 — 여기 검사는 사용자에게 바로 알려주기 위함이고, 버킷 설정이 실제 방어선이다
 // (클라이언트 코드는 우회할 수 있어도 버킷 설정은 서버에서 강제되니까).
@@ -50,8 +51,16 @@ async function uploadDamagePhoto(file, session) {
   });
   if (uploadError) throw uploadError;
 
-  const { data } = supabaseClient.storage.from("damage-photos").getPublicUrl(path);
-  return data.publicUrl;
+  return path;
+}
+
+// 비공개 버킷이라 링크 하나로 계속 열람할 수 없다 — 열어볼 때마다(관리자가 "사진 보기"를
+// 누를 때) 짧게 유효한 서명 URL을 새로 받아온다. RLS(damage_photos_read_own_or_admin)가
+// 신고 당사자 본인 또는 관리자만 통과시킨다.
+async function getDamagePhotoUrl(path) {
+  const { data, error } = await supabaseClient.storage.from("damage-photos").createSignedUrl(path, 300); // 5분
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 // 파손 신고 접수: 사진 업로드 -> damage_reports insert -> gemini-damage-assess 호출까지 한 번에.
@@ -60,7 +69,7 @@ async function uploadDamagePhoto(file, session) {
 async function submitDamageReport({ item, session, file, note }) {
   if (!file) throw new Error("파손 사진을 첨부해주세요.");
 
-  const photo_url = await uploadDamagePhoto(file, session);
+  const photo_path = await uploadDamagePhoto(file, session);
 
   const { data: report, error: insertError } = await supabaseClient
     .from("damage_reports")
@@ -68,7 +77,7 @@ async function submitDamageReport({ item, session, file, note }) {
       item_id: item.id,
       reported_by: session.id,
       note: note || "",
-      photo_url,
+      photo_path,
       status: "pending",
     })
     .select(DAMAGE_REPORT_SELECT)
@@ -108,4 +117,5 @@ window.LabBotDamage = {
   DAMAGE_STATUS_LABEL,
   submitDamageReport,
   fetchAllDamageReports,
+  getDamagePhotoUrl,
 };

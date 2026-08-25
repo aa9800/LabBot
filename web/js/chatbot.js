@@ -34,6 +34,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   await refreshItems();
 
+  // 대화 이력 복원 — 새로고침해도 이전 대화가 남아있게(GPT 리뷰 지적).
+  // 화면 상단의 고정 인사말은 그대로 두고, 그 뒤에 저장된 대화를 이어 붙인다.
+  async function restoreHistory() {
+    const history = await window.LabBotChat.fetchChatHistory(session);
+    history.forEach((row) => {
+      appendMessage(row.content, row.role === "user" ? "user" : "bot");
+      if (row.role === "bot" && Array.isArray(row.recommended_item_ids) && row.recommended_item_ids.length > 0) {
+        appendRecommendationCards(row.recommended_item_ids);
+      }
+    });
+  }
+
   function appendMessage(text, sender) {
     const wrapper = document.createElement("div");
     wrapper.className = `chat-message chat-message-${sender}`;
@@ -124,6 +136,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  await restoreHistory();
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = input.value.trim();
@@ -132,6 +146,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     appendMessage(text, "user");
     input.value = "";
     sendBtn.disabled = true;
+    window.LabBotChat.saveChatMessage(session, { role: "user", content: text });
 
     const { bubble: thinkingBubble } = appendMessage("생각 중...", "bot");
 
@@ -149,11 +164,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
 
       if (error) throw error;
-      thinkingBubble.textContent = data.reply || "죄송해요, 답변을 만들지 못했어요.";
+      const reply = data.reply || "죄송해요, 답변을 만들지 못했어요.";
+      thinkingBubble.textContent = reply;
+      const recommendedIds = Array.isArray(data.recommended_item_ids) ? data.recommended_item_ids : [];
 
-      if (Array.isArray(data.recommended_item_ids) && data.recommended_item_ids.length > 0) {
-        appendRecommendationCards(data.recommended_item_ids);
+      if (recommendedIds.length > 0) {
+        appendRecommendationCards(recommendedIds);
       }
+      window.LabBotChat.saveChatMessage(session, { role: "bot", content: reply, recommended_item_ids: recommendedIds });
     } catch (err) {
       console.error("LabBot: 챗봇 응답 실패", err);
       thinkingBubble.textContent = "챗봇 응답을 가져오지 못했어요. 잠시 후 다시 시도해주세요.";

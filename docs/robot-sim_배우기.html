@@ -113,7 +113,7 @@ python main.py</pre>
     <p>창이 뜨고 주황색 점(로봇)이 회색 선을 따라 스스로 움직이면 성공입니다.</p>
     <div class="callout">
       <b>웹까지 같이 보고 싶다면</b>
-      <code>robot-sim</code> 실행 전에 <code>web/</code>(또는 로컬 프로토타입)을 먼저 켜두면, 로봇이 장애물을 감지했을 때 웹의 Safety 화면에 이벤트가 실제로 뜨는 걸 볼 수 있습니다. 안 켜져 있어도 로봇 자체는 정상 동작합니다.
+      <code>robot-sim/.env</code>에 Supabase 접속정보를 채워두면(<code>.env.example</code> 참고), 로봇이 장애물을 감지했을 때 실제 웹(Supabase) Safety 화면에 이벤트가 뜨는 걸 볼 수 있습니다. 로컬 웹서버를 따로 켤 필요는 없습니다(2026-08-25부터 pygame도 Webots처럼 Supabase에 직접 연결). <code>.env</code>가 없어도 로봇 자체는 정상 동작합니다.
     </div>
   </section>
 
@@ -174,7 +174,7 @@ python main.py</pre>
           <tr><td><code>sim/engine.py</code></td><td>가상 세계 자체 (트랙, 물리, 그리기)</td></tr>
           <tr><td><code>sim/hal_sim.py</code></td><td>controller.py가 센서값을 "물어보는" 창구 — 지금은 가상 세계에 물어봄</td></tr>
           <tr><td><code>real_hal.py</code></td><td>실제 로봇 오면 채울 자리. 지금은 비어있음(TODO)</td></tr>
-          <tr><td><code>notify.py</code></td><td>웹으로 이벤트/실사 결과 전송</td></tr>
+          <tr><td><code>notify_supabase.py</code></td><td>웹(Supabase)으로 이벤트/물품목록 전송·조회 — pygame과 Webots가 공용으로 씀(2026-08-25부터 통일)</td></tr>
           <tr><td><code>main.py</code></td><td>창 띄우고 키 입력 처리, 위 조각들을 연결</td></tr>
         </tbody>
       </table>
@@ -191,8 +191,8 @@ python main.py</pre>
   </section>
 
   <section>
-    <h2><span class="n">9</span> Webots — 발표용 3D 시뮬레이터</h2>
-    <p class="section-sub">pygame은 로직을 빠르게 확인하는 단위테스트용으로 계속 씁니다. Webots는 그 위에 새로 얹은 3D 발표용 시뮬레이터 — <strong>controller.py(판단 로직)는 그대로 재사용</strong>하고, Webots용 HAL만 새로 갈아 끼운 구조입니다.</p>
+    <h2><span class="n">9</span> Webots — 주 개발·발표용 3D 연구실</h2>
+    <p class="section-sub">pygame은 화면 시연이 아니라 로직을 빠르게 확인하는 내부 테스트용입니다. 실제 개발과 발표는 9개 보관구역과 대표 장비가 배치된 Webots 연구실에서 진행합니다. <strong>controller.py의 HAL 구조는 그대로 재사용</strong>합니다.</p>
 
     <div class="callout">
       <b>먼저 확인</b>
@@ -211,7 +211,7 @@ python main.py</pre>
       <div><span class="bar"></span> 바닥의 검은 선 — 트랙(순찰 경로), pygame의 회색 선과 같은 역할</div>
       <div><span class="dot marker"></span> 청록색 원 — 체크포인트. <strong>웹 DB에 등록된 실제 물품 위치</strong>를 기준으로 로봇이 실행할 때마다 자동으로 만든다(아래 "웹 연동" 참고)</div>
       <div><span class="box"></span> 주황색 박스 — 장애물(<code>OBSTACLE_1</code>)</div>
-      <div><span class="dot robot"></span> 동그란 로봇 — Webots 공식 예제 로봇 E-puck을 빌려 쓴 것. 실제 Raspbot 외형은 아니지만 차동구동 구조가 같아서 로직 검증에는 문제없음</div>
+      <div><span class="dot robot"></span> 로봇 — E-puck 차동구동 물리 위에 Raspbot형 직사각 차체와 전면 카메라 외형을 얹은 시각 프록시. 실제 치수는 실기기 확인 후 보정</div>
     </div>
 
     <h3>콘솔 로그 읽는 법</h3>
@@ -243,7 +243,7 @@ python main.py</pre>
       <li>시작할 때 웹의 <strong>실제 물품 위치</strong>(기기실-1, 세포배양실 등)를 가져와서 그 개수만큼 체크포인트를 자동으로 만든다(<code>robot-sim/webots_project/controllers/labkeeper_controller/labkeeper_controller.py</code>의 <code>_build_checkpoints_from_items</code>)</li>
       <li>장애물을 감지하면 <strong>SR-01 안전이벤트</strong>를 실제로 웹 DB에 전송한다 — 관리자 페이지(<code>admin.html</code>) 로그인 후 "안전 이벤트" 탭에서 확인 가능</li>
     </ul>
-    <p>이 연동은 <code>robot-sim/notify_supabase.py</code>가 담당하고, <code>robot-sim/.env</code>(git에는 안 올라가는 파일)에 Supabase 접속정보가 있어야 동작한다. 없으면 콘솔에 안내 메시지가 뜨고, 체크포인트는 고정값(선반A/B/C)으로 대체된다 — 그래도 로봇 자체는 정상 동작한다.</p>
+    <p>이 연동은 <code>robot-sim/notify_supabase.py</code>가 담당하고, <code>robot-sim/.env</code>(git에는 안 올라가는 파일)에 Supabase 접속정보가 있어야 동작한다. 없으면 콘솔에 안내 메시지가 뜨고, 체크포인트는 웹과 동일한 9개 연구실 위치 고정값으로 대체된다 — 그래도 로봇 자체는 정상 동작한다.</p>
 
     <h3>Robot Console — 웹에서 카메라 보고 직접 조작하기</h3>
     <p>관리자 페이지 → "안전 이벤트" 탭 맨 위에 <strong>Robot Console</strong>이 있다.</p>

@@ -39,7 +39,7 @@
         <a href="login.html?redirect=chatbot.html">로그인</a> 후 이용할 수 있습니다.
       </p>
 
-      <!-- TODO: 메시지 목록을 대화 이력 데이터로 동적 렌더링 -->
+      <!-- 로그인 사용자의 이전 대화는 chatbot.js가 chat_messages 테이블에서 불러와 이 아래에 이어 붙인다 -->
       <div class="chat-messages" id="chatMessages">
         <div class="chat-message chat-message-bot">
           <span class="chat-avatar">AI</span>
@@ -62,6 +62,7 @@
   <script src="js/nav.js"></script>
   <script src="js/items-data.js"></script>
   <script src="js/rentals.js"></script>
+  <script src="js/chat-data.js"></script>
   <script src="js/chatbot.js"></script>
 </body>
 </html>

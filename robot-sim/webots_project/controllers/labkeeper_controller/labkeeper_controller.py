@@ -18,6 +18,7 @@ import datetime
 import importlib.util
 import math
 import os
+import tempfile
 
 from controller import Supervisor  # Webots가 기본 제공하는 진짜 controller 모듈
 # 장애물 노드의 실제 좌표를 직접 읽어오려면(getFromDef) Robot이 아니라
@@ -41,17 +42,25 @@ def _load_from_path(module_name, relative_path):
 
 _patrol_mod = _load_from_path("labkeeper_patrol_controller", "controller.py")
 _notify_mod = _load_from_path("labkeeper_notify_supabase", "notify_supabase.py")
+_logger_mod = _load_from_path("labkeeper_run_logger", "run_logger.py")
 PatrolController = _patrol_mod.PatrolController
+JsonlRunLogger = _logger_mod.JsonlRunLogger
 
 TIME_STEP = 32  # ms — lab.wbt의 basicTimeStep과 맞춘다
 
-# 웹에서 물품을 하나도 못 가져왔을 때(오프라인 등)를 위한 대체 체크포인트.
-# lab.wbt의 CP_A/B/C 표식 위치와 같다 — 이건 장식용 참고 표시일 뿐, 실제 체크포인트는
-# 아래 _build_checkpoints_from_items()가 실시간 DB 기준으로 새로 계산한다.
+# 웹에서 물품을 하나도 못 가져왔을 때(오프라인 등)를 위한 9개 대체 체크포인트.
+# lab.wbt의 QR-01~09 표식과 같다. 실제 연결 시에는 아래 함수가 DB location을 기준으로
+# 같은 순찰선 위에 다시 계산한다.
 FALLBACK_CHECKPOINTS = [
-    {"name": "선반A", "x": 0.0, "y": -0.5, "radius": 0.1},
-    {"name": "선반B", "x": 0.7, "y": 0.0, "radius": 0.1},
-    {"name": "선반C", "x": 0.0, "y": 0.5, "radius": 0.1},
+    {"name": "일반실험실", "x": -1.267, "y": -1.3, "radius": 0.12},
+    {"name": "기기실-1", "x": 0.2, "y": -1.3, "radius": 0.12},
+    {"name": "기기실-2", "x": 1.667, "y": -1.3, "radius": 0.12},
+    {"name": "세포배양실", "x": 2.0, "y": -0.167, "radius": 0.12},
+    {"name": "시약보관실", "x": 2.0, "y": 1.3, "radius": 0.12},
+    {"name": "냉장보관실", "x": 0.533, "y": 1.3, "radius": 0.12},
+    {"name": "냉동보관실", "x": -0.933, "y": 1.3, "radius": 0.12},
+    {"name": "소모품보관실", "x": -2.0, "y": 0.9, "radius": 0.12},
+    {"name": "안전장비함", "x": -2.0, "y": -0.567, "radius": 0.12},
 ]
 
 
@@ -87,9 +96,12 @@ def _build_checkpoints_from_items(items):
     return checkpoints
 
 
-SNAPSHOT_PATH = os.path.join(os.path.dirname(__file__), "_last_camera.jpg")
+# Webots의 camera.saveImage()는 Windows에서 한글이 포함된 경로에 저장하지 못할 수 있다.
+# 프로젝트 경로 대신 ASCII로만 구성된 시스템 임시 폴더를 사용한다.
+SNAPSHOT_PATH = os.path.join(tempfile.gettempdir(), "labkeeper_webots_camera.jpg")
 COMMAND_POLL_EVERY = 10   # 몇 틱마다 웹의 원격조작 명령을 확인할지 (너무 자주 물어보면 느려짐)
 CAMERA_UPLOAD_EVERY = 30  # 몇 틱마다 카메라 사진을 올릴지 (네트워크 요청이라 더 드물게)
+TELEMETRY_LOG_EVERY = 30  # 약 1초마다 위치·명령·장애물 거리 기록
 MANUAL_COMMAND_MAX_AGE_SECONDS = 3.0  # 이보다 오래된 수동조작 명령은 "연결 끊김"으로 보고 무조건 정지
 
 
@@ -110,6 +122,9 @@ def _command_age_seconds(command):
 
 def main():
     robot = Supervisor()
+    log_dir = os.path.join(_ROBOT_SIM_ROOT, "logs")
+    run_log = JsonlRunLogger(log_dir, source="webots")
+    print(f"[labkeeper] 주행 로그: {run_log.path}")
 
     items = _notify_mod.fetch_items()
     checkpoints = _build_checkpoints_from_items(items)
@@ -127,15 +142,18 @@ def main():
 
     def on_scan(location):
         print(f"[labkeeper] 체크포인트 확인: {location}")
+        run_log.write("checkpoint_scanned", checkpoint=location)
 
     def on_obstacle(distance):
         print(f"[labkeeper] 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 전송")
+        run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
         _notify_mod.report_safety_event(
             "SR-01", severity="HIGH", note="Webots 순찰 중 장애물 감지", source="webots-sim"
         )
 
     def on_obstacle_cleared():
         print("[labkeeper] 장애물 사라짐 — 순찰 재개")
+        run_log.write("obstacle_cleared")
 
     patrol = PatrolController(
         hal, on_scan=on_scan, on_obstacle=on_obstacle, on_obstacle_cleared=on_obstacle_cleared
@@ -155,6 +173,7 @@ def main():
             is_manual = command.get("mode") == "manual"
             if is_manual != was_manual:
                 print(f"[labkeeper] 모드 전환: {'수동조작' if is_manual else '자동순찰'}")
+                run_log.write("mode_changed", mode="manual" if is_manual else "auto")
             was_manual = is_manual
 
         if command.get("mode") == "manual":
@@ -174,6 +193,16 @@ def main():
         if tick % CAMERA_UPLOAD_EVERY == 0:
             camera.saveImage(SNAPSHOT_PATH, 80)
             _notify_mod.upload_camera_snapshot(SNAPSHOT_PATH)
+
+        if tick % TELEMETRY_LOG_EVERY == 0:
+            run_log.write(
+                "telemetry",
+                sim_time_s=round(tick * dt, 3),
+                mode=command.get("mode", "auto"),
+                **hal.telemetry_snapshot(),
+            )
+
+    run_log.close()
 
 
 if __name__ == "__main__":

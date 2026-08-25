@@ -20,6 +20,7 @@ web/js/config.js
 
 # robot-sim — Supabase secret key(로봇 전용, 절대 커밋 금지)
 robot-sim/.env
+robot-sim/logs/*.jsonl
 
 # Webots — 창 배치/썸네일 같은 개인 UI 상태 파일 (프로젝트 소스 아님)
 robot-sim/webots_project/worlds/.*.wbproj

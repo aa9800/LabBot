@@ -46,6 +46,13 @@ if not _READY:
     )
 
 
+def is_configured():
+    """robot-sim/.env에 SUPABASE_URL/SUPABASE_SECRET_KEY가 채워져 있는지.
+    호출하는 쪽(main.py 등)이 "체크포인트 0개"의 원인이 .env 미설정인지, 아니면
+    서버는 설정됐는데 네트워크/DB 문제로 실패한 것인지 구분해서 안내할 때 쓴다."""
+    return _READY
+
+
 def _headers():
     return {
         "apikey": SUPABASE_SECRET_KEY,

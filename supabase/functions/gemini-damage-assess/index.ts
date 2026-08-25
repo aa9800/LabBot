@@ -37,8 +37,15 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string }> {
-  const res = await fetch(url);
+// damage-photos 버킷이 비공개로 바뀌면서(docs/labbot_schema.sql 19번 섹션) 공개 URL로 그냥
+// fetch할 수 없다 — service role 키로 스토리지 다운로드 엔드포인트를 직접 호출한다.
+// service role은 storage.objects RLS도 DB RLS와 똑같이 우회하므로 버킷이 비공개여도 항상 읽힌다.
+async function fetchImageAsBase64(photoPath: string): Promise<{ base64: string; mimeType: string }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("LABBOT_SERVICE_KEY");
+  const res = await fetch(`${supabaseUrl}/storage/v1/object/damage-photos/${photoPath}`, {
+    headers: { apikey: serviceKey!, Authorization: `Bearer ${serviceKey}` },
+  });
   if (!res.ok) throw new Error(`사진을 불러오지 못했습니다 (${res.status})`);
   const mimeType = res.headers.get("content-type") || "image/jpeg";
   const bytes = new Uint8Array(await res.arrayBuffer());
@@ -131,7 +138,7 @@ async function fetchDamageReport(reportId: number) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("LABBOT_SERVICE_KEY");
   const res = await fetch(
-    `${supabaseUrl}/rest/v1/damage_reports?id=eq.${reportId}&select=id,photo_url,note,items(name,category)`,
+    `${supabaseUrl}/rest/v1/damage_reports?id=eq.${reportId}&select=id,photo_path,note,items(name,category)`,
     {
       headers: { apikey: serviceKey!, Authorization: `Bearer ${serviceKey}` },
     }
@@ -179,7 +186,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { base64, mimeType } = await fetchImageAsBase64(report.photo_url);
+    const { base64, mimeType } = await fetchImageAsBase64(report.photo_path);
     const result = await assessWithGemini(
       base64,
       mimeType,

@@ -563,3 +563,112 @@ alter table stock_adjustments enable row level security;
 drop policy if exists "stock_adjustments_admin_only" on stock_adjustments;
 create policy "stock_adjustments_admin_only" on stock_adjustments
   for all using (is_admin()) with check (is_admin());
+
+-- GPT 리뷰 지적 — "왜 바꿨는지"가 항상 빈 값이었다. 자유 서술형 대신 5개 사유 중 고르게 해서
+-- 나중에 통계 내기도 쉽게 한다("파손·폐기가 이번 달에 몇 건" 같은 질문에 답할 수 있게).
+alter table stock_adjustments add column if not exists reason text not null default '기타'
+  check (reason in ('신규입고', '사용·소진', '파손·폐기', '실사 수정', '기타'));
+
+-- =============================================================
+-- 17. 재고 조정 원자적 RPC (GPT 리뷰 지적 — items UPDATE와 stock_adjustments INSERT가
+--     따로 실행돼서, 이력 기록이 실패해도 재고 수정은 그대로 남는 문제가 있었다.
+--     Safety RPC(14번 섹션)와 같은 방식으로 하나의 함수 호출로 묶는다.)
+-- =============================================================
+
+create or replace function public.adjust_item_stock(
+  p_item_id bigint,
+  p_new_available integer,
+  p_new_total integer,
+  p_actor text,
+  p_reason text default '기타',
+  p_note text default ''
+)
+returns items as $$
+declare
+  v_before items;
+  v_after items;
+begin
+  if p_new_available > p_new_total then
+    raise exception '대여가능 수량은 총 수량을 넘을 수 없습니다.';
+  end if;
+  if p_new_available < 0 or p_new_total < 0 then
+    raise exception '재고 수량은 0 이상이어야 합니다.';
+  end if;
+
+  -- for update로 잠가서, 같은 물품을 두 관리자가 동시에 수정해도 이력의 previous_*
+  -- 값이 서로 덮어써지지 않게 한다.
+  select * into v_before from items where id = p_item_id for update;
+  if not found then
+    raise exception 'item id %를 찾을 수 없습니다', p_item_id;
+  end if;
+
+  update items
+  set available_qty = p_new_available, total_qty = p_new_total
+  where id = p_item_id
+  returning * into v_after;
+
+  insert into stock_adjustments
+    (item_id, actor, previous_available, new_available, previous_total, new_total, reason, note)
+  values
+    (p_item_id, p_actor, v_before.available_qty, p_new_available, v_before.total_qty, p_new_total, p_reason, p_note);
+
+  return v_after;
+end;
+$$ language plpgsql;
+-- security definer를 안 붙였다 — 호출자(로그인한 관리자)의 권한 그대로 실행되어야
+-- items_admin_write/stock_adjustments_admin_only RLS 정책(is_admin() 체크)이 그대로 적용된다.
+
+-- =============================================================
+-- 18. 챗봇 대화 이력 저장 (GPT 리뷰 지적 — 새로고침하면 대화가 사라짐)
+--     로그인한 사용자별로 본인 대화만 저장/조회. 비로그인 사용자는 여전히 그때그때
+--     휘발되는 대화만 가능(원래도 items 조회 자체가 로그인 전제였다).
+-- =============================================================
+
+create table if not exists chat_messages (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null check (role in ('user', 'bot')),
+  content text not null,
+  recommended_item_ids integer[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+alter table chat_messages enable row level security;
+
+-- 본인 대화만 읽고 쓸 수 있다 — 다른 사람이 무엇을 물어봤는지 관리자도 볼 필요 없음.
+drop policy if exists "chat_messages_own" on chat_messages;
+create policy "chat_messages_own" on chat_messages
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create index if not exists chat_messages_user_created_idx on chat_messages(user_id, created_at);
+
+-- =============================================================
+-- 19. Storage 비공개 전환 + 서명 URL (GPT 리뷰 지적 — damage-photos/robot-camera가
+--     공개 URL이라 주소만 알면 누구나 사진에 접근할 수 있었음)
+-- =============================================================
+
+-- damage_reports.photo_url은 "버킷/전체경로/파일명"으로 된 공개 URL 전체를 담고 있었다.
+-- 비공개 버킷에서 서명 URL을 매번 새로 발급하려면 경로만 있으면 되므로 photo_path를
+-- 새로 두고, 기존 값에서 "/damage-photos/" 뒤쪽 경로만 잘라내 채운다.
+alter table damage_reports add column if not exists photo_path text;
+
+update damage_reports
+set photo_path = regexp_replace(photo_url, '^.*/damage-photos/', '')
+where photo_path is null and photo_url is not null;
+
+update storage.buckets set public = false where id in ('damage-photos', 'robot-camera');
+
+-- damage-photos: 신고 당사자 본인(업로드 경로 첫 폴더 = 본인 user_id) 또는 관리자만 조회 가능.
+-- uploadDamagePhoto()가 `${session.id}/파일명` 형태로 올리기 때문에 폴더명으로 본인 여부를 알 수 있다.
+drop policy if exists "damage_photos_read_own_or_admin" on storage.objects;
+create policy "damage_photos_read_own_or_admin" on storage.objects
+  for select using (
+    bucket_id = 'damage-photos'
+    and (is_admin() or (storage.foldername(name))[1] = auth.uid()::text)
+  );
+
+-- robot-camera: 카메라 화면은 관리자 페이지에만 있으므로 관리자만 조회.
+-- (업로드는 로봇이 secret key로 하므로 RLS와 무관하게 항상 가능 — robot-commands와 동일)
+drop policy if exists "robot_camera_read_admin" on storage.objects;
+create policy "robot_camera_read_admin" on storage.objects
+  for select using (bucket_id = 'robot-camera' and is_admin());

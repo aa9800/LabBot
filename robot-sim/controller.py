@@ -6,6 +6,10 @@ HAL(hal 인자)에만 의존하고 pygame이나 GPIO를 직접 건드리지 않�
 SPEED = 70.0
 TURN_GAIN = 90.0
 OBSTACLE_STOP_DISTANCE = 40
+# 정지 기준과 해제 기준을 같게 두면 Webots 물리 관성이나 실제 초음파 노이즈 때문에
+# 39.9cm/40.1cm 경계에서 감지와 해제가 반복된다. 10cm 히스테리시스로 이벤트 스팸과
+# 모터의 떨림을 막는다.
+OBSTACLE_CLEAR_DISTANCE = 50
 SCAN_HOLD_SECONDS = 1.0
 
 
@@ -22,7 +26,9 @@ class PatrolController:
     def tick(self, dt):
         """dt: 이번 틱에 흐른 시뮬레이션 시간(초). 실제 시계가 아니라 이 값 기준으로만 판단한다."""
         distance = self.hal.read_ultrasonic()
-        if distance < OBSTACLE_STOP_DISTANCE:
+        if distance < OBSTACLE_STOP_DISTANCE or (
+            self._obstacle_active and distance < OBSTACLE_CLEAR_DISTANCE
+        ):
             self.hal.stop()
             if not self._obstacle_active:
                 # 새로 감지된 순간에만 콜백 — 정지해 있는 동안 매 틱마다 이벤트를 보내지 않는다.

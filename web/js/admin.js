@@ -138,8 +138,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
 
         // 재고 수량이 실제로 바뀐 경우에만 조정 이력을 남긴다 — 최소수량/점검중만 바꿨는데
-        // "0/0 → 0/0" 같은 의미없는 이력 줄이 쌓이는 걸 막는다.
+        // "0/0 → 0/0" 같은 의미없는 이력 줄이 쌓이는 걸 막는다. 바뀐 경우엔 사유를 먼저 물어본다
+        // (GPT 리뷰 지적 — "왜 바꿨는지"가 항상 빈 값이었음).
         const stockChanged = available_qty !== item.available_qty || total_qty !== item.total_qty;
+        let adjustment = null;
+        if (stockChanged) {
+          adjustment = await promptStockAdjustmentReason(item, available_qty, total_qty);
+          if (!adjustment) return; // 사유 입력 중 취소하면 저장 자체를 하지 않는다
+        }
 
         button.disabled = true;
         try {
@@ -149,6 +155,8 @@ document.addEventListener("DOMContentLoaded", async () => {
               available_qty,
               total_qty,
               actorName: (session && session.name) || "관리자",
+              reason: adjustment.reason,
+              note: adjustment.note,
             });
           } else {
             await window.LabBotItems.updateItemStock(item.id, { available_qty, total_qty });
@@ -185,6 +193,64 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  // 재고 수량을 바꿀 때 "왜 바꿨는지" 고르게 하는 작은 모달. 확인을 누르면 {reason, note}를,
+  // 취소하면 null을 돌려준다 — 호출한 쪽(저장 버튼 핸들러)이 null이면 저장 자체를 중단한다.
+  function promptStockAdjustmentReason(item, available_qty, total_qty) {
+    const { escapeHtml } = window.LabBotItems;
+    const { STOCK_ADJUSTMENT_REASONS } = window.LabBotStockAdjustments;
+
+    return new Promise((resolve) => {
+      const overlay = document.createElement("div");
+      overlay.className = "modal-overlay";
+      overlay.innerHTML = `
+        <div class="modal-card">
+          <h3 class="modal-title">재고 변경 사유 — ${escapeHtml(item.name)}</h3>
+          <p class="modal-subtitle">
+            대여가능 ${item.available_qty} → ${available_qty}, 총수량 ${item.total_qty} → ${total_qty}
+          </p>
+          <div class="modal-field">
+            <label>사유</label>
+            <select id="adjustReasonSelect" class="location-filter-select" style="width: 100%;">
+              ${STOCK_ADJUSTMENT_REASONS.map((r) => `<option value="${r}">${r}</option>`).join("")}
+            </select>
+          </div>
+          <div class="modal-field" id="adjustNoteField" style="display: none;">
+            <label>메모</label>
+            <textarea id="adjustNoteInput" placeholder="간단히 적어주세요"></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="cancel">취소</button>
+            <button type="button" class="btn btn-primary btn-sm" data-action="confirm">확인</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const reasonSelect = overlay.querySelector("#adjustReasonSelect");
+      const noteField = overlay.querySelector("#adjustNoteField");
+      const noteInput = overlay.querySelector("#adjustNoteInput");
+
+      // "기타"를 골랐을 때만 메모 입력칸을 보여준다 — 나머지 사유는 선택지 자체가 설명이라
+      // 매번 메모까지 받을 필요는 없다.
+      reasonSelect.addEventListener("change", () => {
+        noteField.style.display = reasonSelect.value === "기타" ? "block" : "none";
+      });
+
+      const finish = (result) => {
+        overlay.remove();
+        resolve(result);
+      };
+
+      overlay.querySelector('[data-action="cancel"]').addEventListener("click", () => finish(null));
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) finish(null);
+      });
+      overlay.querySelector('[data-action="confirm"]').addEventListener("click", () => {
+        finish({ reason: reasonSelect.value, note: noteInput.value.trim() });
+      });
+    });
+  }
+
   // 재고 조정 이력 모달 — 파손 신고 모달(mypage.js)과 같은 방식으로, 열 때 body에
   // 붙였다가 닫으면 제거한다. 관리자 전용 화면이라 별도 페이지 없이 모달로 충분하다.
   async function showStockHistory(item) {
@@ -211,7 +277,7 @@ document.addEventListener("DOMContentLoaded", async () => {
               : history
                   .map(
                     (h) => `
-                <li>[${new Date(h.created_at).toLocaleString("ko-KR")}] ${escapeHtml(h.actor)} —
+                <li>[${new Date(h.created_at).toLocaleString("ko-KR")}] ${escapeHtml(h.actor)} — ${escapeHtml(h.reason || "기타")}:
                   대여가능 ${h.previous_available} → ${h.new_available}, 총수량 ${h.previous_total} → ${h.new_total}
                   ${h.note ? `(${escapeHtml(h.note)})` : ""}</li>
               `
@@ -334,13 +400,28 @@ document.addEventListener("DOMContentLoaded", async () => {
           <td>${escapeHtml(itemName)}</td>
           <td>${escapeHtml(reporterName)}</td>
           <td class="mono">${new Date(r.created_at).toLocaleString("ko-KR")}</td>
-          <td>${r.photo_url ? `<a href="${escapeHtml(r.photo_url)}" target="_blank" rel="noopener">사진 보기</a>` : "-"}</td>
+          <td>${r.photo_path ? `<button type="button" class="link-btn" data-photo-path="${escapeHtml(r.photo_path)}">사진 보기</button>` : "-"}</td>
           <td>${resultCell}</td>
           <td class="damage-result-cell">${escapeHtml(detailText)}</td>
         </tr>
       `;
       })
       .join("");
+
+    // 비공개 버킷이라 고정 URL을 만들어둘 수 없다 — 누를 때마다 서명 URL을 새로 발급해 새 탭으로 연다.
+    damageTableBody.querySelectorAll("[data-photo-path]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        try {
+          const url = await window.LabBotDamage.getDamagePhotoUrl(btn.dataset.photoPath);
+          window.open(url, "_blank", "noopener");
+        } catch (err) {
+          alert("사진을 불러오지 못했습니다: " + (err.message || err));
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
   }
 
   function severityBadge(severity) {
@@ -464,8 +545,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     stop: { speed: 0, turn: 0 },
   };
 
-  function refreshRobotCamera() {
-    robotCameraImg.src = window.LabBotRobotConsole.cameraSnapshotUrl();
+  async function refreshRobotCamera() {
+    try {
+      robotCameraImg.src = await window.LabBotRobotConsole.cameraSnapshotUrl();
+    } catch (err) {
+      // 로봇이 아직 사진을 한 번도 안 올렸으면(latest.jpg 없음) 서명 URL 발급 자체가
+      // 실패할 수 있다 — 콘솔에만 남기고 화면은 이전 프레임을 그대로 유지한다.
+      console.warn("LabBot: 로봇 카메라 스냅샷을 못 불러왔습니다", err);
+    }
   }
 
   async function refreshRobotModeBadge() {

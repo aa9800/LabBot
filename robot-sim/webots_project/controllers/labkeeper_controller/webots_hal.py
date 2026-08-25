@@ -15,8 +15,9 @@ controller.py의 PatrolController는 이 클래스가 Webots를 쓰는지조차 
 """
 import math
 
-# lab.wbt의 트랙 선(TRACK_AB/BC/CD/DA)과 반드시 같은 좌표를 유지할 것.
-TRACK_POINTS_M = [(-0.7, -0.5), (0.7, -0.5), (0.7, 0.5), (-0.7, 0.5), (-0.7, -0.5)]
+# lab.wbt의 4m x 2.6m 순찰선과 반드시 같은 좌표를 유지할 것.
+# Webots는 발표·통합 시연의 주 환경이고 pygame은 이 controller의 빠른 회귀 테스트에만 쓴다.
+TRACK_POINTS_M = [(-2.0, -1.3), (2.0, -1.3), (2.0, 1.3), (-2.0, 1.3), (-2.0, -1.3)]
 
 LINE_SENSOR_SPAN = 0.03      # 4채널 센서의 좌우 폭(m)
 LINE_SENSOR_LOOKAHEAD = 0.05  # 로봇 앞쪽으로 얼마나 내다보는지(m)
@@ -62,6 +63,8 @@ class WebotsHAL:
         checkpoints: [{"name": "선반A", "x":.., "y":.., "radius":..}, ...]
         """
         self.checkpoints = checkpoints
+        self.last_speed = 0.0
+        self.last_turn = 0.0
 
         self.left_motor = robot.getDevice("left wheel motor")
         self.right_motor = robot.getDevice("right wheel motor")
@@ -135,6 +138,8 @@ class WebotsHAL:
 
     def set_motion(self, speed, turn):
         """pygame 버전과 같은 (speed, turn) 값을 받아 좌우 바퀴 각속도로 변환한다."""
+        self.last_speed = float(speed)
+        self.last_turn = float(turn)
         v = speed * SPEED_SCALE          # m/s
         w = math.radians(turn)           # rad/s
         left_v = (v - w * AXLE_LENGTH / 2) / WHEEL_RADIUS
@@ -145,5 +150,23 @@ class WebotsHAL:
         self.right_motor.setVelocity(right_v)
 
     def stop(self):
+        self.last_speed = 0.0
+        self.last_turn = 0.0
         self.left_motor.setVelocity(0.0)
         self.right_motor.setVelocity(0.0)
+
+    def telemetry_snapshot(self):
+        """공통 5메서드 인터페이스를 바꾸지 않는 Webots 전용 관측값.
+
+        판단 로직은 이 메서드를 사용하지 않고, 실행 로그만 읽는다. 나중에 IsaacHAL/RealHAL도
+        같은 이름을 선택적으로 구현하면 로그 형식을 그대로 재사용할 수 있다.
+        """
+        x, y, fwd_x, fwd_y = self._position_and_heading()
+        return {
+            "x": round(x, 4),
+            "y": round(y, 4),
+            "heading_deg": round(math.degrees(math.atan2(fwd_y, fwd_x)), 2),
+            "obstacle_cm": round(self.read_ultrasonic(), 2),
+            "command_speed": self.last_speed,
+            "command_turn": self.last_turn,
+        }

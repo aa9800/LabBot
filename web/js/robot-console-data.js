@@ -3,10 +3,13 @@
 // 로봇 쪽은 robot-sim/notify_supabase.py가 이 테이블을 secret key로 읽고 쓴다.
 // 카메라는 실시간 영상이 아니라, 로봇이 몇 초에 한 번씩 올리는 스냅샷을 새로 불러오는 방식이다.
 
-function cameraSnapshotUrl() {
-  const base = window.LABBOT_SUPABASE_CONFIG.url;
-  // 캐시 방지용으로 매번 다른 쿼리스트링을 붙인다 — 안 붙이면 브라우저가 옛 사진을 계속 보여준다.
-  return `${base}/storage/v1/object/public/robot-camera/latest.jpg?t=${Date.now()}`;
+// robot-camera 버킷이 비공개로 바뀌면서(docs/labbot_schema.sql 19번 섹션) 고정 공개 URL을
+// 못 쓴다 — 매번 짧게 유효한 서명 URL을 새로 발급받는다. RLS(robot_camera_read_admin)가
+// 관리자만 통과시키므로, 이 함수도 관리자 화면(admin.js)에서만 호출된다.
+async function cameraSnapshotUrl() {
+  const { data, error } = await supabaseClient.storage.from("robot-camera").createSignedUrl("latest.jpg", 30);
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 async function fetchRobotCommand() {

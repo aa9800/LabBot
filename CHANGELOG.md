@@ -6,6 +6,94 @@
 
 ---
 
+## 2026-08-25 (9) — GPT 리뷰 반영: 재고 조정 원자적 RPC, 챗봇 이력 저장, Storage 비공개 전환
+
+**승인 경로**: 채팅에서 직접 승인(`labkeeper-web-local/AI협업/01_GPT_최신리뷰.md` 최신본,
+기준 커밋 `b2af3a0` 확인 후 진행). `02_Claude_작업요청.md`는 비어있었으나 실시간 채팅
+승인을 그 이상의 근거로 보고 진행하기로 함 — 이후 03번 문서에 결과 반영.
+
+- **P1. 재고 조정 원자적 RPC** — `stock_adjustments` 테이블에 `reason` 컬럼 추가(신규입고/
+  사용·소진/파손·폐기/실사 수정/기타 중 하나, `docs/labbot_schema.sql` 16번), items UPDATE와
+  이력 INSERT를 하나로 묶는 `adjust_item_stock()` RPC 추가(17번, `for update`로 동시수정 시
+  이력 값이 덮이지 않게 잠금). `web/js/stock-adjustments-data.js`가 이 RPC 하나만 호출하도록
+  재작성 — 예전엔 update문+insert문을 따로 날려서 이력 INSERT가 실패해도 재고 변경은 그대로
+  남는 문제가 있었음.
+- **P1. 재고 조정 사유 UI** — `admin.js`에 `promptStockAdjustmentReason()` 모달 추가. 저장 시
+  5개 사유 중 하나를 강제로 고르게 하고, "기타"일 때만 메모 입력란을 보여줌. 이력 조회
+  모달(`showStockHistory`)에도 사유를 표시. 실제 DB에 `reason: "신규입고"`가 정확히 기록되는
+  것을 확인 후 테스트 데이터는 원복(`adjust_item_stock` 재호출, 사유 "실사 수정").
+- **P2. 챗봇 대화 이력 저장** — `chat_messages` 테이블 추가(18번, RLS로 본인 대화만 접근).
+  `web/js/chat-data.js` 신설(`fetchChatHistory`/`saveChatMessage`). `chatbot.js`가 로그인
+  사용자의 이전 대화(추천 카드 포함)를 새로고침 후에도 복원하고, 매 메시지를 저장하도록 수정.
+  비로그인 사용자는 여전히 휘발성 대화만 가능(원래도 물품 조회 자체가 로그인 전제).
+- **P2. Storage 비공개 전환 + 서명 URL** — `damage-photos`/`robot-camera` 버킷을 `public=false`로
+  전환(19번). `damage_reports.photo_path` 컬럼 추가 + 기존 `photo_url`에서 경로만 추출해 백필.
+  `storage.objects`에 신고 당사자 본인 또는 관리자만 `damage-photos`를 읽을 수 있는 정책,
+  관리자만 `robot-camera`를 읽을 수 있는 정책 추가. `damage-data.js`가 업로드 시 경로만 저장하고
+  `getDamagePhotoUrl()`로 열람 시점마다 5분짜리 서명 URL을 새로 발급하도록 변경.
+  `robot-console-data.js`의 `cameraSnapshotUrl()`도 서명 URL 발급 방식(30초)으로 변경, 호출부
+  (`admin.js`의 `refreshRobotCamera`)를 비동기로 수정. Edge Function `gemini-damage-assess`도
+  공개 URL을 그냥 fetch하던 방식에서, service role로 스토리지 다운로드 엔드포인트를 직접 호출하는
+  방식(`photo_path` 사용)으로 바꿔 대시보드에서 재배포. 합성 1×1 PNG로 업로드 → AI 분석 →
+  관리자 화면 "사진 보기"(서명 URL) 열람까지 전체 흐름을 실제로 검증(성공 후 테스트 행 삭제).
+- **모바일 제목 줄바꿈(P3)** — `.page-title`/`.hero-title`에 `word-break: keep-all` 추가.
+  390px 실측은 이번 세션에서도 도구 제약으로 재확인하지 못함(표준 CSS 속성이라 위험은 낮음).
+- **홈/물품목록 문구 정리** — 기능을 줄줄이 나열하던 첫 화면 문구를 일반 이용자 기준으로 축약
+  (이전 항목에서 진행, 이번 커밋에 함께 포함).
+- 관리자 파손 신고 표의 "사진 보기"를 `<a href>`(고정 URL)에서 클릭 시 서명 URL을 새로 받아오는
+  버튼(`.link-btn`)으로 교체 — 비공개 버킷에서는 고정 링크를 미리 만들어둘 수 없기 때문.
+
+## 2026-08-25 (8) — Webots 주 개발환경: 9구역 생명공학 연구실 1차 구축
+
+- pygame은 내부 회귀 테스트로만 유지하고 Webots를 로봇 개발·발표의 주 환경으로 확정.
+- 기존 2m × 1.5m 단순 트랙을 6m × 4m 연구실로 확장. 웹 DB와 동일한 9개 위치, QR
+  체크포인트, 중앙 실험대, 현미경/PCR/원심분리기, 인큐베이터, 시약함, 냉장·냉동고,
+  소모품 선반, 안전장비함, 충전·통제구역을 경량 기본 도형으로 배치.
+- E-puck 차동구동 물리를 유지하면서 상부에 Raspbot형 차체·전면 카메라 외형을 추가한
+  시각 프록시 구성. 실물 치수·센서 물리모델은 향후 보정 대상으로 명시.
+- WebotsHAL의 순찰 좌표와 오프라인 체크포인트를 새 9구역 월드에 맞게 갱신.
+- Windows 한글 프로젝트 경로에서 카메라 이미지 저장이 실패하던 문제를 ASCII 임시 폴더
+  경로로 수정. Webots headless 실행에서 카메라 오류가 사라짐을 확인.
+- 장애물 40cm 경계에서 관성으로 감지/해제가 반복되던 현상에 정지 40cm/재개 50cm
+  히스테리시스를 적용.
+- Webots R2025a에서 월드 파싱·컨트롤러 시작, Supabase 위치 9곳 로드, 다수 체크포인트 순찰,
+  장애물 정지와 SR-01 전송을 실제 실행으로 확인.
+
+주의: 검증 실행은 실제 Supabase 설정을 사용하므로 Safety 테스트 이벤트가 생성됐습니다.
+웹 관리자 화면에서 테스트 이벤트로 검토·처리해야 하며 임의 삭제하지 않았습니다.
+
+### 후속: 주행 로그 기반 마련
+
+- `robot-sim/run_logger.py` 추가. Webots 실행마다 JSONL 파일을 만들고 약 1초 간격 텔레메트리
+  (위치·방향·장애물 거리·속도/회전 명령·모드)와 체크포인트/장애물/모드전환 이벤트를 기록.
+- 실제 Webots 실행에서 로그 파일 생성과 연속 텔레메트리, 체크포인트 이벤트 기록을 확인.
+- 로그 산출물은 `robot-sim/logs/*.jsonl`로 git 제외. 이후 파라미터 자동 비교의 입력으로 사용.
+- `run_inventory_audit()`는 로봇 service key 호출 시 `auth.uid()`가 없어 수행자 NULL 문제가
+  생길 수 있음을 발견. 현재 DB 함수에 억지로 연결하지 않고 웹/DB 변경을 인수할 때 안전한
+  로봇 수행자 인터페이스를 함께 설계하기로 함.
+
+## 2026-08-25 (7) — 로봇 시뮬레이션 단계 A: 깨진 기반 복구
+
+**승인 경로**: `labkeeper-web-local/AI협업/robot/02_Claude_로봇작업요청.md`에 기록된 단계 A
+(사용자 채팅 승인). 자세한 변경 파일·검증·미완료 사항은
+`labkeeper-web-local/AI협업/robot/03_Claude_로봇작업결과.md` 참고(중복 기록 방지).
+
+- **Webots 장애물 데모 복구**: `lab.wbt`에서 사라졌던 `OBSTACLE_1`을 복원하고, 다음에 또
+  실수로 지워져도 복구할 수 있게 `lab_baseline.wbt` 백업 추가.
+- **pygame/Webots Supabase 연동 통일**: `robot-sim/notify.py`(존재하지 않는 로컬 FastAPI
+  서버 `127.0.0.1:8000`을 호출하던 구식 코드, `labkeeper-web-local`을 더 이상 안 쓰기로
+  확인됨)를 삭제하고, pygame(`main.py`)도 Webots처럼 `notify_supabase.py`(Supabase 직접
+  연결)를 쓰도록 교체. 실사(F 키) 결과는 아직 DB에 기록되지 않고 로컬 계산까지만 함을
+  화면에 명시(다음 단계에서 `run_inventory_audit()` RPC 연동 예정).
+- **반복 가능한 스모크 테스트** 추가(`robot-sim/smoke_test.py`) — 컨트롤러 장애물 감지/해제와
+  `notify_supabase.py`의 네트워크 실패 대응을 자동 검증. Webots 부분은 GUI라 자동화 불가하여
+  사람이 확인할 체크리스트를 출력.
+- **주의**: 스모크 테스트를 처음 만들 때 실수로 프로덕션 `safety_events`에 테스트 이벤트
+  1건(`id=2`, source=smoke-test)이 실제로 들어감 — 원인 수정(실제 네트워크 호출 안 하도록
+  변경) 완료, 테스트 행 삭제는 사용자 확인 대기 중.
+
+---
+
 ## 2026-08-25 (6) — 홈/물품목록 문구를 일반 이용자 기준으로 수정
 
 - 홈 화면 히어로 문구가 "로봇 순찰", "AI 비전", "안전 점검"까지 한 문장에 담아 기능 목록을
