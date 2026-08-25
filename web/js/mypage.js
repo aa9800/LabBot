@@ -55,9 +55,13 @@ document.addEventListener("DOMContentLoaded", async () => {
           <input type="number" id="qty-input-${loan.id}" min="1" max="${maxQty}" value="1" />
           <span class="qty-unit">${escapeHtml(item.unit || "개")}</span>
         </div>
+        <button type="button" class="btn btn-secondary btn-sm" data-cancel-loan="${loan.id}">예약 취소</button>
         <button type="button" class="btn btn-primary btn-sm" data-use-loan="${loan.id}">사용하기</button>
       `
-      : `<button type="button" class="btn btn-primary btn-sm" data-pickup-loan="${loan.id}">수령하기</button>`;
+      : `
+        <button type="button" class="btn btn-secondary btn-sm" data-cancel-loan="${loan.id}">예약 취소</button>
+        <button type="button" class="btn btn-primary btn-sm" data-pickup-loan="${loan.id}">수령하기</button>
+      `;
 
     const card = document.createElement("article");
     card.className = "rental-card rental-card-reserved";
@@ -93,6 +97,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         openGuideModal({ loan, mode: "pickup" });
       });
     }
+
+    // 예약 취소 — 잘못 예약했을 때 되돌리는 용도. 삭제 확인은 다른 파괴적 작업(관리자
+    // 물품 삭제 등)과 같이 네이티브 confirm()을 그대로 쓴다.
+    card.querySelector("[data-cancel-loan]").addEventListener("click", async (e) => {
+      if (!confirm(`"${item.name}" 예약을 취소하시겠습니까?`)) return;
+      const button = e.currentTarget;
+      button.disabled = true;
+      try {
+        await window.LabBotRentals.cancelReservation(loan.id);
+        window.LabBotToast.success(`"${item.name}" 예약이 취소되었습니다.`);
+        await renderAll();
+      } catch (err) {
+        window.LabBotToast.error(err.message || "예약 취소에 실패했습니다.");
+        button.disabled = false;
+      }
+    });
 
     return card;
   }

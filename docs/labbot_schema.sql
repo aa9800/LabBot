@@ -889,3 +889,76 @@ begin
   return v_loan;
 end;
 $$ language plpgsql security invoker;
+
+-- =============================================================
+-- 22. 예약 취소 (사용자 요청 — 잘못 예약했을 때 되돌릴 방법이 없었음)
+--     Safety 이벤트와 같은 원칙: 행을 지우지 않고 상태를 '취소됨'으로 남긴다
+--     (권한 원칙 — "위험 이벤트 삭제 대신 상태 전이와 감사로그를 사용한다"와 동일 기조).
+--     예약 시점에 이미 차감된 재고 1개를 취소 시 되돌려야 하는데, items 쓰기는 관리자만
+--     허용하는 RLS가 걸려 있어서 이 함수는 security definer로 둔다(loans_increment_stock과
+--     동일한 이유). auth.uid()는 definer 안에서도 원래 호출자 그대로라 guard 트리거의
+--     권한 검사는 우회되지 않는다.
+-- =============================================================
+
+alter table loans drop constraint if exists loans_status_check;
+alter table loans add constraint loans_status_check
+  check (status in ('예약중', '대여중', '반납완료', '취소됨'));
+
+-- guard_loan_self_update()에 "예약중 -> 취소됨" 전이도 허용.
+create or replace function public.guard_loan_self_update()
+returns trigger as $$
+begin
+  if not public.is_admin() then
+    if new.item_id is distinct from old.item_id
+       or new.user_id is distinct from old.user_id
+       or new.borrowed_at is distinct from old.borrowed_at
+       or new.source is distinct from old.source then
+      raise exception 'not allowed to edit these loan fields';
+    end if;
+
+    if old.status = '대여중' and new.status = '반납완료' then
+      if new.due_at is distinct from old.due_at then
+        raise exception 'not allowed to edit these loan fields';
+      end if;
+    elsif old.status = '예약중' and new.status = '대여중' then
+      null; -- 장비 픽업 확정: due_at/qr_confirmed_at 갱신 허용
+    elsif old.status = '예약중' and new.status = '반납완료' then
+      null; -- 소모품 사용 확정: qr_confirmed_at/returned_at/consumed_qty 갱신 허용
+    elsif old.status = '예약중' and new.status = '취소됨' then
+      null; -- 예약 취소: returned_at 갱신 허용
+    else
+      raise exception 'only reservation-pickup, item-usage, return, or cancel transitions are allowed';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- 본인 예약 또는 관리자만 취소 가능. 이미 픽업/사용/반납이 진행된 건은 취소 대상이 아니다.
+create or replace function public.cancel_loan_reservation(p_loan_id bigint)
+returns loans as $$
+declare
+  v_loan loans;
+begin
+  select * into v_loan from loans
+  where id = p_loan_id and (user_id = auth.uid() or is_admin())
+  for update;
+
+  if not found then
+    raise exception '예약을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '예약중' then
+    raise exception '이미 처리된 예약은 취소할 수 없습니다.';
+  end if;
+
+  update items set available_qty = available_qty + 1 where id = v_loan.item_id;
+
+  update loans
+  set status = '취소됨',
+      returned_at = now()
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security definer set search_path = public;

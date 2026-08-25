@@ -337,6 +337,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
 
+      // 취소된 예약도 감사 이력으로 남긴다(행을 지우지 않는 원칙) — 재고에는 영향 없었던
+      // 것처럼 보이지 않게 "취소" 한 줄로 명시.
+      if (loan.status === "취소됨") {
+        rows.push({ user: userName, item: itemName, type: "취소", badgeKey: "st-closed", time: loan.returned_at || loan.borrowed_at });
+        return;
+      }
+
       // 시약/소모품 "사용하기"는 대여-반납이 아니라 한 번에 끝나는 소모라서(예약 -> QR 확인
       // 시점에 바로 반납완료로 들어간다), 대여+반납 두 줄로 보이면 "빌렸다가 바로
       // 반납했나?" 헷갈린다. 소모품이면 "사용" 한 줄로만 보여준다.

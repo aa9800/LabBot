@@ -18,7 +18,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (loginLink && session) {
-    loginLink.textContent = `${session.name} · 로그아웃`;
+    loginLink.textContent = "로그아웃";
     loginLink.removeAttribute("href");
     loginLink.addEventListener("click", async (e) => {
       e.preventDefault();

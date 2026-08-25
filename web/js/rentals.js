@@ -75,6 +75,17 @@ async function confirmUsage(loanId, qrCode, qty) {
   return data;
 }
 
+// 예약 취소: 아직 로봇 안내/QR 확인 전(예약중)인 건만 취소할 수 있다. 예약 시점에 임시로
+// -1 된 재고를 여기서 다시 +1로 되돌린다(cancel_loan_reservation RPC). 행을 지우지 않고
+// status만 '취소됨'으로 남긴다 — Safety 이벤트와 같은 원칙(삭제 대신 상태 전이 + 이력 보존).
+async function cancelReservation(loanId) {
+  const { data, error } = await supabaseClient.rpc("cancel_loan_reservation", {
+    p_loan_id: loanId,
+  });
+  if (error) throw error;
+  return data;
+}
+
 // 사용(소모, QR 확인 없이 바로 처리) — 지금 화면에서는 안 쓴다. 소모품도 이제
 // reserveItem() → (마이페이지에서 수량 입력 + QR 스캔) → confirmUsage() 순서를 거친다.
 // 이 함수는 남겨두되(예: 관리자용 즉시 사용 처리 등을 나중에 붙일 자리) UI에서 직접
@@ -161,6 +172,7 @@ window.LabBotRentals = {
   confirmPickup,
   confirmReturn,
   confirmUsage,
+  cancelReservation,
   consumeItem,
   isConsumable,
   returnLoan,
