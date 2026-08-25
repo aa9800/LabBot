@@ -8,7 +8,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const loginLink = document.getElementById("loginLink");
 
   const params = new URLSearchParams(window.location.search);
-  const redirectTo = params.get("redirect") || "index.html";
+  // redirect 파라미터를 그대로 믿지 않는다 — 허용된 내부 페이지 목록에 없으면 index.html로.
+  const redirectTo = window.LabBotAuth.sanitizeRedirect(params.get("redirect"));
 
   if (loginLink) {
     loginLink.href = `login.html?redirect=${encodeURIComponent(redirectTo)}`;

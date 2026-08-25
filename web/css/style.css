@@ -699,6 +699,26 @@ h2 {
   transform: translateX(2px);
 }
 
+/* 물품 사진을 따로 관리하지 않는 대신, 분류별 아이콘을 자동으로 붙여준다 (items-data.js의
+   CATEGORY_ICON 참고) — 물품을 등록만 하면 사람이 사진을 올릴 필요 없이 바로 적용된다. */
+.item-row-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.item-row-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 .item-row-main {
   display: flex;
   align-items: center;
@@ -764,6 +784,20 @@ h2 {
   font-size: 0.85rem;
   border: 1px dashed var(--border);
   border-radius: var(--radius);
+}
+
+/* 물품이 많아서 목록이 한없이 길어지는 것을 막는 페이지네이션 (items.js) */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.pagination-status {
+  color: var(--text-muted);
+  font-size: 0.82rem;
 }
 
 .badge {
@@ -1220,6 +1254,65 @@ h2 {
   outline: 2px solid var(--accent);
 }
 
+/* 파손 신고 목록의 "AI 분석 결과" 칸은 문장이 길어서, 한 줄로 늘어나 표 전체가
+   가로로 한없이 넓어지지 않게 적당한 너비에서 줄바꿈되게 한다. */
+.damage-result-cell {
+  white-space: normal;
+  max-width: 320px;
+  line-height: 1.4;
+}
+
+/* 관리자 화면 상단 요약 카드 — mypage의 .stat-tile과 같은 톤이지만, 탭을 안 눌러도
+   지금 뭘 먼저 봐야 하는지 알 수 있게 클릭하면 해당 탭으로 이동하는 버튼이다. */
+.summary-cards {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.summary-card {
+  flex: 1;
+  min-width: 130px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.summary-card:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+  transform: translateY(-1px);
+}
+
+.summary-card-value {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.summary-card-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.summary-card-warn .summary-card-value {
+  color: #fcd34d;
+}
+
+.summary-card-danger .summary-card-value {
+  color: #fca5a5;
+}
+
 .tabs {
   display: flex;
   gap: 4px;
@@ -1266,12 +1359,47 @@ h2 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  /* 관리자 재고표처럼 컬럼이 많은 표는 가로 스크롤이 생길 수밖에 없는데, 기본 스크롤바가
+     너무 얇아서 잡기 불편하다는 피드백이 있어 눈에 잘 띄는 두께로 스타일링한다. */
+  scrollbar-width: auto;
+  scrollbar-color: var(--border) var(--surface-2);
+}
+
+.table-wrap::-webkit-scrollbar {
+  height: 12px;
+}
+
+.table-wrap::-webkit-scrollbar-track {
+  background: var(--surface-2);
+}
+
+.table-wrap::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+
+.table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
   min-width: 480px;
+}
+
+/* 컬럼이 많아 가로로 스크롤해야 하는 표(관리자 재고표)는 첫 컬럼(물품명)을 고정해서,
+   오른쪽으로 스크롤해도 "지금 어느 물품 행을 보고 있는지"를 계속 알 수 있게 한다. */
+table.sticky-first-col th:first-child,
+table.sticky-first-col td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface-2);
+  z-index: 1;
+}
+
+table.sticky-first-col tbody td:first-child {
+  background: var(--surface);
 }
 
 thead th {
@@ -1281,17 +1409,18 @@ thead th {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 13px 16px;
+  padding: 11px 13px;
   border-bottom: 1px solid rgba(56, 189, 248, 0.3);
   background: var(--surface-2);
   white-space: nowrap;
 }
 
 tbody td {
-  padding: 13px 16px;
-  font-size: 0.9rem;
+  padding: 10px 13px;
+  font-size: 0.88rem;
   color: var(--text);
   border-bottom: 1px solid var(--border-soft);
+  white-space: nowrap; /* sticky-first-col과 만나면 열 너비가 글자 단위로 찌그러지는 걸 막는다 */
 }
 
 tbody tr:last-child td {

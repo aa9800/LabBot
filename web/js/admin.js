@@ -73,7 +73,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const row = document.createElement("tr");
       row.innerHTML = `
-        <td>${escapeHtml(item.name)}</td>
+        <td${item.notes ? ` title="${escapeHtml(item.notes)}"` : ""}>${escapeHtml(item.name)}</td>
         <td>${escapeHtml(item.categoryLabel)}</td>
         <td>${escapeHtml(item.location)}</td>
         <td class="qr-cell">
@@ -262,7 +262,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           <td class="mono">${new Date(r.created_at).toLocaleString("ko-KR")}</td>
           <td>${r.photo_url ? `<a href="${escapeHtml(r.photo_url)}" target="_blank" rel="noopener">사진 보기</a>` : "-"}</td>
           <td>${resultCell}</td>
-          <td>${escapeHtml(detailText)}</td>
+          <td class="damage-result-cell">${escapeHtml(detailText)}</td>
         </tr>
       `;
       })
@@ -605,17 +605,52 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  function switchTab(target) {
+    tabButtons.forEach((b) => b.classList.remove("active"));
+    tabPanels.forEach((p) => p.classList.remove("active"));
+
+    document.querySelector(`.tab-btn[data-tab="${target}"]`).classList.add("active");
+    document.getElementById(`tab-${target}`).classList.add("active");
+  }
+
   tabButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const target = btn.dataset.tab;
-
-      tabButtons.forEach((b) => b.classList.remove("active"));
-      tabPanels.forEach((p) => p.classList.remove("active"));
-
-      btn.classList.add("active");
-      document.getElementById(`tab-${target}`).classList.add("active");
-    });
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
+
+  document.querySelectorAll("[data-goto-tab]").forEach((card) => {
+    card.addEventListener("click", () => switchTab(card.dataset.gotoTab));
+  });
+
+  // 요약 카드 — 탭마다 이미 fetch하는 데이터를 여기서 다시 세는 대신, 굳이 캐시를 만들지
+  // 않고 그냥 한 번씩 더 불러온다(관리자 화면 데이터량이 적어서 성능에 영향 없음).
+  async function renderSummaryCards() {
+    try {
+      const [items, loans, damageReports, safetyEvents] = await Promise.all([
+        window.LabBotItems.searchItems({}),
+        window.LabBotRentals.fetchAllLoans(),
+        window.LabBotDamage.fetchAllDamageReports(),
+        window.LabBotSafety.fetchSafetyEvents({}),
+      ]);
+
+      const { computeStockStatus } = window.LabBotItems;
+      const lowStockCount = items.filter((it) => {
+        const status = computeStockStatus(it);
+        return status === "LOW_STOCK" || status === "OUT_OF_STOCK";
+      }).length;
+
+      document.getElementById("summaryTotalItems").textContent = items.length;
+      document.getElementById("summaryLowStock").textContent = lowStockCount;
+      document.getElementById("summaryActiveLoans").textContent = loans.filter((l) => l.status === "대여중").length;
+      document.getElementById("summaryPendingDamage").textContent = damageReports.filter(
+        (r) => r.status !== "analyzed"
+      ).length;
+      document.getElementById("summaryNeedsReview").textContent = safetyEvents.filter(
+        (e) => e.status === "NEEDS_REVIEW"
+      ).length;
+    } catch (err) {
+      console.warn("LabBot: 관리자 요약 카드를 불러오지 못했습니다", err);
+    }
+  }
 
   async function showPanel() {
     gate.style.display = "none";
@@ -628,6 +663,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await renderSafetyTable();
     await renderAuditChecklist();
     await renderAuditSessions();
+    await renderSummaryCards();
   }
 
   function showGate() {

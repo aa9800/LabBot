@@ -11,14 +11,20 @@ document.addEventListener("DOMContentLoaded", async () => {
   const locationSelect = document.getElementById("itemLocationFilter");
   const emptyState = document.getElementById("itemEmptyState");
   const filterButtons = document.querySelectorAll(".category-filter-btn");
+  const paginationEl = document.getElementById("itemPagination");
 
   let activeCategory = "all";
   let activeLocation = "all";
 
+  // 물품이 60개가 넘어가면 페이지 전체가 한없이 길어져서, 화면 단위로 나눠 보여준다.
+  // 검색/필터가 바뀌면 결과가 달라지니 1페이지로 되돌린다(renderList에서 처리).
+  const PAGE_SIZE = 12;
+  let currentPage = 1;
+
   function renderRow(item) {
     // 재고상태는 items-data.js의 computeStockStatus() 한 곳에서만 계산한다 —
     // 여기서 available_qty만 보고 다시 판단하지 않는다(유효기간/점검중 케이스를 놓치게 됨).
-    const { escapeHtml, STOCK_STATUS_FULL_LABEL, STOCK_STATUS_BADGE_CLASS, computeStockStatus, canRentItem } =
+    const { escapeHtml, STOCK_STATUS_FULL_LABEL, STOCK_STATUS_BADGE_CLASS, computeStockStatus, canRentItem, categoryIconOf } =
       window.LabBotItems;
     const statusKey = computeStockStatus(item);
     const statusLabel = STOCK_STATUS_FULL_LABEL[statusKey];
@@ -40,7 +46,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       : "";
 
     row.innerHTML = `
-      <div class="item-row-main">
+      <div class="item-row-icon" aria-hidden="true">${categoryIconOf(item.category)}</div>
+      <div class="item-row-main"${item.notes ? ` title="${escapeHtml(item.notes)}"` : ""}>
         <span class="category-tag">${escapeHtml(item.categoryLabel)}</span>
         <h3 class="item-row-name">${escapeHtml(item.name)}</h3>
         <span class="item-row-location">${escapeHtml(item.location)} · ${escapeHtml(item.storage_condition || "-")}</span>
@@ -92,6 +99,30 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  function renderPagination(totalItems) {
+    const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    if (totalPages <= 1) {
+      paginationEl.innerHTML = "";
+      return;
+    }
+
+    const goTo = (page) => {
+      currentPage = page;
+      renderList();
+      listEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+
+    paginationEl.innerHTML = `
+      <button type="button" class="btn btn-secondary btn-sm" data-page-action="prev" ${currentPage === 1 ? "disabled" : ""}>이전</button>
+      <span class="pagination-status mono">${currentPage} / ${totalPages}</span>
+      <button type="button" class="btn btn-secondary btn-sm" data-page-action="next" ${currentPage === totalPages ? "disabled" : ""}>다음</button>
+    `;
+    paginationEl.querySelector('[data-page-action="prev"]').addEventListener("click", () => goTo(currentPage - 1));
+    paginationEl.querySelector('[data-page-action="next"]').addEventListener("click", () => goTo(currentPage + 1));
+  }
+
   async function renderList() {
     let items;
     try {
@@ -105,10 +136,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = items.slice(start, start + PAGE_SIZE);
+
     listEl.innerHTML = "";
-    items.forEach((item) => listEl.appendChild(renderRow(item)));
+    pageItems.forEach((item) => listEl.appendChild(renderRow(item)));
 
     emptyState.style.display = items.length === 0 ? "block" : "none";
+    renderPagination(items.length);
+  }
+
+  function renderListFromStart() {
+    currentPage = 1; // 검색/필터가 바뀌면 이전 페이지 번호가 의미없어지니 1페이지로
+    renderList();
   }
 
   filterButtons.forEach((btn) => {
@@ -116,14 +156,19 @@ document.addEventListener("DOMContentLoaded", async () => {
       filterButtons.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       activeCategory = btn.dataset.category;
-      renderList();
+      renderListFromStart();
     });
   });
 
-  searchInput.addEventListener("input", renderList);
+  // 한 글자 입력할 때마다 Supabase에 요청을 보내면 낭비니, 타이핑이 잠깐 멈췄을 때만 검색한다.
+  let searchDebounceTimer = null;
+  searchInput.addEventListener("input", () => {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(renderListFromStart, 300);
+  });
   locationSelect.addEventListener("change", () => {
     activeLocation = locationSelect.value;
-    renderList();
+    renderListFromStart();
   });
 
   await populateLocationOptions();

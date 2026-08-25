@@ -67,6 +67,31 @@
       <button type="button" class="btn btn-secondary btn-sm" id="adminLogoutBtn">로그아웃</button>
     </div>
 
+    <!-- 한눈에 보는 요약 — 탭을 안 눌러도 지금 뭘 먼저 봐야 하는지 바로 알 수 있게.
+         숫자를 클릭하면 관련 탭으로 바로 이동한다(전부 확인은 각 탭에서). -->
+    <div class="summary-cards" id="adminSummaryCards">
+      <button type="button" class="summary-card" data-goto-tab="stock">
+        <span class="summary-card-value" id="summaryTotalItems">-</span>
+        <span class="summary-card-label">등록 물품 종류</span>
+      </button>
+      <button type="button" class="summary-card summary-card-warn" data-goto-tab="stock">
+        <span class="summary-card-value" id="summaryLowStock">-</span>
+        <span class="summary-card-label">재고 부족 · 품절</span>
+      </button>
+      <button type="button" class="summary-card" data-goto-tab="history">
+        <span class="summary-card-value" id="summaryActiveLoans">-</span>
+        <span class="summary-card-label">대여중</span>
+      </button>
+      <button type="button" class="summary-card summary-card-warn" data-goto-tab="damage">
+        <span class="summary-card-value" id="summaryPendingDamage">-</span>
+        <span class="summary-card-label">파손 신고 확인 필요</span>
+      </button>
+      <button type="button" class="summary-card summary-card-danger" data-goto-tab="safety">
+        <span class="summary-card-value" id="summaryNeedsReview">-</span>
+        <span class="summary-card-label">Safety 검토 필요</span>
+      </button>
+    </div>
+
     <div class="tabs">
       <button type="button" class="tab-btn active" data-tab="stock">재고 · 물품 관리</button>
       <button type="button" class="tab-btn" data-tab="history">대여·반납 이력</button>
@@ -91,7 +116,7 @@
       </form>
 
       <div class="table-wrap">
-        <table>
+        <table class="sticky-first-col">
           <thead>
             <tr>
               <th>물품명</th>
@@ -135,7 +160,7 @@
     <!-- 파손 신고 목록 -->
     <section class="tab-panel" id="tab-damage">
       <div class="table-wrap">
-        <table>
+        <table class="sticky-first-col">
           <thead>
             <tr>
               <th>물품명</th>
@@ -164,7 +189,9 @@
             <option value="all">전체 상태</option>
             <option value="NEEDS_REVIEW">검토 필요</option>
             <option value="OPEN">접수됨</option>
-            <option value="ASSIGNED">담당자 배정</option>
+            <!-- ASSIGNED(담당자 배정) 단계는 워크플로우에서 뺐다(safety-data.js 참고) —
+                 새 이벤트는 이 상태가 될 수 없어서 필터 목록에서도 제외했다. DB
+                 CHECK 제약에는 남겨뒀는데, 예전 데이터 호환 때문이지 실제로 쓰는 값은 아니다. -->
             <option value="IN_PROGRESS">조치 중</option>
             <option value="RESOLVED">조치 완료</option>
             <option value="CLOSED">종결</option>

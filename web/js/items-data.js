@@ -28,6 +28,22 @@ const LAB_CATEGORIES = [
   { key: "SAFETY", label: "안전물품" },
 ];
 
+// 실제 물품 사진을 등록/관리하는 기능이 없어서(사진 업로드·저장 부담) 대신 분류별로
+// 자동으로 붙는 아이콘을 물품마다 보여준다 — 물품을 새로 등록해도 사람이 사진을 따로
+// 올릴 필요 없이 category만 고르면 바로 적용된다. 로고 아이콘과 같은 라인 스타일로 통일.
+const CATEGORY_ICON = {
+  EQUIPMENT: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>`,
+  REAGENT: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6"/><path d="M10 2v6.3L5.2 17a3 3 0 0 0 2.6 4.5h8.4a3 3 0 0 0 2.6-4.5L14 8.3V2"/><path d="M7 15h10"/></svg>`,
+  CONSUMABLE: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="1.5"/><path d="M4 8l3.5-4.5h9L20 8"/><path d="M9.5 12.5h5"/></svg>`,
+  PPE: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/></svg>`,
+  SAFETY: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 20h20L12 2z"/><path d="M12 9v5"/><path d="M12 17h.01"/></svg>`,
+};
+const DEFAULT_CATEGORY_ICON = CATEGORY_ICON.EQUIPMENT;
+
+function categoryIconOf(key) {
+  return CATEGORY_ICON[key] || DEFAULT_CATEGORY_ICON;
+}
+
 // ---------- 재고 상태 계산 (공통 함수 — 여러 파일에 흩어놓지 않고 여기 한 곳에만 둔다) ----------
 //
 // manual_status: DB에 저장되는 "관리자가 직접 정하는" 값. 지금은 null 또는 'MAINTENANCE'만 쓴다.
@@ -254,6 +270,7 @@ window.LabBotItems = {
   updateItemDetails,
   deleteItem,
   categoryLabelOf,
+  categoryIconOf,
   computeStockStatus,
   canRentItem,
   escapeHtml,

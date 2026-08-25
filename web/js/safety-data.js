@@ -64,28 +64,18 @@ async function fetchSafetyEventDetail(id) {
 }
 
 // 상태를 다음 단계로 옮기고, 그 변화를 action_logs에 감사이력으로 남긴다.
-// 두 작업을 순서대로 하기 때문에 완전한 트랜잭션은 아니다 — 두 번째(로그 기록)가
-// 실패하면 상태는 이미 바뀐 채로 로그만 안 남을 수 있음(발표 범위에서는 허용되는 단순화).
+// DB RPC(transition_safety_event, docs/labbot_schema.sql 14번 섹션) 하나로 묶어서 원자적으로
+// 처리한다 — 예전엔 update문+insert문을 따로 두 번 날려서, 두 번째(로그 기록)가 실패하면
+// 상태만 바뀌고 이력이 안 남는 문제가 있었다. 지금은 함수 안에서 둘 다 성공하거나 둘 다
+// 롤백된다.
 async function transitionSafetyEvent(id, { nextStatus, actorName, note }) {
-  const patch = { status: nextStatus };
-  if (nextStatus === "RESOLVED") {
-    patch.resolution_note = note || "";
-    patch.resolved_at = new Date().toISOString();
-  }
-
-  const { error: updateError } = await supabaseClient
-    .from("safety_events")
-    .update(patch)
-    .eq("id", id);
-  if (updateError) throw updateError;
-
-  const { error: logError } = await supabaseClient.from("action_logs").insert({
-    event_id: id,
-    actor: actorName,
-    action: nextStatus,
-    note: note || "",
+  const { error } = await supabaseClient.rpc("transition_safety_event", {
+    p_event_id: id,
+    p_next_status: nextStatus,
+    p_actor: actorName,
+    p_note: note || "",
   });
-  if (logError) throw logError;
+  if (error) throw error;
 }
 
 window.LabBotSafety = {

@@ -471,3 +471,37 @@ create policy "damage_photos_authenticated_upload" on storage.objects
 -- ai_result/status/severity는 Edge Function이 service role(RLS 우회)로만 갱신한다 —
 -- 그래서 일반 사용자용 update 정책은 따로 만들지 않았다(본인이라도 AI 분석결과를
 -- 직접 조작할 수 없게).
+
+-- =============================================================
+-- 14. Safety 상태변경 + 로그기록 원자적 RPC
+--     (기존엔 web/js/safety-data.js에서 update문 + insert문을 따로 두 번 날렸다 —
+--     두 번째(로그 기록)가 실패하면 상태만 바뀌고 이력이 안 남는 문제가 있었다.
+--     하나의 함수 호출로 묶으면 Postgres가 이 함수 실행 전체를 하나의 트랜잭션으로
+--     처리해서, 중간에 에러가 나면 상태변경도 로그기록도 둘 다 롤백된다.)
+-- =============================================================
+
+create or replace function public.transition_safety_event(
+  p_event_id bigint,
+  p_next_status text,
+  p_actor text,
+  p_note text default ''
+)
+returns void as $$
+begin
+  update safety_events
+  set
+    status = p_next_status,
+    resolution_note = case when p_next_status = 'RESOLVED' then coalesce(p_note, '') else resolution_note end,
+    resolved_at = case when p_next_status = 'RESOLVED' then now() else resolved_at end
+  where id = p_event_id;
+
+  if not found then
+    raise exception 'safety_events id %를 찾을 수 없습니다', p_event_id;
+  end if;
+
+  insert into action_logs (event_id, actor, action, note)
+  values (p_event_id, p_actor, p_next_status, coalesce(p_note, ''));
+end;
+$$ language plpgsql;
+-- security definer를 안 붙였다 — 호출자(로그인한 관리자)의 권한 그대로 실행되어야
+-- safety_admin_write/action_log_admin_write RLS 정책(is_admin() 체크)이 그대로 적용된다.

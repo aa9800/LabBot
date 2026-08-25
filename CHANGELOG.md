@@ -6,6 +6,80 @@
 
 ---
 
+## 2026-08-25 (3) — UX 검토(물품목록/관리자) + Safety RPC + 보안 점검 + Edge Function 소스 백업
+
+**커밋**: 이 항목을 추가한 커밋 (여해동님 자리 비운 사이 자동 진행 — GPT 리뷰(`labkeeper-web-local/AI협업/01_GPT_최신리뷰.md`)와 겹치는 항목 다수, 겹치지 않는 것도 있음)
+
+### 물품목록(items.html) 사용자 편의성 개선
+- 물품이 많아지면서 페이지가 한없이 길어지던 문제 — 12개 단위 페이지네이션 추가
+  (검색/필터 바뀌면 1페이지로 리셋).
+- 물품 사진을 개별로 관리하지 않는 대신, 분류(장비/시약/소모품/PPE/안전물품)별로 자동
+  적용되는 아이콘을 추가 — 물품 등록 시 category만 고르면 사람이 사진을 올릴 필요 없이 바로
+  적용됨.
+- 검색창에 한 글자 입력할 때마다 Supabase에 요청을 보내던 것을 300ms 디바운스로 개선.
+- 물품 등록 시 입력한 `notes`(비고)가 그동안 어디에도 표시 안 되고 사라지던 문제 — 물품명에
+  마우스 올리면 툴팁으로 보이게 함(관리자 재고표도 동일).
+
+### 관리자 화면 사용성 개선
+- 요약 대시보드 카드 추가(등록 물품 종류/재고부족·품절/대여중/파손신고 확인필요/Safety
+  검토필요) — 탭을 안 눌러도 지금 뭘 먼저 봐야 하는지 바로 보이고, 클릭하면 해당 탭으로 이동.
+- 컬럼이 많은 표(재고표/파손신고 목록)의 가로스크롤이 불편하다는 피드백 — 첫 컬럼(물품명)을
+  고정해서 오른쪽으로 스크롤해도 어느 물품 행인지 계속 보이게 함 + 스크롤바를 더 두껍고 잘
+  보이게 스타일링.
+- Safety 상태 필터에 남아있던 "담당자 배정"(ASSIGNED) 옵션 제거 — 실제로 이 상태가 될 수
+  있는 새 이벤트가 없어서 필터에 있어도 항상 결과가 0개였음(DB CHECK 제약에는 과거 데이터
+  호환을 위해 남겨둠).
+
+### Safety 상태변경 + 로그기록 원자적 RPC
+- DB 함수 `transition_safety_event()` 신설 — 상태 UPDATE와 action_logs INSERT를 하나의 함수
+  호출로 묶어서, 하나가 실패하면 둘 다 롤백되게 함(예전엔 두 요청을 따로 보내서 두 번째가
+  실패하면 상태만 바뀌고 이력이 안 남을 수 있었음). `web/js/safety-data.js`도 이 RPC를
+  호출하도록 교체. NEEDS_REVIEW→OPEN→IN_PROGRESS→RESOLVED 전체 흐름 실제로 돌려서 검증함.
+
+### 보안 점검
+- **오픈 리다이렉트 취약점 수정**: `login.html?redirect=...`, `signup.html?redirect=...`의
+  redirect 값을 검증 없이 그대로 `location.href`에 넣던 문제 — 로그인 성공 후 외부 사이트로
+  보낼 수 있었음. 내부 페이지 허용목록(`index.html`/`items.html`/`mypage.html`/`chatbot.html`/
+  `admin.html`)에 없으면 무조건 index.html로 가게 `auth.js`에 `sanitizeRedirect()` 추가.
+- **QR 코드 실제 작동 검증**: 전체 물품(61개) qr_code가 DB에서 100% 유일함을 확인(스키마의
+  `unique` 제약이 실제로 보장), 임의로 고른 QR 이미지 5개를 별도 디코더(jsQR)로 다시 읽어
+  원래 문자열과 정확히 일치하는지 왕복 검증 — 실제로 스캔 가능한 이미지임을 확인함.
+
+### Edge Function 소스 코드를 저장소에 백업
+- `gemini-chat`, `gemini-damage-assess`를 Supabase 대시보드 "Via Editor"로만 배포해서
+  저장소에 소스가 전혀 없던 문제(GPT 리뷰가 지적) — `supabase/functions/gemini-chat/index.ts`,
+  `supabase/functions/gemini-damage-assess/index.ts`로 백업하고 `supabase/functions/README.md`에
+  배포 방법·필요 secret 이름을 정리함. 새 Supabase 프로젝트에서도 이 소스로 재현 가능.
+
+### 데이터 점검 중 발견했지만 아직 안 고친 것 (사용자 승인 필요)
+- `items` 테이블에 카테고리가 옛날 값(`separation`)으로 남아있는 물품 1개 발견
+  (`HPLC 시스템`, item id 48) — 실제 `item_type`은 'EQUIPMENT'로 맞지만 `category`만
+  안 바뀌어서 "장비" 필터에 안 뜨고 태그도 "separation"으로 깨져 보임. **이 자동화 세션의
+  안전장치가 프로덕션 데이터 UPDATE를 막아서 직접 고치지 못했음** — `update items set
+  category = 'EQUIPMENT' where id = 48;` 한 줄이면 고쳐짐. 사용자가 직접 실행하거나
+  "해도 된다"고 알려주면 다음에 반영하겠음.
+- `items.status`('정상'/'고장'/'폐기') 컬럼이 코드 어디에서도 안 쓰임 — 예전 상태관리
+  방식의 잔재로 보임(지금은 `computeStockStatus()`가 대신함). 지우면 스키마 변경이라 일단
+  보고만 하고 안 건드림.
+- `safety_events.assignee_id`/`due_at` 컬럼도 마찬가지로 코드에서 안 쓰임(ASSIGNED 단계
+  제거하면서 같이 죽은 걸로 보임). 스키마 변경 필요해서 역시 보고만 함.
+
+### `labkeeper-web-local/AI협업/` 폴더 확인
+- `00_사용방법.md`, `02_Claude_작업요청.md` 확인함. 이 세션 시점 `02_Claude_작업요청.md`는
+  "작업 요청 없음" 상태라 GPT 리뷰(`01_GPT_최신리뷰.md`) 내용 중 사용자가 직접 채팅으로
+  지시한 것과 겹치는 항목(Safety RPC, 관리자 요약 대시보드, ASSIGNED 정리 등)만 이번에
+  반영했고, 그 외 항목(비공개 storage 전환, 파손사진 용량제한, 챗봇 비로그인 안내 등)은
+  02번 파일에 사용자가 승인 항목을 적기 전까지 손대지 않음.
+
+### 아직 안 한 것 (다음 차례)
+- 위 "데이터 점검 중 발견" 3건 (사용자 승인 대기)
+- 실제 Raspbot `RealHAL` 구현 — 실제 하드웨어(GPIO 핀 번호, 모터 드라이버 모델, 카메라 설정)
+  없이는 검증 불가능해서 손대지 않음
+- `damage-photos`/`robot-camera` storage를 비공개+서명URL 방식으로 전환
+- 파손 사진 업로드 용량·MIME 검증
+
+---
+
 ## 2026-08-25 (2) — 파손신고 AI 자동판정 + 챗봇 대여/사용 버튼 + QR 이미지 자동생성
 
 **커밋**: 이 항목을 추가한 커밋 (여해동님 자리 비운 사이 자동 진행 — 급격한 구조 변경 없이 기능만 추가)
