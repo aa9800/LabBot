@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "labbot-web-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8532", "--directory", "web"],
+      "port": 8532
+    }
+  ]
+}

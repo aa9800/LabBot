@@ -106,7 +106,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (rentable) {
         button.addEventListener("click", async () => {
           if (!session) {
-            alert("로그인 후 이용할 수 있습니다.");
+            window.LabBotToast.info("로그인 후 이용할 수 있습니다.");
             return;
           }
           button.disabled = true;
@@ -121,7 +121,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             await refreshItems();
           } catch (err) {
-            alert(err.message || "처리 중 오류가 발생했습니다.");
+            window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
             button.disabled = false;
           }
         });

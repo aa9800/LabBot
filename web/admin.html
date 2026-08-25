@@ -25,9 +25,15 @@
         <a href="index.html" data-nav="home">홈</a>
         <a href="items.html" data-nav="items">물품목록</a>
         <a href="chatbot.html" data-nav="chatbot">챗봇</a>
-        <a href="admin.html" data-nav="admin" class="nav-admin-link">관리자</a>
         <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
         <a href="login.html" data-nav="login">로그인</a>
+        <a href="admin.html" data-nav="admin" class="nav-admin-link">
+          <svg class="nav-admin-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.8" />
+            <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          </svg>
+          관리자
+        </a>
       </nav>
     </div>
   </header>
@@ -81,6 +87,7 @@
       <button type="button" class="summary-card" data-goto-tab="history">
         <span class="summary-card-value" id="summaryActiveLoans">-</span>
         <span class="summary-card-label">대여중</span>
+        <svg class="summary-sparkline" id="summaryLoanSparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"></svg>
       </button>
       <button type="button" class="summary-card summary-card-warn" data-goto-tab="damage">
         <span class="summary-card-value" id="summaryPendingDamage">-</span>
@@ -115,7 +122,7 @@
         <button type="submit" class="btn btn-primary btn-sm">물품 추가</button>
       </form>
 
-      <div class="table-wrap">
+      <div class="table-wrap table-wrap-wide">
         <table class="sticky-first-col">
           <thead>
             <tr>
@@ -313,6 +320,7 @@
   <script src="js/transitions.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/nav.js"></script>
+  <script src="js/toast.js"></script>
   <script src="js/items-data.js"></script>
   <script src="js/rentals.js"></script>
   <script src="js/safety-data.js"></script>

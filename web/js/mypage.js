@@ -69,7 +69,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         await window.LabBotRentals.returnLoan(loan.id);
         await renderAll();
       } catch (err) {
-        alert(err.message || "반납 처리에 실패했습니다.");
+        window.LabBotToast.error(err.message || "반납 처리에 실패했습니다.");
         button.disabled = false;
       }
     });
@@ -144,7 +144,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     submitBtn.addEventListener("click", async () => {
       const file = photoInput.files[0];
       if (!file) {
-        alert("파손 사진을 첨부해주세요.");
+        window.LabBotToast.error("파손 사진을 첨부해주세요.");
         return;
       }
 
@@ -162,17 +162,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
 
         if (assessment && assessment.error) {
-          alert(`신고가 접수되었습니다.\nAI 분석은 실패했지만(${assessment.error}), 관리자가 사진을 직접 확인할 예정입니다.`);
+          window.LabBotToast.info(`신고가 접수되었습니다.\nAI 분석은 실패했지만(${assessment.error}), 관리자가 사진을 직접 확인할 예정입니다.`);
         } else if (assessment && assessment.result) {
           const label = DAMAGE_SEVERITY_LABEL[assessment.result.severity] || assessment.result.severity;
-          alert(`신고가 접수되었습니다.\n\nAI 판정: ${label}\n${assessment.result.summary}`);
+          window.LabBotToast.success(`신고가 접수되었습니다.\nAI 판정: ${label} — ${assessment.result.summary}`);
         } else {
-          alert("신고가 접수되었습니다.");
+          window.LabBotToast.success("신고가 접수되었습니다.");
         }
         close();
       } catch (err) {
         statusEl.textContent = "";
-        alert(err.message || "파손 신고에 실패했습니다.");
+        window.LabBotToast.error(err.message || "파손 신고에 실패했습니다.");
         submitBtn.disabled = false;
         closeBtn.disabled = false;
       }
@@ -184,7 +184,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       loans = await window.LabBotRentals.fetchMyLoans(session.id);
     } catch (err) {
-      alert("대여 목록을 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("대여 목록을 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 

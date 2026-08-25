@@ -69,21 +69,44 @@ document.addEventListener("DOMContentLoaded", async () => {
         try {
           if (consumable) {
             await window.LabBotRentals.consumeItem(item, session);
-            alert(`"${item.name}" 사용 처리되었습니다.`);
+            window.LabBotToast.success(`"${item.name}" 사용 처리되었습니다.`);
           } else {
             const loan = await window.LabBotRentals.createLoan(item, session);
             const dueDate = new Date(loan.due_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-            alert(`"${item.name}" 대여가 완료되었습니다.\n반납 예정일: ${dueDate}\n마이페이지에서 확인할 수 있습니다.`);
+            window.LabBotToast.success(`"${item.name}" 대여가 완료되었습니다.\n반납 예정일: ${dueDate}`);
           }
           await renderList();
         } catch (err) {
-          alert(err.message || "처리 중 오류가 발생했습니다.");
+          window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
           target.disabled = false;
         }
       });
     }
 
     return row;
+  }
+
+  // 검색/필터 결과를 불러오는 동안 빈 화면 대신 자리표시자 카드를 보여준다.
+  function renderSkeleton() {
+    listEl.innerHTML = Array.from({ length: 6 })
+      .map(
+        () => `
+        <article class="item-row skeleton-row">
+          <div class="item-row-icon"><span class="skeleton-bar" style="width:20px;height:20px;border-radius:50%;"></span></div>
+          <div class="item-row-main">
+            <span class="skeleton-bar" style="width:56px;height:10px;margin-bottom:8px;"></span>
+            <span class="skeleton-bar" style="width:150px;height:14px;margin-bottom:8px;"></span>
+            <span class="skeleton-bar" style="width:110px;height:10px;"></span>
+          </div>
+          <div class="item-row-meta">
+            <span class="skeleton-bar" style="width:80px;height:10px;margin-bottom:8px;"></span>
+            <span class="skeleton-bar" style="width:72px;height:26px;"></span>
+          </div>
+        </article>
+      `
+      )
+      .join("");
+    emptyState.style.display = "none";
   }
 
   async function populateLocationOptions() {
@@ -124,6 +147,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   async function renderList() {
+    renderSkeleton();
+
     let items;
     try {
       items = await window.LabBotItems.searchItems({
@@ -132,7 +157,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         location: activeLocation,
       });
     } catch (err) {
-      alert("물품 목록을 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("물품 목록을 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 

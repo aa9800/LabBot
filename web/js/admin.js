@@ -52,12 +52,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     return window.LabBotItems.searchItems({});
   }
 
+  // 표가 비어있는 채로 잠깐 보이는 대신, 로딩 중임을 알 수 있게 자리표시자 행을 먼저 보여준다.
+  function renderStockSkeleton() {
+    const COLUMN_COUNT = 10;
+    stockTableBody.innerHTML = Array.from({ length: 5 })
+      .map(
+        () =>
+          `<tr class="skeleton-row">${Array.from({ length: COLUMN_COUNT })
+            .map(() => `<td><span class="skeleton-bar"></span></td>`)
+            .join("")}</tr>`
+      )
+      .join("");
+  }
+
   async function renderStockTable() {
+    renderStockSkeleton();
+
     let items;
     try {
       items = await loadAllItems();
     } catch (err) {
-      alert("물품 목록을 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("물품 목록을 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 
@@ -73,19 +88,19 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       const row = document.createElement("tr");
       row.innerHTML = `
-        <td${item.notes ? ` title="${escapeHtml(item.notes)}"` : ""}>${escapeHtml(item.name)}</td>
-        <td>${escapeHtml(item.categoryLabel)}</td>
-        <td>${escapeHtml(item.location)}</td>
-        <td class="qr-cell">
+        <td data-label="물품명"${item.notes ? ` title="${escapeHtml(item.notes)}"` : ""}>${escapeHtml(item.name)}</td>
+        <td data-label="카테고리">${escapeHtml(item.categoryLabel)}</td>
+        <td data-label="위치">${escapeHtml(item.location)}</td>
+        <td data-label="QR 코드" class="qr-cell">
           <canvas class="qr-thumb" title="클릭하면 인쇄용 크기로 다운로드됩니다" data-qr="${escapeHtml(item.qr_code)}"></canvas>
           <span class="mono">${escapeHtml(item.qr_code)}</span>
         </td>
-        <td><span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span></td>
-        <td><input type="number" class="stock-input" min="0" value="${item.available_qty}" data-field="available" /></td>
-        <td><input type="number" class="stock-input" min="0" value="${item.total_qty}" data-field="total" /></td>
-        <td><input type="number" class="stock-input" min="0" value="${item.minimum_qty ?? ""}" placeholder="-" data-field="minimum" /></td>
-        <td style="text-align:center;"><input type="checkbox" data-field="maintenance" ${isMaintenance ? "checked" : ""} /></td>
-        <td class="stock-actions">
+        <td data-label="상태"><span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span></td>
+        <td data-label="대여가능"><input type="number" class="stock-input" min="0" value="${item.available_qty}" data-field="available" /></td>
+        <td data-label="총 수량"><input type="number" class="stock-input" min="0" value="${item.total_qty}" data-field="total" /></td>
+        <td data-label="최소수량"><input type="number" class="stock-input" min="0" value="${item.minimum_qty ?? ""}" placeholder="-" data-field="minimum" /></td>
+        <td data-label="점검중" style="text-align:center;"><input type="checkbox" data-field="maintenance" ${isMaintenance ? "checked" : ""} /></td>
+        <td data-label="작업" class="stock-actions">
           <button type="button" class="btn btn-secondary btn-sm" data-action="save">저장</button>
           <button type="button" class="btn btn-secondary btn-sm" data-action="history">이력</button>
           <button type="button" class="btn btn-danger btn-sm" data-action="delete">삭제</button>
@@ -101,7 +116,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       qrCanvas.addEventListener("click", () => {
         window.QRCode.toDataURL(item.qr_code, { width: 480, margin: 2 }, (err, url) => {
           if (err) {
-            alert("QR 코드 생성에 실패했습니다.");
+            window.LabBotToast.error("QR 코드 생성에 실패했습니다.");
             return;
           }
           const link = document.createElement("a");
@@ -128,12 +143,12 @@ document.addEventListener("DOMContentLoaded", async () => {
           available_qty < 0 ||
           total_qty < 0
         ) {
-          alert("재고 수량은 0 이상의 숫자여야 합니다.");
+          window.LabBotToast.error("재고 수량은 0 이상의 숫자여야 합니다.");
           return;
         }
 
         if (available_qty > total_qty) {
-          alert("대여가능 수량은 총 수량을 넘을 수 없습니다.");
+          window.LabBotToast.error("대여가능 수량은 총 수량을 넘을 수 없습니다.");
           return;
         }
 
@@ -169,7 +184,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             manual_status: maintenanceInput.checked ? "MAINTENANCE" : null,
           });
         } catch (err) {
-          alert(err.message || "재고 수정에 실패했습니다.");
+          window.LabBotToast.error(err.message || "재고 수정에 실패했습니다.");
         } finally {
           button.disabled = false;
         }
@@ -185,7 +200,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           await window.LabBotItems.deleteItem(item.id);
           await renderStockTable();
         } catch (err) {
-          alert(err.message || "삭제에 실패했습니다.");
+          window.LabBotToast.error(err.message || "삭제에 실패했습니다.");
         }
       });
 
@@ -260,7 +275,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       history = await window.LabBotStockAdjustments.fetchStockAdjustments(item.id);
     } catch (err) {
-      alert("재고 조정 이력을 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("재고 조정 이력을 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 
@@ -304,7 +319,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       loans = await window.LabBotRentals.fetchAllLoans();
     } catch (err) {
-      alert("대여 이력을 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("대여 이력을 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 
@@ -359,7 +374,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       reports = await window.LabBotDamage.fetchAllDamageReports();
     } catch (err) {
-      alert("파손 신고 목록을 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("파손 신고 목록을 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 
@@ -416,7 +431,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           const url = await window.LabBotDamage.getDamagePhotoUrl(btn.dataset.photoPath);
           window.open(url, "_blank", "noopener");
         } catch (err) {
-          alert("사진을 불러오지 못했습니다: " + (err.message || err));
+          window.LabBotToast.error("사진을 불러오지 못했습니다: " + (err.message || err));
         } finally {
           btn.disabled = false;
         }
@@ -439,7 +454,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       events = await window.LabBotSafety.fetchSafetyEvents({ status: safetyStatusFilter.value });
     } catch (err) {
-      alert("안전 이벤트를 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("안전 이벤트를 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 
@@ -470,7 +485,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       ({ event, logs } = await window.LabBotSafety.fetchSafetyEventDetail(id));
     } catch (err) {
-      alert("상세 정보를 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("상세 정보를 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 
@@ -522,7 +537,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           await renderSafetyTable();
           await showSafetyDetail(id);
         } catch (err) {
-          alert("상태 변경에 실패했습니다: " + (err.message || err));
+          window.LabBotToast.error("상태 변경에 실패했습니다: " + (err.message || err));
           btn.disabled = false;
         }
       });
@@ -574,7 +589,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", ...values });
         await refreshRobotModeBadge();
       } catch (err) {
-        alert("원격조작 명령을 보내지 못했습니다: " + (err.message || err));
+        window.LabBotToast.error("원격조작 명령을 보내지 못했습니다: " + (err.message || err));
       }
     });
   });
@@ -584,7 +599,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       await window.LabBotRobotConsole.setRobotCommand({ mode: "auto", speed: 0, turn: 0 });
       await refreshRobotModeBadge();
     } catch (err) {
-      alert("자동 모드로 전환하지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("자동 모드로 전환하지 못했습니다: " + (err.message || err));
     }
   });
 
@@ -609,7 +624,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       items = await loadAllItems();
     } catch (err) {
-      alert("물품 목록을 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("물품 목록을 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 
@@ -657,9 +672,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       await window.LabBotAudit.submitAudit(confirmedIds);
       await renderAuditSessions();
-      alert("실사가 제출되었습니다.");
+      window.LabBotToast.success("실사가 제출되었습니다.");
     } catch (err) {
-      alert("실사 제출에 실패했습니다: " + (err.message || err));
+      window.LabBotToast.error("실사 제출에 실패했습니다: " + (err.message || err));
     } finally {
       auditSubmitBtn.disabled = false;
     }
@@ -670,7 +685,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       sessions = await window.LabBotAudit.fetchAuditSessions();
     } catch (err) {
-      alert("실사 이력을 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("실사 이력을 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 
@@ -701,7 +716,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       mismatches = await window.LabBotAudit.fetchAuditMismatches(sessionId);
     } catch (err) {
-      alert("실사 상세를 불러오지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("실사 상세를 불러오지 못했습니다: " + (err.message || err));
       return;
     }
 
@@ -737,7 +752,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const notes = notesInput.value.trim();
 
     if (!name || !location || !Number.isFinite(total_qty) || total_qty < 1) {
-      alert("모든 항목을 올바르게 입력해주세요.");
+      window.LabBotToast.error("모든 항목을 올바르게 입력해주세요.");
       return;
     }
 
@@ -760,7 +775,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderLocationOptions(); // reset()이 select 첫 옵션으로 되돌리므로 다시 채워준다
       await renderStockTable();
     } catch (err) {
-      alert("물품 등록에 실패했습니다: " + (err.message || err));
+      window.LabBotToast.error("물품 등록에 실패했습니다: " + (err.message || err));
     } finally {
       submitBtn.disabled = false;
     }
@@ -781,6 +796,39 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.querySelectorAll("[data-goto-tab]").forEach((card) => {
     card.addEventListener("click", () => switchTab(card.dataset.gotoTab));
   });
+
+  // "대여중" 요약 카드 아래 최근 7일 대여 건수 미니 막대그래프 — 새 테이블/컬럼 없이
+  // 이미 불러온 loans.borrowed_at만으로 계산한다(오늘이 맨 오른쪽 막대).
+  function renderLoanSparkline(loans) {
+    const svg = document.getElementById("summaryLoanSparkline");
+    if (!svg) return;
+
+    const DAYS = 7;
+    const counts = Array.from({ length: DAYS }, () => 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    loans.forEach((loan) => {
+      const borrowed = new Date(loan.borrowed_at);
+      borrowed.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((today - borrowed) / (1000 * 60 * 60 * 24));
+      if (diffDays >= 0 && diffDays < DAYS) {
+        counts[DAYS - 1 - diffDays] += 1;
+      }
+    });
+
+    const max = Math.max(1, ...counts);
+    const barWidth = 100 / DAYS;
+    svg.innerHTML = counts
+      .map((count, i) => {
+        const height = count === 0 ? 1 : (count / max) * 18 + 4;
+        const x = i * barWidth + barWidth * 0.15;
+        const width = barWidth * 0.7;
+        const y = 24 - height;
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="1"></rect>`;
+      })
+      .join("");
+  }
 
   // 요약 카드 — 탭마다 이미 fetch하는 데이터를 여기서 다시 세는 대신, 굳이 캐시를 만들지
   // 않고 그냥 한 번씩 더 불러온다(관리자 화면 데이터량이 적어서 성능에 영향 없음).
@@ -808,6 +856,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById("summaryNeedsReview").textContent = safetyEvents.filter(
         (e) => e.status === "NEEDS_REVIEW"
       ).length;
+
+      renderLoanSparkline(loans);
     } catch (err) {
       console.warn("LabBot: 관리자 요약 카드를 불러오지 못했습니다", err);
     }
