@@ -37,11 +37,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
   }
 
-  // 예약중 카드 — "수령하기"를 누르면 로봇 안내 화면(openGuideModal)으로 넘어간다.
+  // 예약중 카드 — "수령하기"/"사용하기"를 누르면 로봇 안내 화면(openGuideModal)으로 넘어간다.
   // 이 단계에서는 아직 실제로 받아간 게 아니라서 due_at이 없다(반납예정일 표시 안 함).
+  // 소모품은 장비와 달리 "몇 개 쓸지"를 여기서 먼저 정한 뒤 QR 확인으로 넘어간다.
   function renderReservedCard(loan) {
     const item = loan.items;
     const { escapeHtml } = window.LabBotItems;
+    const consumable = window.LabBotRentals.isConsumable(item);
+    // 예약 시점에 이미 1개가 임시로 차감돼 있으므로(공용 트리거), 이 사용자가 실제로
+    // 고를 수 있는 최대치는 지금 남은 재고 + 자기 몫 1개다.
+    const maxQty = consumable ? item.available_qty + 1 : null;
+
+    const actionHtml = consumable
+      ? `
+        <div class="qty-stepper">
+          <label for="qty-input-${loan.id}">사용 수량</label>
+          <input type="number" id="qty-input-${loan.id}" min="1" max="${maxQty}" value="1" />
+          <span class="qty-unit">${escapeHtml(item.unit || "개")}</span>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" data-use-loan="${loan.id}">사용하기</button>
+      `
+      : `<button type="button" class="btn btn-primary btn-sm" data-pickup-loan="${loan.id}">수령하기</button>`;
 
     const card = document.createElement("article");
     card.className = "rental-card rental-card-reserved";
@@ -53,14 +69,30 @@ document.addEventListener("DOMContentLoaded", async () => {
       </div>
       <div class="rental-card-meta">
         <span class="rental-card-date">예약일 ${formatDateTime(loan.borrowed_at)}</span>
-        <span class="badge badge-pending"><span class="badge-dot"></span>수령 대기</span>
-        <button type="button" class="btn btn-primary btn-sm" data-pickup-loan="${loan.id}">수령하기</button>
+        <span class="badge badge-pending"><span class="badge-dot"></span>${consumable ? "사용 대기" : "수령 대기"}</span>
+        ${actionHtml}
       </div>
     `;
 
-    card.querySelector("[data-pickup-loan]").addEventListener("click", () => {
-      openGuideModal({ loan, mode: "pickup" });
-    });
+    if (consumable) {
+      card.querySelector("[data-use-loan]").addEventListener("click", () => {
+        const qtyInput = card.querySelector(`#qty-input-${loan.id}`);
+        const qty = parseInt(qtyInput.value, 10);
+        if (!Number.isFinite(qty) || qty < 1) {
+          window.LabBotToast.error("사용 수량을 1 이상으로 입력해주세요.");
+          return;
+        }
+        if (maxQty !== null && qty > maxQty) {
+          window.LabBotToast.error(`남은 재고(${maxQty}${item.unit || "개"})보다 많이 사용할 수 없습니다.`);
+          return;
+        }
+        openGuideModal({ loan, mode: "use", qty });
+      });
+    } else {
+      card.querySelector("[data-pickup-loan]").addEventListener("click", () => {
+        openGuideModal({ loan, mode: "pickup" });
+      });
+    }
 
     return card;
   }
@@ -102,14 +134,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     return card;
   }
 
-  // ---------- 로봇 안내 + QR 확인 모달 (수령/반납 공용) ----------
-  // "대여하기"를 눌러도 그 자리에서 바로 대여가 끝나지 않는다 — 로봇이 있는 곳까지
-  // 안내를 받고 물품 QR을 스캔해야만 실제로 확정된다(mode: "pickup"), 반납도 동일하게
-  // QR을 다시 스캔해야 처리된다(mode: "return"). QR 대조는 confirm_loan_pickup/return
-  // RPC가 서버에서 한 번 더 하므로, 카메라를 속여도 실제로는 통과하지 못한다.
-  function openGuideModal({ loan, mode }) {
+  // ---------- 로봇 안내 + QR 확인 모달 (수령/반납/소모품 사용 공용) ----------
+  // "대여하기"/"사용하기"를 눌러도 그 자리에서 바로 끝나지 않는다 — 로봇이 있는 곳까지
+  // 안내를 받고 물품 QR을 스캔해야만 실제로 확정된다. mode: "pickup"(장비 수령),
+  // "return"(반납), "use"(소모품 사용, qty 필요) 셋 다 이 모달 하나로 처리한다. QR 대조는
+  // confirm_loan_pickup/return/confirm_item_usage RPC가 서버에서 한 번 더 하므로, 카메라를
+  // 속여도 실제로는 통과하지 못한다.
+  const GUIDE_COPY = {
+    pickup: { eyebrow: "물품 수령", message: "로봇을 따라가세요" },
+    return: { eyebrow: "물품 반납", message: "로봇에게 돌아가세요" },
+    use: { eyebrow: "물품 사용", message: "로봇을 따라가세요" },
+  };
+
+  function openGuideModal({ loan, mode, qty }) {
     const item = loan.items;
-    const isPickup = mode === "pickup";
+    const copy = GUIDE_COPY[mode];
     const { escapeHtml } = window.LabBotItems;
 
     const overlay = document.createElement("div");
@@ -119,11 +158,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         <div class="guide-step" data-step="nav">
           <div class="guide-scanline-box">
             <div class="scan-line"></div>
-            <p class="guide-eyebrow">${isPickup ? "물품 수령" : "물품 반납"} · 로봇 안내</p>
-            <h3 class="guide-message">${isPickup ? "로봇을 따라가세요" : "로봇에게 돌아가세요"}</h3>
+            <p class="guide-eyebrow">${copy.eyebrow} · 로봇 안내</p>
+            <h3 class="guide-message">${copy.message}</h3>
             <p class="guide-caption">AI 카메라가 경로를 인식하고 있습니다</p>
           </div>
-          <p class="guide-item-name">${escapeHtml(item.name)} · ${escapeHtml(item.location)}</p>
+          <p class="guide-item-name">${escapeHtml(item.name)} · ${escapeHtml(item.location)}${
+            mode === "use" ? ` · ${qty}${escapeHtml(item.unit || "개")}` : ""
+          }</p>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary btn-sm" data-action="cancel">취소</button>
             <button type="button" class="btn btn-primary btn-sm" data-action="to-scan">도착했어요 · QR 스캔하기</button>
@@ -196,19 +237,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     async function submitCode(code) {
       scanStatus.textContent = "확인 중...";
       try {
-        if (isPickup) {
+        if (mode === "pickup") {
           await window.LabBotRentals.confirmPickup(loan.id, code);
-        } else {
+        } else if (mode === "return") {
           await window.LabBotRentals.confirmReturn(loan.id, code);
+        } else {
+          await window.LabBotRentals.confirmUsage(loan.id, code, qty);
         }
         stopCamera();
-        overlay.querySelector("[data-success-caption]").textContent = isPickup
-          ? "대여가 시작되었습니다. 반납예정일은 대여 목록에서 확인하세요."
-          : "반납이 완료되었습니다.";
+
+        const successCaption =
+          mode === "pickup"
+            ? "대여가 시작되었습니다. 반납예정일은 대여 목록에서 확인하세요."
+            : mode === "return"
+              ? "반납이 완료되었습니다."
+              : `${qty}${item.unit || "개"} 사용 처리되었습니다.`;
+        const toastMessage =
+          mode === "pickup"
+            ? `"${item.name}" 대여가 시작되었습니다.`
+            : mode === "return"
+              ? `"${item.name}" 반납이 완료되었습니다.`
+              : `"${item.name}" ${qty}${item.unit || "개"} 사용 처리되었습니다.`;
+
+        overlay.querySelector("[data-success-caption]").textContent = successCaption;
         showStep("success");
-        window.LabBotToast.success(
-          isPickup ? `"${item.name}" 대여가 시작되었습니다.` : `"${item.name}" 반납이 완료되었습니다.`
-        );
+        window.LabBotToast.success(toastMessage);
         setTimeout(async () => {
           close();
           await renderAll();

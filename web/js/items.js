@@ -70,15 +70,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         target.disabled = true;
 
         try {
-          if (consumable) {
-            await window.LabBotRentals.consumeItem(item, session);
-            window.LabBotToast.success(`"${item.name}" 사용 처리되었습니다.`);
-            await renderList();
-          } else {
-            await window.LabBotRentals.reserveItem(item, session);
-            window.LabBotToast.success(`"${item.name}" 예약되었습니다. 마이페이지에서 로봇 안내를 받아 수령하세요.`);
-            window.location.href = "mypage.html";
-          }
+          // 소모품도 이제 그 자리에서 바로 처리되지 않는다 — 예약만 되고, 마이페이지에서
+          // 수량을 입력하고 QR을 스캔해야만 실제 사용으로 확정된다(장비 대여와 동일한 원칙).
+          await window.LabBotRentals.reserveItem(item, session);
+          window.LabBotToast.success(
+            `"${item.name}" 예약되었습니다. 마이페이지에서 로봇 안내를 받아 ${consumable ? "사용" : "수령"}하세요.`
+          );
+          window.location.href = "mypage.html";
         } catch (err) {
           window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
           target.disabled = false;

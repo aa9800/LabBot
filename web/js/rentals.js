@@ -8,7 +8,7 @@
 // 버튼 = 즉시 대여 완료"가 아니라 로봇이 실제로 확인한 뒤에만 대여가 되는 구조가 된다.
 // 반납도 마찬가지로 QR 재확인(confirmReturn) 없이는 처리되지 않는다.
 
-const LOAN_SELECT = "*, items(id, name, category, location, qr_code)";
+const LOAN_SELECT = "*, items(id, name, category, location, qr_code, item_type, available_qty, total_qty, unit)";
 
 // 연체 여부: 대여중 상태(실제로 픽업 확정된 것)에만 의미가 있다 — 예약중인데 due_at이
 // 아직 없을(null) 수도 있어서, 그 경우는 연체가 아니라고 본다.
@@ -61,10 +61,24 @@ async function confirmReturn(loanId, qrCode) {
   return data;
 }
 
-// 사용(소모): 소모품/시약처럼 "빌렸다가 돌려주는" 개념이 없는 물품용.
-// loans 행을 만들면서 바로 반납완료 상태로 넣는다 — INSERT 트리거(재고 -1)만 발동하고
-// UPDATE 트리거(재고 +1)는 발동할 일이 없어서(이미 반납완료 상태로 들어감), 재고가
-// 영구적으로 줄어든다. 그래도 이력은 loans에 그대로 남아 대여 이력 화면에서 보인다.
+// 소모품 사용 확인: 장비 대여와 마찬가지로 예약만으로는 끝나지 않는다 — 마이페이지에서
+// 수량을 입력하고 QR을 스캔해야만(confirm_item_usage RPC) 실제 사용으로 확정된다.
+// 예약 시점에 공용 트리거가 이미 1개를 차감해뒀으므로, RPC가 실제 수량과의 차이만
+// 추가로 반영한다(docs/labbot_schema.sql 21번 섹션).
+async function confirmUsage(loanId, qrCode, qty) {
+  const { data, error } = await supabaseClient.rpc("confirm_item_usage", {
+    p_loan_id: loanId,
+    p_qr_code: qrCode,
+    p_qty: qty,
+  });
+  if (error) throw error;
+  return data;
+}
+
+// 사용(소모, QR 확인 없이 바로 처리) — 지금 화면에서는 안 쓴다. 소모품도 이제
+// reserveItem() → (마이페이지에서 수량 입력 + QR 스캔) → confirmUsage() 순서를 거친다.
+// 이 함수는 남겨두되(예: 관리자용 즉시 사용 처리 등을 나중에 붙일 자리) UI에서 직접
+// 호출하지는 않는다.
 async function consumeItem(item, session, source = "manual") {
   if (item.available_qty <= 0) {
     throw new Error("남은 재고가 없습니다.");
@@ -146,6 +160,7 @@ window.LabBotRentals = {
   reserveItem,
   confirmPickup,
   confirmReturn,
+  confirmUsage,
   consumeItem,
   isConsumable,
   returnLoan,

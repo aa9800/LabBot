@@ -330,20 +330,29 @@ document.addEventListener("DOMContentLoaded", async () => {
       const itemName = (loan.items && loan.items.name) || "삭제된 물품";
       const overdue = window.LabBotRentals.isOverdue(loan);
 
-      // 시약/소모품 "사용하기"는 대여-반납이 아니라 한 번에 끝나는 소모라서(rentals.js의
-      // consumeItem 참고 — borrowed_at과 returned_at이 똑같이 찍힌다), 대여+반납 두 줄로
-      // 보이면 "빌렸다가 바로 반납했나?" 헷갈린다. 소모품이면 "사용" 한 줄로만 보여준다.
-      const isConsumableLoan = loan.items && window.LabBotRentals.isConsumable({ item_type: loan.items.category });
-
-      if (isConsumableLoan) {
-        rows.push({ user: userName, item: itemName, type: "사용", badgeKey: "available", time: loan.borrowed_at });
+      // 예약중(로봇 안내를 아직 안 받았거나 QR 확인 전)은 "대여"나 "사용"으로 세지 않는다 —
+      // 실제로 받아가거나 쓴 게 아니라서, 소모품/장비 구분보다 이 체크를 먼저 한다.
+      if (loan.status === "예약중") {
+        rows.push({ user: userName, item: itemName, type: "예약", badgeKey: "pending", time: loan.borrowed_at });
         return;
       }
 
-      // 예약중(로봇 안내를 아직 안 받았거나 QR 확인 전)은 "대여"로 세지 않는다 — 실제로
-      // 받아간 게 아니라서, 혼동을 막기 위해 별도 상태로 한 줄만 보여준다.
-      if (loan.status === "예약중") {
-        rows.push({ user: userName, item: itemName, type: "예약", badgeKey: "pending", time: loan.borrowed_at });
+      // 시약/소모품 "사용하기"는 대여-반납이 아니라 한 번에 끝나는 소모라서(예약 -> QR 확인
+      // 시점에 바로 반납완료로 들어간다), 대여+반납 두 줄로 보이면 "빌렸다가 바로
+      // 반납했나?" 헷갈린다. 소모품이면 "사용" 한 줄로만 보여준다.
+      const isConsumableLoan = loan.items && window.LabBotRentals.isConsumable({ item_type: loan.items.category });
+
+      if (isConsumableLoan) {
+        const qtyLabel = loan.consumed_qty && loan.consumed_qty > 1 ? `사용(${loan.consumed_qty}개)` : "사용";
+        rows.push({
+          user: userName,
+          item: itemName,
+          type: qtyLabel,
+          badgeKey: "available",
+          // qr_confirmed_at은 실제로 QR을 스캔해 사용을 확정한 시각 — borrowed_at(예약 시각)보다
+          // 이걸 우선 보여준다.
+          time: loan.qr_confirmed_at || loan.borrowed_at,
+        });
         return;
       }
 

@@ -1980,6 +1980,41 @@ tbody tr:hover td {
   border-color: rgba(56, 189, 248, 0.35);
 }
 
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qty-stepper label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.qty-stepper input {
+  width: 60px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  font-family: var(--font-mono);
+  text-align: center;
+}
+
+.qty-stepper input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.qty-stepper .qty-unit {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 /* ---------- 로봇 안내 + QR 스캔 모달 (마이페이지 수령/반납) ---------- */
 
 .guide-modal-card {

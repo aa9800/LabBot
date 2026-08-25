@@ -808,3 +808,84 @@ begin
   return v_loan;
 end;
 $$ language plpgsql security invoker;
+
+-- =============================================================
+-- 21. 소모품 "사용하기"도 예약 → 로봇 안내 → QR 확인 흐름에 맞춘다 (사용자 요청 —
+--     "대여하기"와 일관되게 소모품도 실제 확인 후에만 처리되어야 함).
+--     소모품은 장비와 달리 "몇 개 썼는지"가 매번 달라서, 예약 시점(reserveItem)에는
+--     기존 공용 트리거가 우선 1개만 임시로 차감해두고, 실제 확정(confirm_item_usage)
+--     시점에 사용자가 입력한 수량과의 차이만큼만 추가로 반영한다. 소모품은 "반납"
+--     개념이 없으므로 예약중에서 바로 반납완료로 간다(대여중 단계를 거치지 않음).
+-- =============================================================
+
+alter table loans add column if not exists consumed_qty integer;
+
+-- guard_loan_self_update()에 "예약중 -> 반납완료"(소모품 사용 확정) 전이를 추가로 허용.
+create or replace function public.guard_loan_self_update()
+returns trigger as $$
+begin
+  if not public.is_admin() then
+    if new.item_id is distinct from old.item_id
+       or new.user_id is distinct from old.user_id
+       or new.borrowed_at is distinct from old.borrowed_at
+       or new.source is distinct from old.source then
+      raise exception 'not allowed to edit these loan fields';
+    end if;
+
+    if old.status = '대여중' and new.status = '반납완료' then
+      if new.due_at is distinct from old.due_at then
+        raise exception 'not allowed to edit these loan fields';
+      end if;
+    elsif old.status = '예약중' and new.status = '대여중' then
+      null; -- 장비 픽업 확정: due_at/qr_confirmed_at 갱신 허용
+    elsif old.status = '예약중' and new.status = '반납완료' then
+      null; -- 소모품 사용 확정: qr_confirmed_at/returned_at/consumed_qty 갱신 허용
+    else
+      raise exception 'only reservation-pickup, item-usage, or return transitions are allowed';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.confirm_item_usage(p_loan_id bigint, p_qr_code text, p_qty integer default 1)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item items;
+begin
+  if p_qty < 1 then
+    raise exception '사용 수량은 1개 이상이어야 합니다.';
+  end if;
+
+  select * into v_loan from loans where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then
+    raise exception '예약을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '예약중' then
+    raise exception '이미 처리된 예약입니다.';
+  end if;
+
+  select * into v_item from items where id = v_loan.item_id for update;
+  if v_item.qr_code is distinct from p_qr_code then
+    raise exception 'QR 코드가 이 물품과 일치하지 않습니다.';
+  end if;
+
+  -- 예약 시점에 공용 트리거가 이미 1개를 차감해뒀으므로, 실제 사용 수량(p_qty)과의
+  -- 차이만큼만 추가로 차감한다(1개보다 적게 쓰면 오히려 돌려줌).
+  if v_item.available_qty < (p_qty - 1) then
+    raise exception '남은 재고가 부족합니다.';
+  end if;
+  update items set available_qty = available_qty - (p_qty - 1) where id = v_item.id;
+
+  update loans
+  set status = '반납완료',
+      qr_confirmed_at = now(),
+      returned_at = now(),
+      consumed_qty = p_qty
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security invoker;
