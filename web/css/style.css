@@ -1969,6 +1969,141 @@ tbody tr:hover td {
   margin-top: 10px;
 }
 
+.section-subtext {
+  margin: -8px 0 14px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.rental-card-reserved {
+  border-style: dashed;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+/* ---------- 로봇 안내 + QR 스캔 모달 (마이페이지 수령/반납) ---------- */
+
+.guide-modal-card {
+  max-width: 380px;
+  text-align: center;
+}
+
+.guide-step[hidden] {
+  display: none;
+}
+
+.guide-scanline-box {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 28px 20px 22px;
+  margin-bottom: 16px;
+}
+
+.guide-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin: 0 0 8px;
+}
+
+.guide-message {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 6px;
+  text-shadow: 0 0 18px var(--accent-glow);
+}
+
+.guide-caption {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  margin: 0;
+}
+
+.guide-item-name {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
+.qr-scan-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 260px;
+  margin: 0 auto 12px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--border);
+}
+
+.qr-scan-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qr-scan-reticle {
+  position: absolute;
+  inset: 14%;
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.guide-scan-status {
+  min-height: 18px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+}
+
+.guide-manual-fallback {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+  margin-bottom: 4px;
+  text-align: left;
+}
+
+.guide-manual-fallback label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+.guide-manual-row {
+  display: flex;
+  gap: 8px;
+}
+
+.guide-manual-row input {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  font-family: var(--font-mono);
+}
+
+.guide-manual-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 /* ---------- 반응형 ---------- */
 
 @media (max-width: 480px) {

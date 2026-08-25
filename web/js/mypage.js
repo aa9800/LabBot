@@ -11,6 +11,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const statActiveCount = document.getElementById("statActiveCount");
   const statTotalCount = document.getElementById("statTotalCount");
 
+  const reservedListEl = document.getElementById("reservedRentalList");
+  const reservedEmptyEl = document.getElementById("reservedRentalEmpty");
   const activeListEl = document.getElementById("activeRentalList");
   const activeEmptyEl = document.getElementById("activeRentalEmpty");
   const historyBodyEl = document.getElementById("rentalHistoryBody");
@@ -33,6 +35,34 @@ document.addEventListener("DOMContentLoaded", async () => {
   function daysSince(iso) {
     const diffMs = Date.now() - new Date(iso).getTime();
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  }
+
+  // 예약중 카드 — "수령하기"를 누르면 로봇 안내 화면(openGuideModal)으로 넘어간다.
+  // 이 단계에서는 아직 실제로 받아간 게 아니라서 due_at이 없다(반납예정일 표시 안 함).
+  function renderReservedCard(loan) {
+    const item = loan.items;
+    const { escapeHtml } = window.LabBotItems;
+
+    const card = document.createElement("article");
+    card.className = "rental-card rental-card-reserved";
+    card.innerHTML = `
+      <div class="rental-card-main">
+        <span class="category-tag">${escapeHtml(window.LabBotItems.categoryLabelOf(item.category))}</span>
+        <h3 class="rental-card-name">${escapeHtml(item.name)}</h3>
+        <span class="item-row-location">${escapeHtml(item.location)}</span>
+      </div>
+      <div class="rental-card-meta">
+        <span class="rental-card-date">예약일 ${formatDateTime(loan.borrowed_at)}</span>
+        <span class="badge badge-pending"><span class="badge-dot"></span>수령 대기</span>
+        <button type="button" class="btn btn-primary btn-sm" data-pickup-loan="${loan.id}">수령하기</button>
+      </div>
+    `;
+
+    card.querySelector("[data-pickup-loan]").addEventListener("click", () => {
+      openGuideModal({ loan, mode: "pickup" });
+    });
+
+    return card;
   }
 
   function renderActiveCard(loan) {
@@ -61,17 +91,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       </div>
     `;
 
-    card.querySelector("[data-return-loan]").addEventListener("click", async (e) => {
-      const button = e.currentTarget;
-      button.disabled = true;
-
-      try {
-        await window.LabBotRentals.returnLoan(loan.id);
-        await renderAll();
-      } catch (err) {
-        window.LabBotToast.error(err.message || "반납 처리에 실패했습니다.");
-        button.disabled = false;
-      }
+    card.querySelector("[data-return-loan]").addEventListener("click", () => {
+      openGuideModal({ loan, mode: "return" });
     });
 
     card.querySelector("[data-report-damage]").addEventListener("click", () => {
@@ -79,6 +100,174 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     return card;
+  }
+
+  // ---------- 로봇 안내 + QR 확인 모달 (수령/반납 공용) ----------
+  // "대여하기"를 눌러도 그 자리에서 바로 대여가 끝나지 않는다 — 로봇이 있는 곳까지
+  // 안내를 받고 물품 QR을 스캔해야만 실제로 확정된다(mode: "pickup"), 반납도 동일하게
+  // QR을 다시 스캔해야 처리된다(mode: "return"). QR 대조는 confirm_loan_pickup/return
+  // RPC가 서버에서 한 번 더 하므로, 카메라를 속여도 실제로는 통과하지 못한다.
+  function openGuideModal({ loan, mode }) {
+    const item = loan.items;
+    const isPickup = mode === "pickup";
+    const { escapeHtml } = window.LabBotItems;
+
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal-card guide-modal-card">
+        <div class="guide-step" data-step="nav">
+          <div class="guide-scanline-box">
+            <div class="scan-line"></div>
+            <p class="guide-eyebrow">${isPickup ? "물품 수령" : "물품 반납"} · 로봇 안내</p>
+            <h3 class="guide-message">${isPickup ? "로봇을 따라가세요" : "로봇에게 돌아가세요"}</h3>
+            <p class="guide-caption">AI 카메라가 경로를 인식하고 있습니다</p>
+          </div>
+          <p class="guide-item-name">${escapeHtml(item.name)} · ${escapeHtml(item.location)}</p>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="cancel">취소</button>
+            <button type="button" class="btn btn-primary btn-sm" data-action="to-scan">도착했어요 · QR 스캔하기</button>
+          </div>
+        </div>
+
+        <div class="guide-step" data-step="scan" hidden>
+          <p class="guide-eyebrow">QR 스캔</p>
+          <p class="guide-caption">${escapeHtml(item.name)}에 붙은 QR 코드를 카메라에 비춰주세요</p>
+          <div class="qr-scan-frame">
+            <video class="qr-scan-video" id="guideVideo" playsinline muted></video>
+            <div class="qr-scan-reticle"></div>
+          </div>
+          <p class="guide-scan-status" id="guideScanStatus"></p>
+          <div class="guide-manual-fallback">
+            <label for="guideManualInput">카메라가 안 되면 QR 코드를 직접 입력하세요</label>
+            <div class="guide-manual-row">
+              <input type="text" id="guideManualInput" placeholder="예: LB-XXXXXXXX" autocomplete="off" />
+              <button type="button" class="btn btn-secondary btn-sm" data-action="manual-confirm">확인</button>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="cancel">취소</button>
+          </div>
+        </div>
+
+        <div class="guide-step" data-step="success" hidden>
+          <p class="guide-message">✅ 확인되었습니다</p>
+          <p class="guide-caption" data-success-caption></p>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    let stream = null;
+    let rafId = null;
+    let submitting = false;
+    let closed = false;
+
+    function showStep(name) {
+      overlay.querySelectorAll("[data-step]").forEach((el) => {
+        el.hidden = el.dataset.step !== name;
+      });
+    }
+
+    function stopCamera() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        stream = null;
+      }
+    }
+
+    function close() {
+      if (closed) return;
+      closed = true;
+      stopCamera();
+      overlay.remove();
+    }
+
+    overlay.querySelectorAll('[data-action="cancel"]').forEach((btn) => btn.addEventListener("click", close));
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close(); // 배경 클릭으로도 닫히게(진행 중인 예약/대여는 그대로 유지됨)
+    });
+
+    const scanStatus = overlay.querySelector("#guideScanStatus");
+    const manualInput = overlay.querySelector("#guideManualInput");
+
+    async function submitCode(code) {
+      scanStatus.textContent = "확인 중...";
+      try {
+        if (isPickup) {
+          await window.LabBotRentals.confirmPickup(loan.id, code);
+        } else {
+          await window.LabBotRentals.confirmReturn(loan.id, code);
+        }
+        stopCamera();
+        overlay.querySelector("[data-success-caption]").textContent = isPickup
+          ? "대여가 시작되었습니다. 반납예정일은 대여 목록에서 확인하세요."
+          : "반납이 완료되었습니다.";
+        showStep("success");
+        window.LabBotToast.success(
+          isPickup ? `"${item.name}" 대여가 시작되었습니다.` : `"${item.name}" 반납이 완료되었습니다.`
+        );
+        setTimeout(async () => {
+          close();
+          await renderAll();
+        }, 1400);
+      } catch (err) {
+        scanStatus.textContent = err.message || "확인에 실패했습니다. 다시 스캔해주세요.";
+      }
+    }
+
+    overlay.querySelector('[data-action="manual-confirm"]').addEventListener("click", () => {
+      const code = manualInput.value.trim();
+      if (!code) return;
+      submitCode(code);
+    });
+    manualInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") overlay.querySelector('[data-action="manual-confirm"]').click();
+    });
+
+    overlay.querySelector('[data-action="to-scan"]').addEventListener("click", async () => {
+      showStep("scan");
+      const video = overlay.querySelector("#guideVideo");
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        scanStatus.textContent = "이 브라우저는 카메라를 지원하지 않습니다 — 아래에 QR 코드를 직접 입력해주세요.";
+        return;
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      } catch (err) {
+        scanStatus.textContent = "카메라를 사용할 수 없습니다 — 아래에 QR 코드를 직접 입력해주세요.";
+        return;
+      }
+
+      video.srcObject = stream;
+      await video.play();
+
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      function tick() {
+        if (closed) return;
+        if (!submitting && video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = window.jsQR(imageData.data, imageData.width, imageData.height);
+          if (code && code.data) {
+            submitting = true;
+            submitCode(code.data).finally(() => {
+              submitting = false;
+            });
+          }
+        }
+        rafId = requestAnimationFrame(tick);
+      }
+      rafId = requestAnimationFrame(tick);
+    });
   }
 
   // ---------- 파손 신고 모달 ----------
@@ -188,6 +377,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
+    const reserved = loans.filter((l) => l.status === "예약중");
     const active = loans.filter((l) => l.status === "대여중");
     const history = loans
       .filter((l) => l.status === "반납완료")
@@ -195,6 +385,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     statActiveCount.textContent = active.length;
     statTotalCount.textContent = loans.length;
+
+    reservedListEl.innerHTML = "";
+    reserved.forEach((loan) => reservedListEl.appendChild(renderReservedCard(loan)));
+    reservedEmptyEl.style.display = reserved.length === 0 ? "block" : "none";
 
     activeListEl.innerHTML = "";
     active.forEach((loan) => activeListEl.appendChild(renderActiveCard(loan)));

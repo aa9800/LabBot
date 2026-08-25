@@ -1,5 +1,6 @@
 // LabBot - 물품목록 페이지 스크립트 (Supabase items 테이블 연동)
-// TODO: "대여하기" 클릭 시 AI 비전 확인 절차를 추가로 연결할 것
+// "대여하기"를 눌러도 여기서 바로 대여가 끝나지 않는다 — 예약(reserveItem)만 되고,
+// 실제 수령 확인(로봇 안내 + QR 스캔)은 마이페이지에서 진행한다(rentals.js 상단 설명 참고).
 // 반납은 개별 대여 건(loans) 단위라 여기가 아니라 mypage.html "내 대여 목록"에서 처리한다.
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -31,7 +32,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const badgeClass = STOCK_STATUS_BADGE_CLASS[statusKey];
     const rentable = canRentItem(item);
     const consumable = window.LabBotRentals.isConsumable(item);
-    const actionLabel = consumable ? "사용하기" : "대여하기";
+    // 소모품은 그 자리에서 바로 "사용"되지만, 장비/PPE 등은 예약만 되고 실제 수령은
+    // 마이페이지에서 로봇 안내 + QR 스캔을 거쳐야 확정된다.
+    const actionLabel = consumable ? "사용하기" : "예약하기";
 
     const row = document.createElement("article");
     row.className = "item-row";
@@ -70,12 +73,12 @@ document.addEventListener("DOMContentLoaded", async () => {
           if (consumable) {
             await window.LabBotRentals.consumeItem(item, session);
             window.LabBotToast.success(`"${item.name}" 사용 처리되었습니다.`);
+            await renderList();
           } else {
-            const loan = await window.LabBotRentals.createLoan(item, session);
-            const dueDate = new Date(loan.due_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-            window.LabBotToast.success(`"${item.name}" 대여가 완료되었습니다.\n반납 예정일: ${dueDate}`);
+            await window.LabBotRentals.reserveItem(item, session);
+            window.LabBotToast.success(`"${item.name}" 예약되었습니다. 마이페이지에서 로봇 안내를 받아 수령하세요.`);
+            window.location.href = "mypage.html";
           }
-          await renderList();
         } catch (err) {
           window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
           target.disabled = false;

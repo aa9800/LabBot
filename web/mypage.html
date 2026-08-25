@@ -61,6 +61,13 @@
     </section>
 
     <section class="mypage-section">
+      <h2 class="section-heading">수령 대기중인 예약</h2>
+      <p class="section-subtext">로봇 안내를 받아 QR을 스캔하면 대여가 시작됩니다.</p>
+      <div class="rental-list" id="reservedRentalList"></div>
+      <p class="item-empty-state" id="reservedRentalEmpty">수령 대기중인 예약이 없습니다.</p>
+    </section>
+
+    <section class="mypage-section">
       <h2 class="section-heading">대여중인 물품</h2>
       <div class="rental-list" id="activeRentalList"></div>
       <p class="item-empty-state" id="activeRentalEmpty">현재 대여중인 물품이 없습니다.</p>
@@ -87,6 +94,7 @@
   <a href="chatbot.html" class="fab" aria-label="챗봇 열기">💬</a>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="js/config.js"></script>
   <script src="js/supabase-client.js"></script>
   <script src="js/transitions.js"></script>

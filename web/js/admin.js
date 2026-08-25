@@ -340,12 +340,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
 
+      // 예약중(로봇 안내를 아직 안 받았거나 QR 확인 전)은 "대여"로 세지 않는다 — 실제로
+      // 받아간 게 아니라서, 혼동을 막기 위해 별도 상태로 한 줄만 보여준다.
+      if (loan.status === "예약중") {
+        rows.push({ user: userName, item: itemName, type: "예약", badgeKey: "pending", time: loan.borrowed_at });
+        return;
+      }
+
       rows.push({
         user: userName,
         item: itemName,
         type: overdue ? "대여중(연체)" : "대여",
         badgeKey: overdue ? "overdue" : "inuse",
-        time: loan.borrowed_at,
+        // due_at은 QR로 실제 수령을 확인한 시점에 매겨지므로, 대여 시각도 그 시점(qr_confirmed_at)
+        // 기준으로 보여준다 — borrowed_at은 예약 시각이라 실제 대여 시작 시각과 다를 수 있다.
+        time: loan.qr_confirmed_at || loan.borrowed_at,
       });
       if (loan.returned_at) {
         rows.push({ user: userName, item: itemName, type: "반납", badgeKey: "available", time: loan.returned_at });

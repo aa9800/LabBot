@@ -84,7 +84,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       const badgeClass = STOCK_STATUS_BADGE_CLASS[statusKey];
       const rentable = canRentItem(item);
       const consumable = window.LabBotRentals.isConsumable(item);
-      const actionLabel = consumable ? "사용하기" : "대여하기";
+      // 장비 등은 여기서 바로 대여가 끝나지 않는다 — 예약만 되고, 마이페이지에서 로봇 안내 +
+      // QR 스캔을 거쳐야 실제 수령이 확정된다(items.js와 동일한 규칙).
+      const actionLabel = consumable ? "사용하기" : "예약하기";
 
       const card = document.createElement("div");
       card.className = "chat-recommend-card";
@@ -114,12 +116,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (consumable) {
               await window.LabBotRentals.consumeItem(item, session, "chatbot");
               appendMessage(`"${item.name}" 사용 처리되었습니다.`, "bot");
+              await refreshItems();
             } else {
-              const loan = await window.LabBotRentals.createLoan(item, session, "chatbot");
-              const dueDate = new Date(loan.due_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-              appendMessage(`"${item.name}" 대여가 완료되었습니다. 반납 예정일: ${dueDate}`, "bot");
+              await window.LabBotRentals.reserveItem(item, session, "chatbot");
+              appendMessage(`"${item.name}" 예약되었습니다. 마이페이지에서 로봇 안내를 받아 수령하세요.`, "bot");
+              await refreshItems();
             }
-            await refreshItems();
           } catch (err) {
             window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
             button.disabled = false;

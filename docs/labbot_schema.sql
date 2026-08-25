@@ -695,3 +695,116 @@ create policy "damage_photos_read_own_or_admin" on storage.objects
 drop policy if exists "robot_camera_read_admin" on storage.objects;
 create policy "robot_camera_read_admin" on storage.objects
   for select using (bucket_id = 'robot-camera' and is_admin());
+
+-- =============================================================
+-- 20. 대여를 "예약 → 로봇 안내 → QR 확인" 2단계로 분리 (사용자 요청 — 물품목록에서
+--     대여하기를 눌러도 DB에 바로 기록만 되고 실제 확인 절차가 없던 문제)
+--     흐름: items.html/챗봇에서 "대여하기" → status='예약중'로 loans 행 생성(재고는 이 시점에
+--     -1, 기존 트리거 그대로) → 마이페이지에서 "수령하기" → 로봇 안내 화면 → 물품 QR을
+--     스캔하면 confirm_loan_pickup()이 QR을 items.qr_code와 대조해 맞을 때만 '대여중'으로
+--     전환. 반납도 마찬가지로 confirm_loan_return()이 QR을 한 번 더 확인한 뒤에만 '반납완료'.
+-- =============================================================
+
+-- status 체크 제약에 '예약중' 추가 (기존 제약 이름은 loans_status_check로 확인됨)
+alter table loans drop constraint if exists loans_status_check;
+alter table loans add constraint loans_status_check
+  check (status in ('예약중', '대여중', '반납완료'));
+
+-- 예약 단계에서는 아직 실제로 받아간 게 아니라 반납예정일을 매길 수 없으니 NULL을 허용하고,
+-- confirm_loan_pickup()이 실제 수령 시점 기준으로 새로 채운다.
+alter table loans alter column due_at drop not null;
+
+-- QR로 실제 수령을 확인한 시각 — null이면 아직 예약만 된 상태(또는 소모품처럼 QR 확인이
+-- 필요 없는 경우)라는 뜻으로 관리자 화면 등에서 구분할 때도 쓸 수 있다.
+alter table loans add column if not exists qr_confirmed_at timestamptz;
+
+-- guard_loan_self_update()가 기존에는 "대여중 -> 반납완료" 전이만 허용했다 — 이제
+-- "예약중 -> 대여중"(픽업 확인) 전이도 허용하고, 그 전이에서는 due_at 변경을 허용한다
+-- (반납 전이에서는 여전히 due_at 변경을 막아 대여기간을 사용자가 직접 늘리지 못하게 한다).
+create or replace function public.guard_loan_self_update()
+returns trigger as $$
+begin
+  if not public.is_admin() then
+    if new.item_id is distinct from old.item_id
+       or new.user_id is distinct from old.user_id
+       or new.borrowed_at is distinct from old.borrowed_at
+       or new.source is distinct from old.source then
+      raise exception 'not allowed to edit these loan fields';
+    end if;
+
+    if old.status = '대여중' and new.status = '반납완료' then
+      if new.due_at is distinct from old.due_at then
+        raise exception 'not allowed to edit these loan fields';
+      end if;
+    elsif old.status = '예약중' and new.status = '대여중' then
+      null; -- 이 전이에서는 due_at/qr_confirmed_at 갱신을 허용
+    else
+      raise exception 'only reservation-pickup or return transitions are allowed';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- 픽업 확인: 본인 예약이 맞는지 + QR이 그 물품 것이 맞는지 서버에서 한 번 더 검증한다
+-- (클라이언트 JS 비교만 믿지 않음 — 콘솔로 직접 호출해도 QR 없이는 통과 못 하게).
+-- security invoker로 둬서 위 guard 트리거와 loans_update_own_or_admin RLS가 그대로 적용된다.
+create or replace function public.confirm_loan_pickup(p_loan_id bigint, p_qr_code text)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item items;
+begin
+  select * into v_loan from loans where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then
+    raise exception '예약을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '예약중' then
+    raise exception '이미 처리된 예약입니다.';
+  end if;
+
+  select * into v_item from items where id = v_loan.item_id;
+  if v_item.qr_code is distinct from p_qr_code then
+    raise exception 'QR 코드가 이 물품과 일치하지 않습니다.';
+  end if;
+
+  update loans
+  set status = '대여중',
+      due_at = now() + interval '7 days',
+      qr_confirmed_at = now()
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security invoker;
+
+-- 반납 확인: 기존 returnLoan()(직접 UPDATE)과 달리 QR을 서버에서 대조한 뒤에만 반납 처리.
+create or replace function public.confirm_loan_return(p_loan_id bigint, p_qr_code text)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item items;
+begin
+  select * into v_loan from loans where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then
+    raise exception '대여 내역을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '대여중' then
+    raise exception '반납할 수 있는 상태가 아닙니다.';
+  end if;
+
+  select * into v_item from items where id = v_loan.item_id;
+  if v_item.qr_code is distinct from p_qr_code then
+    raise exception 'QR 코드가 이 물품과 일치하지 않습니다.';
+  end if;
+
+  update loans
+  set status = '반납완료',
+      returned_at = now()
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security invoker;
