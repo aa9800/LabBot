@@ -12,12 +12,36 @@ controller.py의 PatrolController는 이 클래스가 Webots를 쓰는지조차 
 쪽에서 예상 못한 문제가 반복돼서, pygame 버전과 똑같은 "좌표 계산" 방식으로 전부
 바꿨다 — GPS 좌표 + Supervisor로 실제 위치를 직접 읽어서 판단하기 때문에 물리
 엔진의 raycast/충돌 특성에 좌우되지 않는다.
+
+## deterministic demo mode vs sensor validation mode (설계, 2026-08-25)
+
+GPT 로봇 리뷰(P1)가 지적한 대로, 지금 이 방식(좌표 기반)은 발표 데모의 안정성에는 좋지만
+"실제 초음파/라인센서 노이즈를 검증했다"고 표현하면 안 된다 — 정확한 좌표를 그대로 읽는
+것과 실제 센서의 잡음·오차를 겪는 것은 다른 얘기다. 그래서 두 모드를 코드에서부터 구분해
+둔다:
+
+- `"coordinate"` (기본값, 지금 발표에서 쓰는 것) — 위에서 설명한 GPS+Supervisor 좌표 계산.
+  안정적이고 검증됐다. **"실제 센서 검증"이라고 부르면 안 된다.**
+- `"physical"` (아직 미구현, 이후 단계용 자리만 파둠) — Webots의 실제 `DistanceSensor`/
+  지상 IR센서 장치를 붙여서 노이즈가 있는 값을 그대로 쓰는 모드. 예전에 시도했다가
+  바퀴가 트랙 박스에 걸리거나 장애물을 지워도 값이 안 바뀌는 문제로 포기했던 방식이라,
+  다시 시도하려면 `lab.wbt`에 센서 장치를 추가하고 물리 충돌 문제부터 별도로 풀어야 한다.
+  지금은 자리(메서드 이름)만 파두고 호출하면 `NotImplementedError`를 던진다 — 아직 없는
+  기능을 있는 것처럼 보이게 하지 않기 위해서다.
+
+환경변수 `LABKEEPER_SENSOR_MODE`(기본값 `coordinate`)로 고른다. 발표 직전에는 절대
+`physical`로 바꾸지 않는다 — 아직 구현이 없어서 그대로 에러난다.
 """
 import math
+import os
 
 # lab.wbt의 4m x 2.6m 순찰선과 반드시 같은 좌표를 유지할 것.
 # Webots는 발표·통합 시연의 주 환경이고 pygame은 이 controller의 빠른 회귀 테스트에만 쓴다.
 TRACK_POINTS_M = [(-2.0, -1.3), (2.0, -1.3), (2.0, 1.3), (-2.0, 1.3), (-2.0, -1.3)]
+
+# "coordinate"(기본, 검증됨) | "physical"(미구현 — 위 docstring "deterministic demo mode vs
+# sensor validation mode" 참고). 발표 전엔 절대 physical로 바꾸지 않는다.
+SENSOR_MODE = os.environ.get("LABKEEPER_SENSOR_MODE", "coordinate")
 
 LINE_SENSOR_SPAN = 0.03      # 4채널 센서의 좌우 폭(m)
 LINE_SENSOR_LOOKAHEAD = 0.05  # 로봇 앞쪽으로 얼마나 내다보는지(m)
@@ -65,6 +89,15 @@ class WebotsHAL:
         self.checkpoints = checkpoints
         self.last_speed = 0.0
         self.last_turn = 0.0
+        self.sensor_mode = SENSOR_MODE
+        if self.sensor_mode not in ("coordinate", "physical"):
+            print(
+                f"[labkeeper] LABKEEPER_SENSOR_MODE='{self.sensor_mode}' 는 알 수 없는 값 — "
+                "'coordinate'로 되돌림"
+            )
+            self.sensor_mode = "coordinate"
+        print(f"[labkeeper] 센서 모드: {self.sensor_mode}"
+              + (" (검증됨, 발표용)" if self.sensor_mode == "coordinate" else " (미구현 — 곧 에러남)"))
 
         self.left_motor = robot.getDevice("left wheel motor")
         self.right_motor = robot.getDevice("right wheel motor")
@@ -94,8 +127,21 @@ class WebotsHAL:
         return cx, cy, dx / norm, dy / norm
 
     def read_line_sensors(self):
+        """controller.py가 실제로 부르는 곳 — sensor_mode에 따라 구현을 고른다."""
+        if self.sensor_mode == "physical":
+            return self._read_line_sensors_physical()
+        return self._read_line_sensors_coordinate()
+
+    def read_ultrasonic(self):
+        """controller.py가 실제로 부르는 곳 — sensor_mode에 따라 구현을 고른다."""
+        if self.sensor_mode == "physical":
+            return self._read_ultrasonic_physical()
+        return self._read_ultrasonic_coordinate()
+
+    def _read_line_sensors_coordinate(self):
         """pygame 버전(sim/engine.py의 Robot.line_sensors)과 동일한 방식:
-        로봇 앞쪽 지점을 중심으로 좌우 4곳을 검사해서 트랙 중심선과의 거리로 판정한다."""
+        로봇 앞쪽 지점을 중심으로 좌우 4곳을 검사해서 트랙 중심선과의 거리로 판정한다.
+        노이즈가 없는 정확한 좌표 계산 — 안정적이지만 실제 IR 라인센서 검증은 아니다."""
         cx, cy, fwd_x, fwd_y = self._position_and_heading()
         perp_x, perp_y = -fwd_y, fwd_x  # 진행방향에 수직인 방향
         look_x = cx + fwd_x * LINE_SENSOR_LOOKAHEAD
@@ -108,10 +154,11 @@ class WebotsHAL:
             readings.append(_distance_to_track((sx, sy)) <= LINE_TOLERANCE)
         return tuple(readings)
 
-    def read_ultrasonic(self):
+    def _read_ultrasonic_coordinate(self):
         """실제 초음파 센서 대신, lab.wbt에 있는 장애물 노드들의 실시간 좌표
         (Supervisor로 직접 읽음)와 로봇 사이의 평면 거리를 cm로 돌려준다.
-        가장 가까운 장애물까지의 거리를 쓴다. 장애물이 하나도 없으면(지워졌으면) NO_OBSTACLE_CM."""
+        가장 가까운 장애물까지의 거리를 쓴다. 장애물이 하나도 없으면(지워졌으면) NO_OBSTACLE_CM.
+        노이즈가 없는 정확한 좌표 계산 — 안정적이지만 실제 초음파 센서 검증은 아니다."""
         cx, cy, _, _ = self._position_and_heading()
         best = NO_OBSTACLE_CM
         for name in OBSTACLE_DEF_NAMES:
@@ -126,6 +173,25 @@ class WebotsHAL:
             if d_cm < best:
                 best = d_cm
         return best
+
+    def _read_line_sensors_physical(self):
+        """미구현 자리. 실제 Webots DistanceSensor/지상 IR센서 장치를 붙여서 노이즈가
+        있는 값을 그대로 쓰는 모드 — lab.wbt에 센서 장치를 추가하고, 예전에 겪었던
+        바퀴-트랙박스 물리충돌 문제부터 먼저 풀어야 구현할 수 있다. 지금은 있는 척하지
+        않기 위해 명확하게 에러를 던진다."""
+        raise NotImplementedError(
+            "physical 센서 모드는 아직 없음 — webots_hal.py의 "
+            "'deterministic demo mode vs sensor validation mode' 설계 참고. "
+            "coordinate 모드(기본값)를 쓰세요."
+        )
+
+    def _read_ultrasonic_physical(self):
+        """미구현 자리 — _read_line_sensors_physical과 같은 이유로 에러를 던진다."""
+        raise NotImplementedError(
+            "physical 센서 모드는 아직 없음 — webots_hal.py의 "
+            "'deterministic demo mode vs sensor validation mode' 설계 참고. "
+            "coordinate 모드(기본값)를 쓰세요."
+        )
 
     def try_read_qr(self):
         """실제 QR 이미지 인식 대신, 로봇의 GPS 좌표가 체크포인트 반경 안에 들어왔는지로

@@ -310,15 +310,38 @@ create trigger trg_loans_increment_stock
 --    만든 item_id 목록이든 이 함수 하나만 호출하면 된다 — 로직은 완전히 동일하다.
 --    audit_sessions/audit_mismatches는 이미 RLS로 관리자만 쓸 수 있게 막혀 있어서
 --    (audit_admin_only, audit_mismatch_admin_only) 이 함수는 security definer가
---    필요 없다 — 호출자 본인이 이미 관리자 권한으로 두 테이블에 쓸 수 있다.
+--    필요 없다 — 호출자 본인이 이미 관리자 권한으로 두 테이블에 쓸 수 있다(로봇은
+--    service_role/secret key로 호출하므로 이 RLS 자체를 우회한다).
+--
+--    2026-08-25 수정(로봇 협업 단계 A/B에서 발견): 원래 코드는
+--    `select coalesce(name, '알 수 없음') into performer from profiles where id = auth.uid()`
+--    였는데, auth.uid()가 profiles에 아예 없는 행을 가리키면(=매칭되는 행이 0개) SELECT INTO가
+--    performer에 아무 값도 대입하지 않아 NULL로 남고, coalesce는 "행이 있는데 name이 NULL일
+--    때"만 동작해서 이 경우엔 못 막는다. 로그인 세션이 없는 로봇(service_role 키로 호출,
+--    auth.uid()가 NULL)이 그대로 호출하면 `audit_sessions.performed_by`(not null)에 NULL을
+--    넣으려다 에러가 난다. 그래서 로봇처럼 auth.uid()가 없는 호출자가 자기 이름을 직접 넘길
+--    수 있는 `p_performed_by` 파라미터를 추가했다(안 넘기면 기존 로직대로 동작하되,
+--    coalesce를 SELECT 밖으로 빼서 "행 없음"과 "name이 NULL"을 둘 다 안전하게 처리한다).
+--    기존 호출(웹 관리자 화면, p_performed_by 안 넘김)은 그대로 동작한다 — 새 파라미터는
+--    기본값 null이라 하위호환된다.
 -- =============================================================
-create or replace function public.run_inventory_audit(confirmed_item_ids bigint[])
+create or replace function public.run_inventory_audit(
+  confirmed_item_ids bigint[],
+  p_performed_by text default null
+)
 returns bigint as $fn$
 declare
   new_session_id bigint;
   performer text;
 begin
-  select coalesce(name, '알 수 없음') into performer from profiles where id = auth.uid();
+  if p_performed_by is not null and length(trim(p_performed_by)) > 0 then
+    -- 로그인 세션이 없어 auth.uid()로 profiles를 조회할 수 없는 호출자(로봇 등)가
+    -- 자기 이름을 직접 넘긴 경우 — 그대로 쓴다.
+    performer := p_performed_by;
+  else
+    select name into performer from profiles where id = auth.uid();
+    performer := coalesce(performer, '알 수 없음');
+  end if;
 
   insert into audit_sessions (performed_by, started_at, finished_at, scanned_count)
   values (performer, now(), now(), coalesce(array_length(confirmed_item_ids, 1), 0))

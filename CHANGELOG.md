@@ -6,6 +6,29 @@
 
 ---
 
+## 2026-08-25 (10) — 로봇 뒷정리: Safety 이벤트 종결 + audit RPC 버그 발견/설계 + 센서 모드 분리
+
+자세한 내용은 `labkeeper-web-local/AI협업/robot/03_Claude_로봇작업결과.md`의 "Claude 직접
+작업결과 — 뒷정리 4건" 참고.
+
+- **프로덕션 테스트 Safety 이벤트 3건 종결**: 단계 A/B 검증 중 실제로 생성됐던
+  `safety_events` id=2(제 실수, smoke-test)·3·4(Codex의 실제 Webots 검증)를
+  `transition_safety_event()` RPC로 처리(id=2 → FALSE_POSITIVE, id=3·4 → OPEN → RESOLVED).
+  직접 DELETE는 하지 않고 `action_logs`에 처리 이력을 남김.
+- **`run_inventory_audit()` 버그 발견**: `auth.uid()`가 `profiles`에 없는 호출자(로그인
+  세션 없는 로봇 등)가 부르면 수행자 이름이 NULL로 남아 `audit_sessions.performed_by`
+  NOT NULL 제약에 걸리는 문제를 발견 — `p_performed_by` 파라미터를 추가해 하위호환되게
+  수정(기존 웹 호출은 그대로 동작). **`docs/labbot_schema.sql`에는 반영했지만, 실제
+  프로덕션 DB에는 아직 적용 안 됨 — Supabase SQL Editor에서 직접 실행 필요**(Claude는
+  RPC 호출만 가능하고 DDL 실행 채널이 없음).
+- **Webots 센서 모드 분리(설계+스캐폴딩)**: `webots_hal.py`에 `SENSOR_MODE`
+  (`coordinate`/`physical`, 환경변수 `LABKEEPER_SENSOR_MODE`, 기본값 `coordinate`) 추가.
+  기본값에서는 기존 동작과 100% 동일(리팩터링만) — `physical`은 아직 없는 채로 명확한
+  에러를 던지게만 해둠(GPT 리뷰 P1: "좌표 기반을 물리센서 검증처럼 표현하지 말 것"에 대응).
+- 로봇 관련 파일만 골라 별도 커밋(web/ 등 별도 채팅의 미커밋 변경과 분리).
+
+---
+
 ## 2026-08-25 (9) — GPT 리뷰 반영: 재고 조정 원자적 RPC, 챗봇 이력 저장, Storage 비공개 전환
 
 **승인 경로**: 채팅에서 직접 승인(`labkeeper-web-local/AI협업/01_GPT_최신리뷰.md` 최신본,
