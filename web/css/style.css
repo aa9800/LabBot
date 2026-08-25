@@ -47,6 +47,12 @@ body {
   padding: 0;
 }
 
+/* 관리자 페이지(admin.html)만 빼고 전체 화면을 110%로 키운다 — 브라우저 확대(Ctrl + +)와 같은 효과.
+   관리자 화면은 이미 재고표 등 컬럼이 많아 폭이 빠듯해서 제외한다. */
+body:not([data-page="admin"]) {
+  zoom: 1.1;
+}
+
 html {
   scroll-behavior: smooth;
 }
