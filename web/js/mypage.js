@@ -180,11 +180,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             <div class="scan-line"></div>
             <p class="guide-eyebrow">${copy.eyebrow} · 로봇 안내</p>
             <h3 class="guide-message">${copy.message}</h3>
-            <p class="guide-caption">AI 카메라가 경로를 인식하고 있습니다</p>
+            <p class="guide-caption">표시된 위치로 이동한 뒤 물품 QR로 확인하세요</p>
           </div>
           <p class="guide-item-name">${escapeHtml(item.name)} · ${escapeHtml(item.location)}${
             mode === "use" ? ` · ${qty}${escapeHtml(item.unit || "개")}` : ""
           }</p>
+          <!-- 실제 로봇 내비게이션은 아직 연결 전이라(발표 자료에서 시뮬레이션 검증 단계로 표시),
+               여기서도 실시간 추적처럼 보이지 않도록 안내 화면임을 명시한다(GPT 리뷰 지적). -->
+          <p class="guide-sim-note mono">안내 화면 · 실제 위치는 QR로 최종 확인됩니다</p>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary btn-sm" data-action="cancel">취소</button>
             <button type="button" class="btn btn-primary btn-sm" data-action="to-scan">도착했어요 · QR 스캔하기</button>

@@ -962,3 +962,177 @@ begin
   return v_loan;
 end;
 $$ language plpgsql security definer set search_path = public;
+
+-- =============================================================
+-- 23. QR 검증 RPC를 거치지 않고 loans 상태를 직접 UPDATE로 바꿀 수 있던 구멍을 막는다
+--     (GPT 리뷰 P1-1). 지금까지 guard_loan_self_update()는 "어떤 전이가 허용되는지"만
+--     검사했는데, 이건 confirm_loan_pickup() 등 RPC가 하는 것과 똑같은 UPDATE 문이라
+--     콘솔이나 REST로 직접 loans를 UPDATE해도 트리거를 그대로 통과했다 — QR 대조나
+--     수량 계산 없이 상태만 바뀔 수 있었다는 뜻이다.
+--
+--     해결: 트랜잭션 로컬 설정(labbot.trusted_transition)을 "신뢰 플래그"로 쓴다. QR/수량
+--     검증을 마친 RPC들만 자기 UPDATE 직전에 이 플래그를 켜고, 트리거는 상태 관련 필드가
+--     바뀌는데 이 플래그가 없으면 무조건 막는다. PostgREST가 RPC 호출마다 새 트랜잭션을
+--     쓰므로, 직접 REST로 UPDATE를 보내는 요청에는 이 플래그가 있을 수 없다.
+-- =============================================================
+
+create or replace function public.guard_loan_self_update()
+returns trigger as $$
+begin
+  if not public.is_admin() then
+    if new.item_id is distinct from old.item_id
+       or new.user_id is distinct from old.user_id
+       or new.borrowed_at is distinct from old.borrowed_at
+       or new.source is distinct from old.source then
+      raise exception 'not allowed to edit these loan fields';
+    end if;
+
+    -- status/due_at/qr_confirmed_at/consumed_qty/returned_at은 전부 QR·수량 검증 RPC
+    -- (confirm_loan_pickup/confirm_loan_return/confirm_item_usage/cancel_loan_reservation)
+    -- 안에서만 바뀔 수 있다. RPC가 검증을 통과한 뒤에만 트랜잭션 로컬로 이 설정을 켜므로,
+    -- 신뢰 플래그 없이 이 필드들을 바꾸려는 시도는 여기서 전부 막힌다.
+    if (new.status is distinct from old.status
+        or new.due_at is distinct from old.due_at
+        or new.qr_confirmed_at is distinct from old.qr_confirmed_at
+        or new.consumed_qty is distinct from old.consumed_qty
+        or new.returned_at is distinct from old.returned_at)
+       and coalesce(current_setting('labbot.trusted_transition', true), '') <> 'true' then
+      raise exception 'loan status changes must go through the verification RPC';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- 아래 4개 RPC 전부, 검증을 마친 뒤 자기 UPDATE 직전에만 신뢰 플래그를 켠다.
+
+create or replace function public.confirm_loan_pickup(p_loan_id bigint, p_qr_code text)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item items;
+begin
+  select * into v_loan from loans where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then
+    raise exception '예약을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '예약중' then
+    raise exception '이미 처리된 예약입니다.';
+  end if;
+
+  select * into v_item from items where id = v_loan.item_id;
+  if v_item.qr_code is distinct from p_qr_code then
+    raise exception 'QR 코드가 이 물품과 일치하지 않습니다.';
+  end if;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '대여중',
+      due_at = now() + interval '7 days',
+      qr_confirmed_at = now()
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security invoker;
+
+create or replace function public.confirm_loan_return(p_loan_id bigint, p_qr_code text)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item items;
+begin
+  select * into v_loan from loans where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then
+    raise exception '대여 내역을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '대여중' then
+    raise exception '반납할 수 있는 상태가 아닙니다.';
+  end if;
+
+  select * into v_item from items where id = v_loan.item_id;
+  if v_item.qr_code is distinct from p_qr_code then
+    raise exception 'QR 코드가 이 물품과 일치하지 않습니다.';
+  end if;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '반납완료',
+      returned_at = now()
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security invoker;
+
+create or replace function public.confirm_item_usage(p_loan_id bigint, p_qr_code text, p_qty integer default 1)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item items;
+begin
+  if p_qty < 1 then
+    raise exception '사용 수량은 1개 이상이어야 합니다.';
+  end if;
+
+  select * into v_loan from loans where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then
+    raise exception '예약을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '예약중' then
+    raise exception '이미 처리된 예약입니다.';
+  end if;
+
+  select * into v_item from items where id = v_loan.item_id for update;
+  if v_item.qr_code is distinct from p_qr_code then
+    raise exception 'QR 코드가 이 물품과 일치하지 않습니다.';
+  end if;
+
+  if v_item.available_qty < (p_qty - 1) then
+    raise exception '남은 재고가 부족합니다.';
+  end if;
+  update items set available_qty = available_qty - (p_qty - 1) where id = v_item.id;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '반납완료',
+      qr_confirmed_at = now(),
+      returned_at = now(),
+      consumed_qty = p_qty
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security invoker;
+
+create or replace function public.cancel_loan_reservation(p_loan_id bigint)
+returns loans as $$
+declare
+  v_loan loans;
+begin
+  select * into v_loan from loans
+  where id = p_loan_id and (user_id = auth.uid() or is_admin())
+  for update;
+
+  if not found then
+    raise exception '예약을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '예약중' then
+    raise exception '이미 처리된 예약은 취소할 수 없습니다.';
+  end if;
+
+  update items set available_qty = available_qty + 1 where id = v_loan.item_id;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '취소됨',
+      returned_at = now()
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security definer set search_path = public;

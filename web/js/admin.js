@@ -5,7 +5,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   const panel = document.getElementById("adminPanel");
   const loginForm = document.getElementById("adminLoginForm");
   const loginError = document.getElementById("adminLoginError");
-  const logoutBtn = document.getElementById("adminLogoutBtn");
 
   const tabButtons = document.querySelectorAll(".tab-btn");
   const tabPanels = document.querySelectorAll(".tab-panel");
@@ -13,6 +12,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const addForm = document.getElementById("itemAddForm");
   const categorySelect = document.getElementById("newItemCategory");
   const stockTableBody = document.getElementById("stockTableBody");
+  const stockSearchInput = document.getElementById("stockSearch");
+  const stockLocationFilter = document.getElementById("stockLocationFilter");
+  const stockCategoryFilters = document.getElementById("stockCategoryFilters");
   const historyTableBody = document.getElementById("historyTableBody");
 
   const damageTableBody = document.getElementById("damageTableBody");
@@ -46,11 +48,54 @@ document.addEventListener("DOMContentLoaded", async () => {
     locationSelect.innerHTML = window.LabBotItems.LAB_LOCATIONS.map((loc) => `<option value="${loc}">${loc}</option>`).join(
       ""
     );
+    stockLocationFilter.innerHTML =
+      `<option value="all">전체 위치</option>` +
+      window.LabBotItems.LAB_LOCATIONS.map((loc) => `<option value="${loc}">${loc}</option>`).join("");
   }
 
   async function loadAllItems() {
     return window.LabBotItems.searchItems({});
   }
+
+  // 재고표 검색·카테고리·위치 필터 — 61개 물품 전체가 한 표에 다 보여서 특정 물품을
+  // 찾기 어렵다는 지적(GPT 리뷰)에 대응. 물품목록 페이지와 같은 방식으로 클라이언트에서
+  // 걸러낸다(새 API 호출 없이 이미 불러온 목록에서 필터링).
+  let stockSearchTerm = "";
+  let stockActiveCategory = "all";
+  let stockActiveLocation = "all";
+
+  function filterStockItems(items) {
+    const term = stockSearchTerm.trim().toLowerCase();
+    return items.filter((item) => {
+      if (term && !item.name.toLowerCase().includes(term)) return false;
+      if (stockActiveCategory !== "all" && item.category !== stockActiveCategory) return false;
+      if (stockActiveLocation !== "all" && item.location !== stockActiveLocation) return false;
+      return true;
+    });
+  }
+
+  let stockSearchDebounceTimer = null;
+  stockSearchInput.addEventListener("input", () => {
+    clearTimeout(stockSearchDebounceTimer);
+    stockSearchDebounceTimer = setTimeout(() => {
+      stockSearchTerm = stockSearchInput.value;
+      renderStockTable();
+    }, 300);
+  });
+
+  stockLocationFilter.addEventListener("change", () => {
+    stockActiveLocation = stockLocationFilter.value;
+    renderStockTable();
+  });
+
+  stockCategoryFilters.querySelectorAll(".category-filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      stockCategoryFilters.querySelectorAll(".category-filter-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      stockActiveCategory = btn.dataset.category;
+      renderStockTable();
+    });
+  });
 
   // 표가 비어있는 채로 잠깐 보이는 대신, 로딩 중임을 알 수 있게 자리표시자 행을 먼저 보여준다.
   function renderStockSkeleton() {
@@ -76,7 +121,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
+    items = filterStockItems(items);
+
     stockTableBody.innerHTML = "";
+
+    if (items.length === 0) {
+      stockTableBody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--text-muted);">검색 결과가 없습니다.</td></tr>`;
+      return;
+    }
 
     const { escapeHtml, computeStockStatus, STOCK_STATUS_FULL_LABEL, STOCK_STATUS_BADGE_CLASS } = window.LabBotItems;
 
@@ -573,6 +625,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // ---------- Robot Console (카메라 스냅샷 + 수동조작) ----------
   const robotCameraImg = document.getElementById("robotCameraImg");
+  const robotCameraStatus = document.getElementById("robotCameraStatus");
   const robotModeBadge = document.getElementById("robotModeBadge");
   const robotAutoBtn = document.getElementById("robotAutoBtn");
   const driveButtons = document.querySelectorAll("[data-drive]");
@@ -585,14 +638,46 @@ document.addEventListener("DOMContentLoaded", async () => {
     stop: { speed: 0, turn: 0 },
   };
 
+  // 로봇이 아직 사진을 한 번도 안 올렸거나 오프라인이면 서명 URL 발급이 실패하거나
+  // 이미지 자체가 안 뜬다 — 예전에는 콘솔 경고만 남기고 화면에는 깨진 이미지 아이콘만
+  // 보여서 "로봇 기능이 전체적으로 고장 났다"처럼 보였다(GPT 리뷰 지적). 이제는 상태를
+  // 명확히 문구로 보여주고 마지막 수신 시각 + 다시 불러오기 버튼을 제공한다.
+  let robotCameraLastOkAt = null;
+
+  function showRobotCameraOffline(message) {
+    robotCameraImg.style.display = "none";
+    const lastText = robotCameraLastOkAt
+      ? `마지막 수신: ${robotCameraLastOkAt.toLocaleTimeString("ko-KR")}`
+      : "마지막 수신 기록 없음";
+    robotCameraStatus.innerHTML = `
+      <p class="robot-camera-message">${message}</p>
+      <p class="robot-camera-meta mono">${lastText} · 시뮬레이션/실기기 연결 대기 중일 수 있습니다</p>
+      <button type="button" class="btn btn-secondary btn-sm" id="robotCameraRetryBtn">다시 불러오기</button>
+    `;
+    document.getElementById("robotCameraRetryBtn").addEventListener("click", refreshRobotCamera);
+  }
+
   async function refreshRobotCamera() {
+    let url;
     try {
-      robotCameraImg.src = await window.LabBotRobotConsole.cameraSnapshotUrl();
+      url = await window.LabBotRobotConsole.cameraSnapshotUrl();
     } catch (err) {
-      // 로봇이 아직 사진을 한 번도 안 올렸으면(latest.jpg 없음) 서명 URL 발급 자체가
-      // 실패할 수 있다 — 콘솔에만 남기고 화면은 이전 프레임을 그대로 유지한다.
-      console.warn("LabBot: 로봇 카메라 스냅샷을 못 불러왔습니다", err);
+      console.warn("LabBot: 로봇 카메라 서명 URL 발급 실패", err);
+      showRobotCameraOffline("로봇 오프라인 또는 아직 업로드된 스냅샷이 없습니다");
+      return;
     }
+
+    // 서명 URL 발급은 성공해도 실제 latest.jpg가 없거나 로봇이 오프라인이면 이미지 로드
+    // 자체가 실패할 수 있어서, onload/onerror로 실제 표시 여부를 한 번 더 확인한다.
+    robotCameraImg.onload = () => {
+      robotCameraLastOkAt = new Date();
+      robotCameraImg.style.display = "block";
+      robotCameraStatus.innerHTML = "";
+    };
+    robotCameraImg.onerror = () => {
+      showRobotCameraOffline("스냅샷 이미지를 불러오지 못했습니다");
+    };
+    robotCameraImg.src = url;
   }
 
   async function refreshRobotModeBadge() {
@@ -900,6 +985,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     await renderAuditChecklist();
     await renderAuditSessions();
     await renderSummaryCards();
+    // startRobotConsolePolling() 호출이 빠져 있어서 로봇 카메라/모드 배지가 아예 갱신되지
+    // 않고 있었다(이미지 태그가 항상 빈 채로 남는 문제 — GPT 리뷰 지적의 실제 원인).
+    startRobotConsolePolling();
   }
 
   function showGate() {
@@ -933,14 +1021,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     await showPanel();
   });
 
-  logoutBtn.addEventListener("click", async () => {
-    await window.LabBotAuth.signOut();
-    if (window.LabBotNav) {
-      window.LabBotNav.goTo("index.html");
-    } else {
-      window.location.href = "index.html";
-    }
-  });
+  // 로그아웃 버튼은 상단 네비게이션(nav.js)에 있는 것 하나만 쓴다 — 예전엔 이 페이지 안에도
+  // 똑같은 기능의 버튼이 따로 있어서 중복으로 보였다(GPT 리뷰 지적).
 
   const session = await window.LabBotAuth.getSession();
   if (session && session.role === "admin") {

@@ -70,7 +70,6 @@
         <h1 class="page-title">관리자</h1>
         <p class="page-subtitle">재고 · 대여 이력 · 파손 신고를 한 곳에서 확인하세요</p>
       </div>
-      <button type="button" class="btn btn-secondary btn-sm" id="adminLogoutBtn">로그아웃</button>
     </div>
 
     <!-- 한눈에 보는 요약 — 탭을 안 눌러도 지금 뭘 먼저 봐야 하는지 바로 알 수 있게.
@@ -109,6 +108,25 @@
 
     <!-- 재고 · 물품 관리 -->
     <section class="tab-panel active" id="tab-stock">
+      <!-- 물품 61종 전체가 한 표에 다 보여서 특정 물품 찾기 어렵다는 지적(GPT 리뷰) — 물품목록
+           페이지와 같은 검색·필터 UI를 재사용한다. -->
+      <div class="list-toolbar">
+        <div class="search-box">
+          <input type="text" id="stockSearch" placeholder="물품 이름으로 검색" autocomplete="off" />
+        </div>
+        <select id="stockLocationFilter" class="location-filter-select">
+          <option value="all">전체 위치</option>
+        </select>
+        <div class="category-filters" id="stockCategoryFilters">
+          <button type="button" class="category-filter-btn active" data-category="all">전체</button>
+          <button type="button" class="category-filter-btn" data-category="EQUIPMENT">장비</button>
+          <button type="button" class="category-filter-btn" data-category="REAGENT">시약</button>
+          <button type="button" class="category-filter-btn" data-category="CONSUMABLE">소모품</button>
+          <button type="button" class="category-filter-btn" data-category="PPE">PPE</button>
+          <button type="button" class="category-filter-btn" data-category="SAFETY">안전물품</button>
+        </div>
+      </div>
+
       <form class="item-manage-form" id="itemAddForm">
         <input type="text" id="newItemName" placeholder="물품명" required />
         <select id="newItemCategory"></select>
@@ -213,11 +231,14 @@
           <h3 style="margin: 0;">Robot Console</h3>
           <span class="badge badge-st-open" id="robotModeBadge"><span class="badge-dot"></span>-</span>
         </div>
-        <img
-          id="robotCameraImg"
-          alt="로봇 카메라 스냅샷"
-          style="width: 100%; max-width: 360px; border-radius: 8px; border: 1px solid var(--border); display: block; margin-bottom: 12px; background: var(--bg);"
-        />
+        <div class="robot-camera-wrap">
+          <img
+            id="robotCameraImg"
+            alt="로봇 카메라 스냅샷"
+            style="width: 100%; border-radius: 8px; border: 1px solid var(--border); display: none; background: var(--bg);"
+          />
+          <div class="robot-camera-status" id="robotCameraStatus"></div>
+        </div>
         <div class="safety-actions">
           <button type="button" class="btn btn-secondary btn-sm" data-drive="forward">▲ 전진</button>
           <button type="button" class="btn btn-secondary btn-sm" data-drive="left">◀ 좌회전</button>
