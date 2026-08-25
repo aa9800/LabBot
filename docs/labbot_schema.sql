@@ -117,8 +117,11 @@ create table if not exists damage_reports (
   id bigint generated always as identity primary key,
   item_id bigint not null references items(id),
   reported_by uuid references profiles(id),
+  note text default '',
   photo_url text,
-  ai_result text,
+  status text not null default 'pending',        -- pending(분석중) / analyzed(완료) / failed(분석실패)
+  severity text,                                  -- 제미나이 비전 분석 결과 요약 (경미/보통/심각/즉시교체 등) — 목록에서 빠르게 필터링하려고 별도 컬럼으로 뺌
+  ai_result text,                                 -- 제미나이 응답 원문 JSON 문자열 {severity, summary, recommended_action}
   created_at timestamptz not null default now()
 );
 
@@ -443,3 +446,28 @@ drop trigger if exists trg_guard_loan_insert on loans;
 create trigger trg_guard_loan_insert
   before insert on loans
   for each row execute function public.guard_loan_insert();
+
+-- =============================================================
+-- 13. damage_reports 보강 + damage-photos Storage — 파손 신고 + 제미나이 비전 자동 분석
+--     (기존 damage_reports 테이블에 컬럼만 추가 — 6번 섹션의 create table은 이미 최신 상태로
+--     맞춰뒀으니, 이 alter문들은 "6번 섹션이 이미 옛날 버전으로 만들어져 있는 기존 DB"를
+--     최신으로 맞추기 위한 것)
+-- =============================================================
+
+alter table damage_reports add column if not exists note text default '';
+alter table damage_reports add column if not exists status text not null default 'pending';
+alter table damage_reports add column if not exists severity text;
+
+-- 사용자가 올린 파손 사진을 저장하는 곳. photo_url을 Edge Function(gemini-damage-assess)이
+-- 그대로 제미나이 비전 API에 넘겨야 해서 public으로 뒀다 (robot-camera 버킷과 같은 이유).
+insert into storage.buckets (id, name, public)
+values ('damage-photos', 'damage-photos', true)
+on conflict (id) do nothing;
+
+drop policy if exists "damage_photos_authenticated_upload" on storage.objects;
+create policy "damage_photos_authenticated_upload" on storage.objects
+  for insert with check (bucket_id = 'damage-photos' and auth.role() = 'authenticated');
+
+-- ai_result/status/severity는 Edge Function이 service role(RLS 우회)로만 갱신한다 —
+-- 그래서 일반 사용자용 update 정책은 따로 만들지 않았다(본인이라도 AI 분석결과를
+-- 직접 조작할 수 없게).

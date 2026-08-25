@@ -1,6 +1,7 @@
 // LabBot - 챗봇 화면 스크립트 (Supabase Edge Function "gemini-chat"을 통해 실제 Gemini 연동)
 // 제미나이 API 키는 절대 이 브라우저 코드에 넣지 않는다 — Edge Function 쪽 secret로만 존재한다.
-// 여기서는 지금 등록된 물품 목록을 문맥으로 같이 보내서, 실제 재고에 있는 물품만 추천하게 한다.
+// 지금 등록된 물품 목록(id 포함)을 문맥으로 같이 보내서, 실제 재고에 있는 물품만 추천하게 하고,
+// 함수가 돌려준 recommended_item_ids로 "사용하기"/"대여하기" 버튼이 달린 카드를 바로 붙여준다.
 
 document.addEventListener("DOMContentLoaded", async () => {
   const form = document.getElementById("chatForm");
@@ -8,17 +9,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   const messages = document.getElementById("chatMessages");
   const sendBtn = form.querySelector('button[type="submit"]');
 
-  // 물품 목록을 "이름(위치, 대여가능X/총Y)" 형식의 짧은 텍스트로 만들어 챗봇에게 문맥으로 준다.
-  // 실패해도(로그인 안 했거나 네트워크 오류) 챗봇 자체는 계속 동작해야 한다.
-  let itemContext = "";
-  try {
-    const items = await window.LabBotItems.searchItems({});
-    itemContext = items
-      .map((it) => `${it.name}(${it.location}, 대여가능 ${it.available_qty}/${it.total_qty})`)
-      .join(", ");
-  } catch (err) {
-    console.warn("LabBot: 챗봇 문맥용 물품 목록을 못 가져왔습니다", err);
+  // 대여하기/사용하기 버튼 클릭 시 로그인 세션이 필요해서 미리 받아둔다 —
+  // 로그인 안 한 사용자도 챗봇 자체는 그냥 쓸 수 있게 requireLogin으로 막지는 않는다.
+  const session = await window.LabBotAuth.getSession();
+
+  // 물품 목록(id 포함)을 매번 최신으로 유지 — 대여/사용 직후 재고가 바뀌어도 다음 질문엔 반영되게.
+  let itemsById = new Map();
+  async function refreshItems() {
+    try {
+      const items = await window.LabBotItems.searchItems({});
+      itemsById = new Map(items.map((it) => [it.id, it]));
+      return items;
+    } catch (err) {
+      console.warn("LabBot: 챗봇 문맥용 물품 목록을 못 가져왔습니다", err);
+      return [];
+    }
   }
+  await refreshItems();
 
   function appendMessage(text, sender) {
     const wrapper = document.createElement("div");
@@ -38,7 +45,76 @@ document.addEventListener("DOMContentLoaded", async () => {
     wrapper.appendChild(bubble);
     messages.appendChild(wrapper);
     messages.scrollTop = messages.scrollHeight;
-    return bubble;
+    return { wrapper, bubble };
+  }
+
+  // 추천 물품 카드: items.js의 물품 목록 행과 같은 규칙(재고상태/대여가능여부/소모품여부)을 그대로 따른다.
+  function appendRecommendationCards(itemIds) {
+    const { escapeHtml, STOCK_STATUS_FULL_LABEL, STOCK_STATUS_BADGE_CLASS, computeStockStatus, canRentItem } =
+      window.LabBotItems;
+
+    const cardList = document.createElement("div");
+    cardList.className = "chat-message chat-message-bot chat-recommend-list";
+
+    itemIds.forEach((id) => {
+      const item = itemsById.get(id);
+      if (!item) return; // 서버가 추천한 id가 그 사이 삭제됐을 수도 있으니 조용히 건너뜀
+
+      const statusKey = computeStockStatus(item);
+      const statusLabel = STOCK_STATUS_FULL_LABEL[statusKey];
+      const badgeClass = STOCK_STATUS_BADGE_CLASS[statusKey];
+      const rentable = canRentItem(item);
+      const consumable = window.LabBotRentals.isConsumable(item);
+      const actionLabel = consumable ? "사용하기" : "대여하기";
+
+      const card = document.createElement("div");
+      card.className = "chat-recommend-card";
+      card.innerHTML = `
+        <div class="chat-recommend-info">
+          <span class="category-tag">${escapeHtml(item.categoryLabel)}</span>
+          <span class="chat-recommend-name">${escapeHtml(item.name)}</span>
+          <span class="item-row-location">${escapeHtml(item.location)} · 재고 ${item.available_qty}/${item.total_qty}</span>
+          <span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span>
+        </div>
+        ${
+          rentable
+            ? `<button type="button" class="btn btn-primary btn-sm">${actionLabel}</button>`
+            : `<button type="button" class="btn btn-secondary btn-sm" disabled>${consumable ? "재고없음" : "대여불가"}</button>`
+        }
+      `;
+
+      const button = card.querySelector("button");
+      if (rentable) {
+        button.addEventListener("click", async () => {
+          if (!session) {
+            alert("로그인 후 이용할 수 있습니다.");
+            return;
+          }
+          button.disabled = true;
+          try {
+            if (consumable) {
+              await window.LabBotRentals.consumeItem(item, session, "chatbot");
+              appendMessage(`"${item.name}" 사용 처리되었습니다.`, "bot");
+            } else {
+              const loan = await window.LabBotRentals.createLoan(item, session, "chatbot");
+              const dueDate = new Date(loan.due_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
+              appendMessage(`"${item.name}" 대여가 완료되었습니다. 반납 예정일: ${dueDate}`, "bot");
+            }
+            await refreshItems();
+          } catch (err) {
+            alert(err.message || "처리 중 오류가 발생했습니다.");
+            button.disabled = false;
+          }
+        });
+      }
+
+      cardList.appendChild(card);
+    });
+
+    if (cardList.children.length > 0) {
+      messages.appendChild(cardList);
+      messages.scrollTop = messages.scrollHeight;
+    }
   }
 
   form.addEventListener("submit", async (e) => {
@@ -50,15 +126,27 @@ document.addEventListener("DOMContentLoaded", async () => {
     input.value = "";
     sendBtn.disabled = true;
 
-    const thinkingBubble = appendMessage("생각 중...", "bot");
+    const { bubble: thinkingBubble } = appendMessage("생각 중...", "bot");
 
     try {
+      const items = [...itemsById.values()].map((it) => ({
+        id: it.id,
+        name: it.name,
+        location: it.location,
+        available_qty: it.available_qty,
+        total_qty: it.total_qty,
+      }));
+
       const { data, error } = await supabaseClient.functions.invoke("gemini-chat", {
-        body: { message: text, itemContext },
+        body: { message: text, items },
       });
 
       if (error) throw error;
       thinkingBubble.textContent = data.reply || "죄송해요, 답변을 만들지 못했어요.";
+
+      if (Array.isArray(data.recommended_item_ids) && data.recommended_item_ids.length > 0) {
+        appendRecommendationCards(data.recommended_item_ids);
+      }
     } catch (err) {
       console.error("LabBot: 챗봇 응답 실패", err);
       thinkingBubble.textContent = "챗봇 응답을 가져오지 못했어요. 잠시 후 다시 시도해주세요.";

@@ -1,5 +1,4 @@
 // LabBot - 관리자 화면 스크립트 (Supabase items 테이블 연동)
-// TODO: 파손 신고 목록은 Supabase 연동 후 실제 데이터로 렌더링할 것
 
 document.addEventListener("DOMContentLoaded", async () => {
   const gate = document.getElementById("adminGate");
@@ -15,6 +14,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const categorySelect = document.getElementById("newItemCategory");
   const stockTableBody = document.getElementById("stockTableBody");
   const historyTableBody = document.getElementById("historyTableBody");
+
+  const damageTableBody = document.getElementById("damageTableBody");
+  const damageEmptyState = document.getElementById("damageEmptyState");
 
   const safetyTableBody = document.getElementById("safetyTableBody");
   const safetyDetail = document.getElementById("safetyDetail");
@@ -74,7 +76,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         <td>${escapeHtml(item.name)}</td>
         <td>${escapeHtml(item.categoryLabel)}</td>
         <td>${escapeHtml(item.location)}</td>
-        <td class="mono">${escapeHtml(item.qr_code)}</td>
+        <td class="qr-cell">
+          <canvas class="qr-thumb" title="클릭하면 인쇄용 크기로 다운로드됩니다" data-qr="${escapeHtml(item.qr_code)}"></canvas>
+          <span class="mono">${escapeHtml(item.qr_code)}</span>
+        </td>
         <td><span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span></td>
         <td><input type="number" class="stock-input" min="0" value="${item.available_qty}" data-field="available" /></td>
         <td><input type="number" class="stock-input" min="0" value="${item.total_qty}" data-field="total" /></td>
@@ -85,6 +90,25 @@ document.addEventListener("DOMContentLoaded", async () => {
           <button type="button" class="btn btn-danger btn-sm" data-action="delete">삭제</button>
         </td>
       `;
+
+      // 물품마다 실제로 스캔 가능한 QR 이미지를 그려준다 — qr_code 문자열 자체는 DB 트리거가
+      // 물품 등록 시 자동 발급하고(items_set_qr_code), 여기서는 그 문자열을 이미지로 렌더링만 한다.
+      const qrCanvas = row.querySelector(".qr-thumb");
+      window.QRCode.toCanvas(qrCanvas, item.qr_code, { width: 48, margin: 1 }, (err) => {
+        if (err) console.warn("LabBot: QR 코드 렌더링 실패", err);
+      });
+      qrCanvas.addEventListener("click", () => {
+        window.QRCode.toDataURL(item.qr_code, { width: 480, margin: 2 }, (err, url) => {
+          if (err) {
+            alert("QR 코드 생성에 실패했습니다.");
+            return;
+          }
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `${item.qr_code}.png`;
+          link.click();
+        });
+      });
 
       row.querySelector('[data-action="save"]').addEventListener("click", async (e) => {
         const button = e.currentTarget;
@@ -186,6 +210,62 @@ document.addEventListener("DOMContentLoaded", async () => {
         </tr>
       `
       )
+      .join("");
+  }
+
+  // ---------- 파손 신고 목록 ----------
+  async function renderDamageTable() {
+    let reports;
+    try {
+      reports = await window.LabBotDamage.fetchAllDamageReports();
+    } catch (err) {
+      alert("파손 신고 목록을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    const { escapeHtml } = window.LabBotItems;
+    const { DAMAGE_SEVERITY_LABEL, DAMAGE_SEVERITY_BADGE_CLASS, DAMAGE_STATUS_LABEL } = window.LabBotDamage;
+
+    damageEmptyState.style.display = reports.length === 0 ? "block" : "none";
+    damageTableBody.innerHTML = reports
+      .map((r) => {
+        const itemName = (r.items && r.items.name) || "삭제된 물품";
+        const reporterName = (r.profiles && r.profiles.name) || "알 수 없음";
+
+        let resultCell;
+        if (r.status === "analyzed" && r.severity) {
+          const badgeClass = DAMAGE_SEVERITY_BADGE_CLASS[r.severity] || "badge-sev-low";
+          const label = DAMAGE_SEVERITY_LABEL[r.severity] || r.severity;
+          resultCell = `<span class="badge ${badgeClass}"><span class="badge-dot"></span>${escapeHtml(label)}</span>`;
+        } else if (r.status === "failed") {
+          resultCell = `<span class="badge badge-st-closed"><span class="badge-dot"></span>분석 실패</span>`;
+        } else {
+          resultCell = `<span class="badge badge-pending"><span class="badge-dot"></span>${escapeHtml(DAMAGE_STATUS_LABEL.pending)}</span>`;
+        }
+
+        let detailText = "-";
+        if (r.ai_result) {
+          try {
+            const parsed = JSON.parse(r.ai_result);
+            detailText = parsed.error
+              ? `오류: ${parsed.error}`
+              : `${parsed.summary || ""}${parsed.recommended_action ? " → " + parsed.recommended_action : ""}`;
+          } catch {
+            detailText = r.ai_result;
+          }
+        }
+
+        return `
+        <tr>
+          <td>${escapeHtml(itemName)}</td>
+          <td>${escapeHtml(reporterName)}</td>
+          <td class="mono">${new Date(r.created_at).toLocaleString("ko-KR")}</td>
+          <td>${r.photo_url ? `<a href="${escapeHtml(r.photo_url)}" target="_blank" rel="noopener">사진 보기</a>` : "-"}</td>
+          <td>${resultCell}</td>
+          <td>${escapeHtml(detailText)}</td>
+        </tr>
+      `;
+      })
       .join("");
   }
 
@@ -544,6 +624,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderLocationOptions();
     await renderStockTable();
     await renderHistoryTable();
+    await renderDamageTable();
     await renderSafetyTable();
     await renderAuditChecklist();
     await renderAuditSessions();

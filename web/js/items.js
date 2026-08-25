@@ -24,14 +24,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     const statusLabel = STOCK_STATUS_FULL_LABEL[statusKey];
     const badgeClass = STOCK_STATUS_BADGE_CLASS[statusKey];
     const rentable = canRentItem(item);
+    const consumable = window.LabBotRentals.isConsumable(item);
+    const actionLabel = consumable ? "사용하기" : "대여하기";
 
     const row = document.createElement("article");
     row.className = "item-row";
     row.dataset.category = item.category;
 
     const actionHtml = rentable
-      ? `<button type="button" class="btn btn-primary btn-sm">대여하기</button>`
-      : `<button type="button" class="btn btn-secondary btn-sm" disabled>대여불가</button>`;
+      ? `<button type="button" class="btn btn-primary btn-sm">${actionLabel}</button>`
+      : `<button type="button" class="btn btn-secondary btn-sm" disabled>${consumable ? "재고없음" : "대여불가"}</button>`;
 
     const expiresHtml = item.expires_at
       ? `<span class="item-row-location">유효기간 ${escapeHtml(item.expires_at)}</span>`
@@ -58,12 +60,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         target.disabled = true;
 
         try {
-          const loan = await window.LabBotRentals.createLoan(item, session);
-          const dueDate = new Date(loan.due_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
-          alert(`"${item.name}" 대여가 완료되었습니다.\n반납 예정일: ${dueDate}\n마이페이지에서 확인할 수 있습니다.`);
+          if (consumable) {
+            await window.LabBotRentals.consumeItem(item, session);
+            alert(`"${item.name}" 사용 처리되었습니다.`);
+          } else {
+            const loan = await window.LabBotRentals.createLoan(item, session);
+            const dueDate = new Date(loan.due_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
+            alert(`"${item.name}" 대여가 완료되었습니다.\n반납 예정일: ${dueDate}\n마이페이지에서 확인할 수 있습니다.`);
+          }
           await renderList();
         } catch (err) {
-          alert(err.message || "대여 처리 중 오류가 발생했습니다.");
+          alert(err.message || "처리 중 오류가 발생했습니다.");
           target.disabled = false;
         }
       });

@@ -139,16 +139,17 @@
           <thead>
             <tr>
               <th>물품명</th>
+              <th>신고자</th>
               <th>신고시각</th>
               <th>사진</th>
+              <th>AI 판정</th>
               <th>AI 분석 결과</th>
             </tr>
           </thead>
-          <tbody>
-            <!-- TODO: 파손 신고 데이터 + Gemini AI 분석 결과 렌더링 -->
-          </tbody>
+          <tbody id="damageTableBody"></tbody>
         </table>
       </div>
+      <p class="item-empty-state" id="damageEmptyState">접수된 파손 신고가 없습니다.</p>
     </section>
 
     <!-- 안전 이벤트 (로봇/AI가 감지 -> 사람이 검토·조치·종결하는 폐쇄루프) -->
@@ -276,6 +277,7 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
   <script src="js/config.js"></script>
   <script src="js/supabase-client.js"></script>
   <script src="js/transitions.js"></script>
@@ -286,6 +288,7 @@
   <script src="js/safety-data.js"></script>
   <script src="js/robot-console-data.js"></script>
   <script src="js/audit-data.js"></script>
+  <script src="js/damage-data.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

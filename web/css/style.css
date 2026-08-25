@@ -1076,6 +1076,40 @@ h2 {
   font-weight: 500;
 }
 
+/* ---------- 챗봇 추천 물품 카드 (사용하기/대여하기 버튼 포함) ---------- */
+
+.chat-recommend-list {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 34px; /* 아바타 폭(26px) + gap(8px)만큼 들여써서 봇 말풍선과 나란히 보이게 */
+}
+
+.chat-recommend-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+.chat-recommend-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.chat-recommend-name {
+  font-size: 0.9rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
 .chat-input-bar {
   display: flex;
   gap: 8px;
@@ -1166,6 +1200,24 @@ h2 {
   display: flex;
   gap: 6px;
   white-space: nowrap;
+}
+
+.qr-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.qr-thumb {
+  border-radius: 4px;
+  background: #fff; /* QR은 흰 배경 위에 찍혀야 스캐너가 안정적으로 인식한다 */
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.qr-thumb:hover {
+  outline: 2px solid var(--accent);
 }
 
 .tabs {
@@ -1590,6 +1642,127 @@ tbody tr:hover td {
   background: #f87171;
   box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
   animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* ---------- 파손 신고: severity 4단계 중 "즉시교체"만 badge-sev-high보다 한 단계 더 강하게 ---------- */
+
+.badge-sev-critical {
+  background: rgba(248, 113, 113, 0.22);
+  color: #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+}
+.badge-sev-critical .badge-dot {
+  background: #f87171;
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+.badge-pending {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.badge-pending .badge-dot {
+  background: var(--text-faint);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* ---------- 공용 모달 (파손 신고 등) ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 16, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 300;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 22px;
+}
+
+.modal-title {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+.modal-subtitle {
+  margin: 0 0 18px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.modal-field {
+  margin-bottom: 14px;
+}
+
+.modal-field label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+.modal-field input[type="file"] {
+  width: 100%;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.modal-field textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  font-family: var(--font-body);
+  resize: vertical;
+  min-height: 64px;
+}
+
+.modal-field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.modal-preview {
+  max-width: 100%;
+  max-height: 160px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin-top: 8px;
+  display: none;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.modal-status {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 10px;
 }
 
 /* ---------- 반응형 ---------- */
