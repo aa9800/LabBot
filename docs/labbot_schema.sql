@@ -537,3 +537,29 @@ update storage.buckets
 set file_size_limit = 5242880, -- 5MB
     allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/heic']
 where id = 'damage-photos';
+
+-- =============================================================
+-- 16. 재고 조정 이력 (GPT 리뷰 지적 — 관리자가 수량을 바꿔도 누가/언제/왜 바꿨는지 기록이
+--     전혀 없었음). 관리자가 재고표에서 "저장"을 누를 때마다 이전값→새값을 자동으로
+--     한 줄 남긴다. action_logs와 합치지 않고 별도 테이블로 뒀다 — action_logs는
+--     safety_events 전용(event_id not null)이라 물품 재고 이력과 성격이 다르다.
+-- =============================================================
+
+create table if not exists stock_adjustments (
+  id bigint generated always as identity primary key,
+  item_id bigint not null references items(id),
+  actor text not null,
+  previous_available integer not null,
+  new_available integer not null,
+  previous_total integer not null,
+  new_total integer not null,
+  note text default '',
+  created_at timestamptz not null default now()
+);
+
+alter table stock_adjustments enable row level security;
+
+-- 관리자만 보고 쓸 수 있다 — 재고 이력도 items 수정 권한과 같은 선상(관리자 전용).
+drop policy if exists "stock_adjustments_admin_only" on stock_adjustments;
+create policy "stock_adjustments_admin_only" on stock_adjustments
+  for all using (is_admin()) with check (is_admin());

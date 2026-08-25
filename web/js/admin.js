@@ -87,6 +87,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         <td style="text-align:center;"><input type="checkbox" data-field="maintenance" ${isMaintenance ? "checked" : ""} /></td>
         <td class="stock-actions">
           <button type="button" class="btn btn-secondary btn-sm" data-action="save">저장</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="history">이력</button>
           <button type="button" class="btn btn-danger btn-sm" data-action="delete">삭제</button>
         </td>
       `;
@@ -136,9 +137,22 @@ document.addEventListener("DOMContentLoaded", async () => {
           return;
         }
 
+        // 재고 수량이 실제로 바뀐 경우에만 조정 이력을 남긴다 — 최소수량/점검중만 바꿨는데
+        // "0/0 → 0/0" 같은 의미없는 이력 줄이 쌓이는 걸 막는다.
+        const stockChanged = available_qty !== item.available_qty || total_qty !== item.total_qty;
+
         button.disabled = true;
         try {
-          await window.LabBotItems.updateItemStock(item.id, { available_qty, total_qty });
+          if (stockChanged) {
+            const session = await window.LabBotAuth.getSession();
+            await window.LabBotStockAdjustments.adjustItemStock(item, {
+              available_qty,
+              total_qty,
+              actorName: (session && session.name) || "관리자",
+            });
+          } else {
+            await window.LabBotItems.updateItemStock(item.id, { available_qty, total_qty });
+          }
           await window.LabBotItems.updateItemDetails(item.id, {
             minimum_qty,
             storage_condition: item.storage_condition,
@@ -154,6 +168,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         await renderStockTable();
       });
 
+      row.querySelector('[data-action="history"]').addEventListener("click", () => showStockHistory(item));
+
       row.querySelector('[data-action="delete"]').addEventListener("click", async () => {
         if (!confirm(`"${item.name}"을(를) 삭제하시겠습니까?`)) return;
 
@@ -166,6 +182,54 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
 
       stockTableBody.appendChild(row);
+    });
+  }
+
+  // 재고 조정 이력 모달 — 파손 신고 모달(mypage.js)과 같은 방식으로, 열 때 body에
+  // 붙였다가 닫으면 제거한다. 관리자 전용 화면이라 별도 페이지 없이 모달로 충분하다.
+  async function showStockHistory(item) {
+    const { escapeHtml } = window.LabBotItems;
+
+    let history;
+    try {
+      history = await window.LabBotStockAdjustments.fetchStockAdjustments(item.id);
+    } catch (err) {
+      alert("재고 조정 이력을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <h3 class="modal-title">재고 조정 이력 — ${escapeHtml(item.name)}</h3>
+        <p class="modal-subtitle">관리자가 대여가능/총 수량을 바꿀 때마다 자동으로 기록됩니다.</p>
+        <ul class="safety-log-list">
+          ${
+            history.length === 0
+              ? "<li>아직 조정 이력이 없습니다.</li>"
+              : history
+                  .map(
+                    (h) => `
+                <li>[${new Date(h.created_at).toLocaleString("ko-KR")}] ${escapeHtml(h.actor)} —
+                  대여가능 ${h.previous_available} → ${h.new_available}, 총수량 ${h.previous_total} → ${h.new_total}
+                  ${h.note ? `(${escapeHtml(h.note)})` : ""}</li>
+              `
+                  )
+                  .join("")
+          }
+        </ul>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary btn-sm" data-action="close">닫기</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('[data-action="close"]').addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
     });
   }
 
