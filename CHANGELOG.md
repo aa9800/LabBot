@@ -31,18 +31,16 @@
 - 전체 물품의 `expires_at`(유효기간)을 비워서 유효기간 때문에 대여가 막히거나 "임박/만료"
   경고가 뜨는 물품이 없게 함(발표 중 헷갈릴 수 있는 요소 제거 — 사용자 직접 요청).
 
+### 뒤늦게 정리한 것
+- `items.category` 레거시값(id 48, HPLC 시스템 → EQUIPMENT)과 테스트용 loans 4건(id 3,4,7,8)
+  + 그로 인한 1.5 mL microtube 재고 오차(29→30) — 처음엔 안전장치가 막았다가, 사용자가
+  직접 채팅으로 재확인해준 뒤 재시도해서 전부 정리 완료.
+
 ### 아직 안 한 것 (다음 차례)
-- `items.category`가 옛날 값(`separation`)으로 남은 물품 1건(id 48, HPLC 시스템) — 이 세션의
-  안전장치가 데이터 UPDATE를 계속 막아서 못 고침. 아래 SQL을 직접 실행해주세요:
-  `update items set category = 'EQUIPMENT' where id = 48;`
-- 오늘 기능 테스트하며 만든 테스트용 loans 4건(id 3,4,7,8)과 그로 인해 1.5 mL microtube
-  재고가 29/30으로 남은 것 — 같은 이유로 정리 못 함:
-  ```sql
-  delete from loans where id in (3,4,7,8);
-  update items set available_qty = 30 where id = 70;
-  ```
 - `damage-photos`/`robot-camera` storage를 비공개+서명URL 방식으로 전환
 - 실제 Raspbot `RealHAL` 구현 (실제 하드웨어 필요)
+- 재고 조정 이력(관리자가 수량 바꾼 사유·기록)
+- 챗봇 대화 이력 저장(새로고침하면 사라짐)
 
 ---
 
