@@ -18,10 +18,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   function renderRow(item) {
     // 재고상태는 items-data.js의 computeStockStatus() 한 곳에서만 계산한다 —
     // 여기서 available_qty만 보고 다시 판단하지 않는다(유효기간/점검중 케이스를 놓치게 됨).
-    const statusKey = window.LabBotItems.computeStockStatus(item);
-    const statusLabel = window.LabBotItems.STOCK_STATUS_LABEL[statusKey];
-    const badgeClass = window.LabBotItems.STOCK_STATUS_BADGE_CLASS[statusKey];
-    const rentable = window.LabBotItems.canRentItem(item);
+    const { escapeHtml, STOCK_STATUS_FULL_LABEL, STOCK_STATUS_BADGE_CLASS, computeStockStatus, canRentItem } =
+      window.LabBotItems;
+    const statusKey = computeStockStatus(item);
+    const statusLabel = STOCK_STATUS_FULL_LABEL[statusKey];
+    const badgeClass = STOCK_STATUS_BADGE_CLASS[statusKey];
+    const rentable = canRentItem(item);
 
     const row = document.createElement("article");
     row.className = "item-row";
@@ -32,18 +34,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       : `<button type="button" class="btn btn-secondary btn-sm" disabled>대여불가</button>`;
 
     const expiresHtml = item.expires_at
-      ? `<span class="item-row-location">유효기간 ${item.expires_at}</span>`
+      ? `<span class="item-row-location">유효기간 ${escapeHtml(item.expires_at)}</span>`
       : "";
 
     row.innerHTML = `
       <div class="item-row-main">
-        <span class="category-tag">${item.categoryLabel}</span>
-        <h3 class="item-row-name">${item.name}</h3>
-        <span class="item-row-location">${item.location} · ${item.storage_condition || "-"}</span>
+        <span class="category-tag">${escapeHtml(item.categoryLabel)}</span>
+        <h3 class="item-row-name">${escapeHtml(item.name)}</h3>
+        <span class="item-row-location">${escapeHtml(item.location)} · ${escapeHtml(item.storage_condition || "-")}</span>
         ${expiresHtml}
       </div>
       <div class="item-row-meta">
-        <span class="stock-count">재고 ${item.available_qty}/${item.total_qty} ${item.unit || ""}</span>
+        <span class="stock-count">재고 ${item.available_qty}/${item.total_qty} ${escapeHtml(item.unit || "")}</span>
         <span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span>
         ${actionHtml}
       </div>
@@ -56,7 +58,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         target.disabled = true;
 
         try {
-          await window.LabBotRentals.createLoan(item, session);
+          const loan = await window.LabBotRentals.createLoan(item, session);
+          const dueDate = new Date(loan.due_at).toLocaleDateString("ko-KR", { month: "long", day: "numeric" });
+          alert(`"${item.name}" 대여가 완료되었습니다.\n반납 예정일: ${dueDate}\n마이페이지에서 확인할 수 있습니다.`);
           await renderList();
         } catch (err) {
           alert(err.message || "대여 처리 중 오류가 발생했습니다.");

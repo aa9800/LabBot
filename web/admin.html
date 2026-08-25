@@ -80,8 +80,13 @@
       <form class="item-manage-form" id="itemAddForm">
         <input type="text" id="newItemName" placeholder="물품명" required />
         <select id="newItemCategory"></select>
-        <input type="text" id="newItemLocation" placeholder="위치" required />
+        <select id="newItemLocation" required></select>
         <input type="number" id="newItemTotal" placeholder="총 수량" min="1" required />
+        <input type="number" id="newItemMinimum" placeholder="최소수량(선택)" min="0" />
+        <input type="text" id="newItemUnit" placeholder="단위(개/병/박스 등)" />
+        <input type="text" id="newItemStorage" placeholder="보관조건(실온/냉장/기기실 등)" />
+        <input type="date" id="newItemExpires" placeholder="유효기간(선택)" />
+        <input type="text" id="newItemNotes" placeholder="비고(선택)" />
         <button type="submit" class="btn btn-primary btn-sm">물품 추가</button>
       </form>
 
@@ -96,6 +101,8 @@
               <th>상태</th>
               <th>대여가능</th>
               <th>총 수량</th>
+              <th>최소수량</th>
+              <th>점검중</th>
               <th>작업</th>
             </tr>
           </thead>

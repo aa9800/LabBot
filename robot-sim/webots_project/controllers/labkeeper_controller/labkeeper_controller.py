@@ -14,6 +14,7 @@ Webots가 기본으로 제공하는 'controller' 모듈(Robot, Motor, DistanceSe
 'from controller import Robot'가 깨질 수 있다. 그래서 아래처럼 importlib로
 파일 경로를 직접 지정해서 불러온다 — sys.path는 절대 건드리지 않는다.
 """
+import datetime
 import importlib.util
 import math
 import os
@@ -89,6 +90,22 @@ def _build_checkpoints_from_items(items):
 SNAPSHOT_PATH = os.path.join(os.path.dirname(__file__), "_last_camera.jpg")
 COMMAND_POLL_EVERY = 10   # 몇 틱마다 웹의 원격조작 명령을 확인할지 (너무 자주 물어보면 느려짐)
 CAMERA_UPLOAD_EVERY = 30  # 몇 틱마다 카메라 사진을 올릴지 (네트워크 요청이라 더 드물게)
+MANUAL_COMMAND_MAX_AGE_SECONDS = 3.0  # 이보다 오래된 수동조작 명령은 "연결 끊김"으로 보고 무조건 정지
+
+
+def _command_age_seconds(command):
+    """robot_commands.updated_at이 지금으로부터 몇 초 전인지. 못 읽으면 아주 큰 값을 돌려줘서
+    안전하게(정지 쪽으로) 처리되게 한다 — 관리자가 원격조작 버튼을 누른 뒤 인터넷이 끊기거나
+    웹을 닫아버려도, 로봇이 마지막 명령대로 계속 움직이는 사고를 막기 위한 장치다."""
+    updated_at = command.get("updated_at")
+    if not updated_at:
+        return float("inf")
+    try:
+        ts = datetime.datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        now = datetime.datetime.now(datetime.timezone.utc)
+        return (now - ts).total_seconds()
+    except (ValueError, TypeError):
+        return float("inf")
 
 
 def main():
@@ -144,7 +161,10 @@ def main():
             # 원격조작 중에도 안전정지는 그대로 최우선으로 적용한다 —
             # 관리자가 잘못 조작해도 장애물 앞에서는 로봇이 스스로 멈춘다.
             distance = hal.read_ultrasonic()
-            if distance < _patrol_mod.OBSTACLE_STOP_DISTANCE:
+            stale = _command_age_seconds(command) > MANUAL_COMMAND_MAX_AGE_SECONDS
+            if stale:
+                hal.stop()  # dead-man switch: 명령이 오래됐다 = 연결이 끊겼다고 보고 정지
+            elif distance < _patrol_mod.OBSTACLE_STOP_DISTANCE:
                 hal.stop()
             else:
                 hal.set_motion(command.get("speed", 0.0), command.get("turn", 0.0))

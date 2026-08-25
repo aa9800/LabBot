@@ -4,6 +4,21 @@
 // 생명공학 실험실 물품 유형 — items.item_type/category 값과 그대로 맞춘다
 // (예전엔 광학/분리/측정기기로 나눴었는데, 실제 물품 데이터를 생명공학 실험실
 // 기준으로 바꾸면서 장비/시약/소모품/PPE/안전물품 5종으로 단순화했다)
+// 로봇(Webots) 체크포인트와 그대로 이어지는 고정 위치 9곳.
+// 자유 입력을 허용하면 "기기실-1"/"기기실1"/"기기실 1"처럼 오타로 서로 다른 위치가
+// 되어버려서 로봇 체크포인트가 어긋난다 — 그래서 등록 화면은 이 목록만 고르게 한다.
+const LAB_LOCATIONS = [
+  "일반실험실",
+  "기기실-1",
+  "기기실-2",
+  "세포배양실",
+  "시약보관실",
+  "냉장보관실",
+  "냉동보관실",
+  "소모품보관실",
+  "안전장비함",
+];
+
 const LAB_CATEGORIES = [
   { key: "all", label: "전체" },
   { key: "EQUIPMENT", label: "장비" },
@@ -41,29 +56,36 @@ const STOCK_STATUS_BADGE_CLASS = {
 // MAINTENANCE / EXPIRED / OUT_OF_STOCK만 실제로 대여를 막는다.
 const NON_RENTABLE_STATUSES = new Set(["MAINTENANCE", "EXPIRED", "OUT_OF_STOCK"]);
 
+// 우선순위: MAINTENANCE > EXPIRED > OUT_OF_STOCK > EXPIRING_SOON > LOW_STOCK > AVAILABLE
+// (재고가 0개인데 유효기간 임박이 먼저 뜨면 "품절"인 걸 놓치고 헷갈리기 쉬워서, 품절을
+// 유효기간 임박보다 먼저 확인한다.)
 function computeStockStatus(item) {
   if (item.manual_status === "MAINTENANCE") {
     return "MAINTENANCE";
   }
 
+  let expirationDate = null;
   if (item.expires_at) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const expirationDate = new Date(`${item.expires_at}T00:00:00`);
-
+    expirationDate = new Date(`${item.expires_at}T00:00:00`);
     if (expirationDate < today) {
       return "EXPIRED";
-    }
-
-    const thirtyDaysLater = new Date(today);
-    thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
-    if (expirationDate <= thirtyDaysLater) {
-      return "EXPIRING_SOON";
     }
   }
 
   if (item.available_qty === 0) {
     return "OUT_OF_STOCK";
+  }
+
+  if (expirationDate) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const thirtyDaysLater = new Date(today);
+    thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
+    if (expirationDate <= thirtyDaysLater) {
+      return "EXPIRING_SOON";
+    }
   }
 
   if (
@@ -75,6 +97,25 @@ function computeStockStatus(item) {
   }
 
   return "AVAILABLE";
+}
+
+// LOW_STOCK/EXPIRING_SOON은 "경고만" — 실제로 대여는 계속 가능하다는 걸 라벨에서도 분명히 한다.
+const STOCK_STATUS_FULL_LABEL = {
+  ...STOCK_STATUS_LABEL,
+  LOW_STOCK: "재고 부족 · 대여 가능",
+  EXPIRING_SOON: "유효기간 임박 · 대여 가능",
+};
+
+// DB에서 온 문자열을 innerHTML에 그대로 꽂지 않기 위한 공용 이스케이프 함수.
+// (물품명/위치/사용자 이름/메모 등 — 저장형 XSS 방지)
+function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // 대여 가능 여부도 여기서만 판단한다 — items.js 등 다른 파일이 각자 다시 계산하지 않는다.
@@ -122,10 +163,46 @@ async function fetchLocations() {
 }
 
 // 등록: qr_code는 DB 트리거가 서버에서 랜덤 발급, available_qty는 total_qty로 시작
-async function createItem({ name, category, location, total_qty }) {
+// item_type은 category와 같은 값을 쓴다(생명공학 물품 확장 이후로 두 컬럼을 통일했다).
+async function createItem({
+  name,
+  category,
+  location,
+  total_qty,
+  unit = null,
+  minimum_qty = null,
+  storage_condition = null,
+  expires_at = null,
+  notes = "",
+}) {
   const { data, error } = await supabaseClient
     .from("items")
-    .insert({ name, category, location, total_qty, available_qty: total_qty })
+    .insert({
+      name,
+      category,
+      location,
+      total_qty,
+      available_qty: total_qty,
+      item_type: category,
+      unit,
+      minimum_qty,
+      storage_condition,
+      expires_at,
+      notes,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return { ...data, categoryLabel: categoryLabelOf(data.category) };
+}
+
+// 관리자가 등록 이후에 고칠 수 있는 필드들(재고 수량 제외 — 그건 updateItemStock이 담당).
+async function updateItemDetails(id, { minimum_qty, storage_condition, expires_at, notes, manual_status }) {
+  const { data, error } = await supabaseClient
+    .from("items")
+    .update({ minimum_qty, storage_condition, expires_at, notes, manual_status })
+    .eq("id", id)
     .select()
     .single();
 
@@ -168,15 +245,19 @@ async function deleteItem(id) {
 }
 
 window.LabBotItems = {
+  LAB_LOCATIONS,
   searchItems,
   fetchItemById,
   fetchLocations,
   createItem,
   updateItemStock,
+  updateItemDetails,
   deleteItem,
   categoryLabelOf,
   computeStockStatus,
   canRentItem,
+  escapeHtml,
   STOCK_STATUS_LABEL,
+  STOCK_STATUS_FULL_LABEL,
   STOCK_STATUS_BADGE_CLASS,
 };

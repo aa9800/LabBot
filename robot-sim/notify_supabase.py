@@ -74,7 +74,7 @@ def fetch_robot_command():
     실패하면 안전하게 '자동 순찰'로 취급한다."""
     if not _READY:
         return {"mode": "auto", "speed": 0.0, "turn": 0.0}
-    url = f"{SUPABASE_URL}/rest/v1/robot_commands?id=eq.1&select=mode,speed,turn"
+    url = f"{SUPABASE_URL}/rest/v1/robot_commands?id=eq.1&select=mode,speed,turn,updated_at"
     req = urllib.request.Request(url, headers=_headers(), method="GET")
     try:
         with urllib.request.urlopen(req, timeout=2) as resp:

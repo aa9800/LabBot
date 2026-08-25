@@ -27,10 +27,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   const auditSessionTableBody = document.getElementById("auditSessionTableBody");
   const auditDetail = document.getElementById("auditDetail");
 
+  const locationSelect = document.getElementById("newItemLocation");
+  const minimumInput = document.getElementById("newItemMinimum");
+  const unitInput = document.getElementById("newItemUnit");
+  const storageInput = document.getElementById("newItemStorage");
+  const expiresInput = document.getElementById("newItemExpires");
+  const notesInput = document.getElementById("newItemNotes");
+
   function renderCategoryOptions() {
     categorySelect.innerHTML = LAB_CATEGORIES.filter((c) => c.key !== "all")
       .map((c) => `<option value="${c.key}">${c.label}</option>`)
       .join("");
+  }
+
+  function renderLocationOptions() {
+    locationSelect.innerHTML = window.LabBotItems.LAB_LOCATIONS.map((loc) => `<option value="${loc}">${loc}</option>`).join(
+      ""
+    );
   }
 
   async function loadAllItems() {
@@ -48,20 +61,25 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     stockTableBody.innerHTML = "";
 
+    const { escapeHtml, computeStockStatus, STOCK_STATUS_FULL_LABEL, STOCK_STATUS_BADGE_CLASS } = window.LabBotItems;
+
     items.forEach((item) => {
-      const statusKey = window.LabBotItems.computeStockStatus(item);
-      const statusLabel = window.LabBotItems.STOCK_STATUS_LABEL[statusKey];
-      const badgeClass = window.LabBotItems.STOCK_STATUS_BADGE_CLASS[statusKey];
+      const statusKey = computeStockStatus(item);
+      const statusLabel = STOCK_STATUS_FULL_LABEL[statusKey];
+      const badgeClass = STOCK_STATUS_BADGE_CLASS[statusKey];
+      const isMaintenance = item.manual_status === "MAINTENANCE";
 
       const row = document.createElement("tr");
       row.innerHTML = `
-        <td>${item.name}</td>
-        <td>${item.categoryLabel}</td>
-        <td>${item.location}</td>
-        <td class="mono">${item.qr_code}</td>
+        <td>${escapeHtml(item.name)}</td>
+        <td>${escapeHtml(item.categoryLabel)}</td>
+        <td>${escapeHtml(item.location)}</td>
+        <td class="mono">${escapeHtml(item.qr_code)}</td>
         <td><span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span></td>
         <td><input type="number" class="stock-input" min="0" value="${item.available_qty}" data-field="available" /></td>
         <td><input type="number" class="stock-input" min="0" value="${item.total_qty}" data-field="total" /></td>
+        <td><input type="number" class="stock-input" min="0" value="${item.minimum_qty ?? ""}" placeholder="-" data-field="minimum" /></td>
+        <td style="text-align:center;"><input type="checkbox" data-field="maintenance" ${isMaintenance ? "checked" : ""} /></td>
         <td class="stock-actions">
           <button type="button" class="btn btn-secondary btn-sm" data-action="save">저장</button>
           <button type="button" class="btn btn-danger btn-sm" data-action="delete">삭제</button>
@@ -72,9 +90,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         const button = e.currentTarget;
         const availableInput = row.querySelector('[data-field="available"]');
         const totalInput = row.querySelector('[data-field="total"]');
+        const minimumInputEl = row.querySelector('[data-field="minimum"]');
+        const maintenanceInput = row.querySelector('[data-field="maintenance"]');
 
         const available_qty = Number(availableInput.value);
         const total_qty = Number(totalInput.value);
+        const minimum_qty = minimumInputEl.value === "" ? null : Number(minimumInputEl.value);
 
         if (
           !Number.isFinite(available_qty) ||
@@ -94,6 +115,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         button.disabled = true;
         try {
           await window.LabBotItems.updateItemStock(item.id, { available_qty, total_qty });
+          await window.LabBotItems.updateItemDetails(item.id, {
+            minimum_qty,
+            storage_condition: item.storage_condition,
+            expires_at: item.expires_at,
+            notes: item.notes,
+            manual_status: maintenanceInput.checked ? "MAINTENANCE" : null,
+          });
         } catch (err) {
           alert(err.message || "재고 수정에 실패했습니다.");
         } finally {
@@ -151,8 +179,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       .map(
         (row) => `
         <tr>
-          <td>${row.user}</td>
-          <td>${row.item}</td>
+          <td>${window.LabBotItems.escapeHtml(row.user)}</td>
+          <td>${window.LabBotItems.escapeHtml(row.item)}</td>
           <td><span class="badge badge-${row.badgeKey}"><span class="badge-dot"></span>${row.type}</span></td>
           <td>${new Date(row.time).toLocaleString("ko-KR")}</td>
         </tr>
@@ -218,14 +246,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       <div class="safety-detail-row"><span class="label">규칙</span><span class="mono">${event.rule_id}</span></div>
       <div class="safety-detail-row"><span class="label">심각도</span>${severityBadge(event.severity)}</div>
       <div class="safety-detail-row"><span class="label">상태</span>${statusBadge(event.status)}</div>
-      <div class="safety-detail-row"><span class="label">출처</span><span>${event.source}</span></div>
+      <div class="safety-detail-row"><span class="label">출처</span><span>${window.LabBotItems.escapeHtml(event.source)}</span></div>
       <div class="safety-detail-row"><span class="label">감지시각</span><span class="mono">${new Date(event.detected_at).toLocaleString("ko-KR")}</span></div>
-      <div class="safety-detail-row"><span class="label">감지 메모</span><span>${event.note || "-"}</span></div>
-      ${event.resolved_at ? `<div class="safety-detail-row"><span class="label">조치 메모</span><span>${event.resolution_note || "-"}</span></div>` : ""}
+      <div class="safety-detail-row"><span class="label">감지 메모</span><span>${window.LabBotItems.escapeHtml(event.note) || "-"}</span></div>
+      ${event.resolved_at ? `<div class="safety-detail-row"><span class="label">조치 메모</span><span>${window.LabBotItems.escapeHtml(event.resolution_note) || "-"}</span></div>` : ""}
 
       <p class="label" style="margin-top: 14px;">처리 이력</p>
       <ul class="safety-log-list">
-        ${logs.length === 0 ? "<li>아직 처리 이력이 없습니다.</li>" : logs.map((l) => `<li>[${new Date(l.created_at).toLocaleString("ko-KR")}] ${l.actor} — ${window.LabBotSafety.SAFETY_STATUS_LABEL[l.action] || l.action}${l.note ? " (" + l.note + ")" : ""}</li>`).join("")}
+        ${logs.length === 0 ? "<li>아직 처리 이력이 없습니다.</li>" : logs.map((l) => `<li>[${new Date(l.created_at).toLocaleString("ko-KR")}] ${window.LabBotItems.escapeHtml(l.actor)} — ${window.LabBotItems.escapeHtml(window.LabBotSafety.SAFETY_STATUS_LABEL[l.action] || l.action)}${l.note ? " (" + window.LabBotItems.escapeHtml(l.note) + ")" : ""}</li>`).join("")}
       </ul>
 
       ${
@@ -349,9 +377,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         (item) => `
         <tr>
           <td><input type="checkbox" class="audit-check" value="${item.id}" /></td>
-          <td>${item.name}</td>
-          <td>${item.categoryLabel}</td>
-          <td>${item.location}</td>
+          <td>${window.LabBotItems.escapeHtml(item.name)}</td>
+          <td>${window.LabBotItems.escapeHtml(item.categoryLabel)}</td>
+          <td>${window.LabBotItems.escapeHtml(item.location)}</td>
         </tr>
       `
       )
@@ -459,8 +487,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const name = document.getElementById("newItemName").value.trim();
     const category = categorySelect.value;
-    const location = document.getElementById("newItemLocation").value.trim();
+    const location = locationSelect.value;
     const total_qty = Number(document.getElementById("newItemTotal").value);
+    const minimum_qty = minimumInput.value === "" ? null : Number(minimumInput.value);
+    const unit = unitInput.value.trim() || null;
+    const storage_condition = storageInput.value.trim() || null;
+    const expires_at = expiresInput.value || null;
+    const notes = notesInput.value.trim();
 
     if (!name || !location || !Number.isFinite(total_qty) || total_qty < 1) {
       alert("모든 항목을 올바르게 입력해주세요.");
@@ -471,8 +504,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     submitBtn.disabled = true;
 
     try {
-      await window.LabBotItems.createItem({ name, category, location, total_qty });
+      await window.LabBotItems.createItem({
+        name,
+        category,
+        location,
+        total_qty,
+        minimum_qty,
+        unit,
+        storage_condition,
+        expires_at,
+        notes,
+      });
       addForm.reset();
+      renderLocationOptions(); // reset()이 select 첫 옵션으로 되돌리므로 다시 채워준다
       await renderStockTable();
     } catch (err) {
       alert("물품 등록에 실패했습니다: " + (err.message || err));
@@ -497,6 +541,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     gate.style.display = "none";
     panel.style.display = "block";
     renderCategoryOptions();
+    renderLocationOptions();
     await renderStockTable();
     await renderHistoryTable();
     await renderSafetyTable();

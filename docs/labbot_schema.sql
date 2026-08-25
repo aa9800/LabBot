@@ -329,3 +329,117 @@ alter table items
 -- OUT_OF_STOCK/LOW_STOCK/EXPIRED/EXPIRING_SOON/AVAILABLE은 저장하지 않고, 매번
 -- available_qty/minimum_qty/expires_at 기준으로 새로 계산한다 —
 -- web/js/items-data.js의 computeStockStatus()가 유일한 계산 지점이다.
+
+-- =============================================================
+-- 11. robot_commands + robot-camera Storage — Robot Console(원격조작+카메라) 연동
+--     (새 Supabase 프로젝트에서 이 스키마만 실행해도 Robot Console이 바로 동작하도록)
+-- =============================================================
+
+-- 로봇이 하나뿐이라 행도 하나뿐(id는 항상 1)이다 — 그냥 "지금 로봇한테 내릴 명령"이라고 보면 된다.
+create table if not exists robot_commands (
+  id bigint primary key default 1 check (id = 1),
+  mode text not null default 'auto' check (mode in ('auto', 'manual')),
+  speed float8 not null default 0,
+  turn float8 not null default 0,
+  updated_at timestamptz not null default now()
+);
+insert into robot_commands (id) values (1) on conflict (id) do nothing;
+
+alter table robot_commands enable row level security;
+
+drop policy if exists "robot_commands_select_auth" on robot_commands;
+create policy "robot_commands_select_auth" on robot_commands
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "robot_commands_admin_write" on robot_commands;
+create policy "robot_commands_admin_write" on robot_commands
+  for all using (is_admin()) with check (is_admin());
+-- 로봇 자신은 secret key로 접근하므로 위 정책과 무관하게 항상 읽고 쓸 수 있다.
+
+-- 로봇이 몇 초에 한 번씩 올리는 카메라 스냅샷(latest.jpg)을 저장하는 곳.
+-- public으로 둬서 웹의 <img> 태그가 별도 인증 없이 바로 불러올 수 있게 했다
+-- (카메라가 찍는 건 실험실 내부 풍경이라 민감정보는 아니라고 보고 내린 판단 — 나중에
+-- 더 엄격하게 하려면 public=false로 바꾸고 서명된 URL 방식으로 바꾸면 된다).
+insert into storage.buckets (id, name, public)
+values ('robot-camera', 'robot-camera', true)
+on conflict (id) do nothing;
+
+-- 참고: 원격조작 명령에는 항상 updated_at이 갱신되고, 로봇 쪽(robot-sim/webots_project/
+-- controllers/labkeeper_controller/labkeeper_controller.py)이 이 값을 확인해서 3초
+-- 이상 오래된 수동조작 명령은 "연결 끊김"으로 보고 자동으로 정지한다(dead-man switch).
+
+-- =============================================================
+-- 12. 보안 강화 트리거 — RLS만으로는 못 막는 것들을 트리거로 한 번 더 막는다
+--     (RLS는 "이 행을 건드릴 수 있냐"만 보고, "어느 컬럼까지 바꿀 수 있냐"는 안 본다)
+-- =============================================================
+
+-- profiles: 본인 프로필은 이름 등은 고칠 수 있어야 하지만, role만은 관리자만 바꿀 수 있어야
+-- 한다. 정책(policy)만으로는 "이 컬럼은 안 됨"을 표현하기 까다로워서 트리거로 막는다 —
+-- 관리자가 아닌데 role을 바꾸려는 시도가 오면, 조용히 원래 값으로 되돌린다.
+create or replace function public.prevent_self_role_escalation()
+returns trigger as $$
+begin
+  if new.role is distinct from old.role and not public.is_admin() then
+    new.role := old.role;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_prevent_role_escalation on profiles;
+create trigger trg_prevent_role_escalation
+  before update on profiles
+  for each row execute function public.prevent_self_role_escalation();
+
+-- loans: 일반 사용자가 직접 API를 호출하면 item_id/due_at 등을 마음대로 바꾸거나
+-- status를 엉뚱하게 되돌릴 수 있었다. "본인 대여를 반납 처리하는 것"만 허용하고,
+-- 나머지 컬럼 변경이나 다른 상태 전이는 전부 막는다. 관리자는 이 제한을 받지 않는다.
+create or replace function public.guard_loan_self_update()
+returns trigger as $$
+begin
+  if not public.is_admin() then
+    if new.item_id is distinct from old.item_id
+       or new.user_id is distinct from old.user_id
+       or new.due_at is distinct from old.due_at
+       or new.borrowed_at is distinct from old.borrowed_at
+       or new.source is distinct from old.source then
+      raise exception 'not allowed to edit these loan fields';
+    end if;
+    if old.status <> '대여중' or new.status <> '반납완료' then
+      raise exception 'only return transition is allowed';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_guard_loan_self_update on loans;
+create trigger trg_guard_loan_self_update
+  before update on loans
+  for each row execute function public.guard_loan_self_update();
+
+-- loans: 대여 신청 자체도 웹 화면(computeStockStatus)만 믿지 않고 DB에서 한 번 더
+-- 검사한다 — 점검중/유효기간만료/품절 물품은 직접 API를 호출해도 대여가 안 된다.
+create or replace function public.guard_loan_insert()
+returns trigger as $$
+declare
+  item record;
+begin
+  select * into item from items where id = new.item_id;
+  if item.manual_status = 'MAINTENANCE' then
+    raise exception 'item under maintenance';
+  end if;
+  if item.expires_at is not null and item.expires_at < current_date then
+    raise exception 'item expired';
+  end if;
+  if item.available_qty <= 0 then
+    raise exception 'no stock available';
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_guard_loan_insert on loans;
+create trigger trg_guard_loan_insert
+  before insert on loans
+  for each row execute function public.guard_loan_insert();

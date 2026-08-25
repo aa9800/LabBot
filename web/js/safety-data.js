@@ -9,8 +9,10 @@ const SAFETY_NEXT_ACTIONS = {
     { action: "OPEN", label: "확인 → 접수(OPEN)" },
     { action: "FALSE_POSITIVE", label: "오탐(잘못 감지) 처리" },
   ],
-  OPEN: [{ action: "ASSIGNED", label: "담당자 배정" }],
-  ASSIGNED: [{ action: "IN_PROGRESS", label: "조치 시작" }],
+  // ASSIGNED(담당자 배정) 단계는 뺐다 — 담당자를 실제로 지정하는 기능 없이 상태만
+  // 바뀌는 건 의미가 없고, 지금 팀 규모(관리자 1~2명)에서는 굳이 필요하지도 않다.
+  // 나중에 담당자를 실제로 고르는 화면을 만들면 그때 다시 넣으면 된다.
+  OPEN: [{ action: "IN_PROGRESS", label: "조치 시작" }],
   IN_PROGRESS: [{ action: "RESOLVED", label: "조치 완료" }],
   RESOLVED: [{ action: "CLOSED", label: "종결" }],
   CLOSED: [],

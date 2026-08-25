@@ -42,11 +42,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const card = document.createElement("article");
     card.className = `rental-card${overdue ? " rental-card-overdue" : ""}`;
+    const { escapeHtml } = window.LabBotItems;
     card.innerHTML = `
       <div class="rental-card-main">
-        <span class="category-tag">${window.LabBotItems.categoryLabelOf(item.category)}</span>
-        <h3 class="rental-card-name">${item.name}</h3>
-        <span class="item-row-location">${item.location}</span>
+        <span class="category-tag">${escapeHtml(window.LabBotItems.categoryLabelOf(item.category))}</span>
+        <h3 class="rental-card-name">${escapeHtml(item.name)}</h3>
+        <span class="item-row-location">${escapeHtml(item.location)}</span>
       </div>
       <div class="rental-card-meta">
         <span class="rental-card-date">대여일 ${formatDateTime(loan.borrowed_at)} · ${elapsed}일째 · 반납예정 ${formatDateTime(loan.due_at)}</span>
@@ -100,7 +101,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       .map(
         (loan) => `
         <tr>
-          <td>${loan.items.name}</td>
+          <td>${window.LabBotItems.escapeHtml(loan.items.name)}</td>
           <td>${formatDateTime(loan.borrowed_at)}</td>
           <td>${formatDateTime(loan.returned_at)}</td>
         </tr>
