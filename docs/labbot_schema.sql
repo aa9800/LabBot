@@ -1136,3 +1136,261 @@ begin
   return v_loan;
 end;
 $$ language plpgsql security definer set search_path = public;
+
+-- =============================================================
+-- 24. QR 코드 비공개화 (GPT Bugbot+Security 리뷰 P0-1) — 지금까지는 items.qr_code를
+--     로그인한 사용자 누구나 읽을 수 있어서(items_select_all), 실제로 QR을 촬영하지
+--     않고도 콘솔에서 supabaseClient.from('items').select('qr_code')로 값을 그대로
+--     가져와 confirm_loan_pickup 등을 호출할 수 있었다 — "물리적으로 QR을 찍어야만
+--     확인된다"는 이 프로젝트의 핵심 전제가 깨지는 구멍이었다.
+--
+--     qr_code를 별도 테이블로 분리하고 관리자만 조회 가능하게 막는다. 검증 RPC들은
+--     원래도 서버(DB)에서 값을 대조했으므로 로직은 그대로이고, 이제 그 대조에 쓰는
+--     item_qr_codes를 일반 사용자 권한으로는 아예 읽을 수 없다는 점만 강화된다.
+-- =============================================================
+
+create table if not exists item_qr_codes (
+  item_id bigint primary key references items(id) on delete cascade,
+  qr_code text not null unique
+);
+
+alter table item_qr_codes enable row level security;
+
+-- 기존 items.qr_code 값을 그대로 옮겨온다(재실행해도 안전 — 이미 있으면 건너뜀).
+insert into item_qr_codes (item_id, qr_code)
+select id, qr_code from items where qr_code is not null
+on conflict (item_id) do nothing;
+
+-- 관리자만 조회 가능 — 일반 사용자는 이 테이블에 대한 select 정책이 아예 없으므로
+-- (관리자 정책만 존재) PostgREST로 직접 select를 시도해도 빈 결과만 받는다.
+-- insert/update/delete 정책도 만들지 않는다 — 아래 트리거(security definer)만 쓴다.
+drop policy if exists "item_qr_codes_admin_select" on item_qr_codes;
+create policy "item_qr_codes_admin_select" on item_qr_codes
+  for select using (is_admin());
+
+-- items INSERT 시 QR을 새로 발급해 item_qr_codes에 저장한다(generate_item_qr_code()는
+-- 7번 섹션에서 이미 만들어둔 함수를 그대로 재사용). identity 컬럼(id)은 BEFORE 트리거
+-- 시점에도 이미 채워져 있지만, "행이 실제로 만들어진 뒤에 QR을 발급한다"는 순서를
+-- 명확히 하려고 AFTER 트리거로 둔다.
+create or replace function public.items_create_qr_code()
+returns trigger as $$
+begin
+  insert into item_qr_codes (item_id, qr_code)
+  values (new.id, public.generate_item_qr_code());
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists trg_items_set_qr_code on items;
+drop trigger if exists trg_items_create_qr_code on items;
+create trigger trg_items_create_qr_code
+  after insert on items
+  for each row execute function public.items_create_qr_code();
+
+-- items.qr_code 컬럼은 더 이상 필요 없다 — item_qr_codes로 이전 완료.
+alter table items drop column if exists qr_code;
+
+-- 확인 RPC 3개를 QR을 item_qr_codes에서 읽도록 다시 정의하고, security invoker →
+-- security definer로 바꾼다. definer가 아니면 안 되는 이유 두 가지:
+--   1) item_qr_codes는 관리자만 select 가능하므로, invoker로는 일반 사용자가 호출할 때
+--      자기 권한으로 item_qr_codes를 못 읽어서 QR 대조 자체가 항상 실패한다.
+--   2) confirm_item_usage()는 실제 사용 수량이 예약 시 임시 차감분(1개)과 다를 때
+--      items.available_qty를 UPDATE하는데, items 쓰기는 관리자만 허용하는 RLS
+--      (items_admin_write)가 걸려 있어서 invoker로는 일반 사용자가 수량 1개가 아닌
+--      사용을 확정할 때마다 권한 오류가 났다(Bugbot 리뷰가 지적한 실제 버그).
+create or replace function public.confirm_loan_pickup(p_loan_id bigint, p_qr_code text)
+returns loans as $$
+declare
+  v_loan loans;
+  v_qr_code text;
+begin
+  select * into v_loan from loans where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then
+    raise exception '예약을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '예약중' then
+    raise exception '이미 처리된 예약입니다.';
+  end if;
+
+  select qr_code into v_qr_code from item_qr_codes where item_id = v_loan.item_id;
+  if v_qr_code is distinct from p_qr_code then
+    raise exception 'QR 코드가 이 물품과 일치하지 않습니다.';
+  end if;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '대여중',
+      due_at = now() + interval '7 days',
+      qr_confirmed_at = now()
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create or replace function public.confirm_loan_return(p_loan_id bigint, p_qr_code text)
+returns loans as $$
+declare
+  v_loan loans;
+  v_qr_code text;
+begin
+  select * into v_loan from loans where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then
+    raise exception '대여 내역을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '대여중' then
+    raise exception '반납할 수 있는 상태가 아닙니다.';
+  end if;
+
+  select qr_code into v_qr_code from item_qr_codes where item_id = v_loan.item_id;
+  if v_qr_code is distinct from p_qr_code then
+    raise exception 'QR 코드가 이 물품과 일치하지 않습니다.';
+  end if;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '반납완료',
+      returned_at = now()
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create or replace function public.confirm_item_usage(p_loan_id bigint, p_qr_code text, p_qty integer default 1)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item items;
+  v_qr_code text;
+begin
+  if p_qty < 1 then
+    raise exception '사용 수량은 1개 이상이어야 합니다.';
+  end if;
+
+  select * into v_loan from loans where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then
+    raise exception '예약을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '예약중' then
+    raise exception '이미 처리된 예약입니다.';
+  end if;
+
+  select qr_code into v_qr_code from item_qr_codes where item_id = v_loan.item_id;
+  if v_qr_code is distinct from p_qr_code then
+    raise exception 'QR 코드가 이 물품과 일치하지 않습니다.';
+  end if;
+
+  select * into v_item from items where id = v_loan.item_id for update;
+  if v_item.available_qty < (p_qty - 1) then
+    raise exception '남은 재고가 부족합니다.';
+  end if;
+  update items set available_qty = available_qty - (p_qty - 1) where id = v_item.id;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '반납완료',
+      qr_confirmed_at = now(),
+      returned_at = now(),
+      consumed_qty = p_qty
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+-- =============================================================
+-- 25. loans 직접 INSERT로 예약 절차 우회 차단 (GPT Bugbot+Security 리뷰 P0-2) —
+--     loans_insert_own 정책은 지금까지 user_id만 확인해서, 일반 사용자가
+--     status='대여중'/'반납완료'를 직접 INSERT하면 예약(예약중) 단계와 QR 확인을
+--     통째로 건너뛸 수 있었다(재고 트리거는 그대로 -1 되어 겉보기엔 정상 작동해서
+--     더 위험했다). 새 대여 행은 반드시 "예약중" 상태로만, 다른 진행 필드는 전부
+--     비어 있는 채로만 만들 수 있게 강제한다 — 실제 진행은 여전히 검증 RPC를 거쳐야
+--     한다. 관리자는 예외(과거 데이터 보정 등에 필요).
+-- =============================================================
+
+create or replace function public.guard_loan_self_insert()
+returns trigger as $$
+begin
+  if not public.is_admin() then
+    if new.status is distinct from '예약중'
+       or new.due_at is not null
+       or new.returned_at is not null
+       or new.qr_confirmed_at is not null
+       or new.consumed_qty is not null then
+      raise exception 'new loans must start as 예약중 with no due/return/confirm data';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists trg_guard_loan_self_insert on loans;
+create trigger trg_guard_loan_self_insert
+  before insert on loans
+  for each row execute function public.guard_loan_self_insert();
+
+-- =============================================================
+-- 26. P2 보완 3종 (GPT Bugbot+Security 리뷰)
+-- =============================================================
+
+-- 26-1. is_admin()에 고정 search_path가 없었다 — security definer 함수에 search_path를
+--       고정하지 않으면 호출자가 세션의 search_path를 조작해 다른 스키마의 동명 객체를
+--       끼워넣는 공격(search_path 하이재킹)에 이론상 노출된다. 나머지 definer 함수들은
+--       이미 set search_path = public이 붙어 있었는데 이 함수만 빠져 있었다.
+create or replace function public.is_admin()
+returns boolean as $$
+  select exists (
+    select 1 from profiles where id = auth.uid() and role = 'admin'
+  );
+$$ language sql security definer stable set search_path = public;
+
+-- 26-2. damage-photos 업로드 정책이 로그인 여부만 확인하고, 조회 정책과 달리 업로드
+--       경로 첫 폴더가 본인 user_id인지는 확인하지 않았다 — 다른 사용자 폴더 경로로
+--       사진을 올릴 수 있었다(직접 읽지는 못해도 소유권 경계가 깨짐). 조회 정책과
+--       같은 조건을 업로드에도 그대로 건다.
+drop policy if exists "damage_photos_authenticated_upload" on storage.objects;
+create policy "damage_photos_authenticated_upload" on storage.objects
+  for insert with check (
+    bucket_id = 'damage-photos'
+    and auth.role() = 'authenticated'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- 26-3. cancel_loan_reservation()이 무조건 available_qty + 1을 하는데, 예약 중에
+--       관리자가 total_qty를 그보다 낮게 줄여놓으면 items_available_le_total 제약
+--       (available_qty <= total_qty)에 걸려 취소 자체가 실패하고 사용자가 예약에
+--       발이 묶일 수 있었다. total_qty를 넘지 않는 선까지만 복구하도록 캡을 씌운다.
+create or replace function public.cancel_loan_reservation(p_loan_id bigint)
+returns loans as $$
+declare
+  v_loan loans;
+begin
+  select * into v_loan from loans
+  where id = p_loan_id and (user_id = auth.uid() or is_admin())
+  for update;
+
+  if not found then
+    raise exception '예약을 찾을 수 없습니다.';
+  end if;
+  if v_loan.status <> '예약중' then
+    raise exception '이미 처리된 예약은 취소할 수 없습니다.';
+  end if;
+
+  update items
+  set available_qty = least(available_qty + 1, total_qty)
+  where id = v_loan.item_id;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '취소됨',
+      returned_at = now()
+  where id = p_loan_id
+  returning * into v_loan;
+
+  return v_loan;
+end;
+$$ language plpgsql security definer set search_path = public;

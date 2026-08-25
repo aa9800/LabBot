@@ -144,9 +144,22 @@ function categoryLabelOf(key) {
   return found ? found.label : key;
 }
 
+// qr_code는 더 이상 items 테이블에 없다(별도 item_qr_codes 테이블, 관리자만 조회 가능 —
+// docs/labbot_schema.sql 24번 섹션). item_qr_codes(qr_code)를 함께 embed해서 요청하면
+// 관리자에게는 값이 채워지고, 일반 사용자에게는 RLS가 막아서 null로 온다(에러 아님) —
+// 아래 헬퍼가 그 두 경우를 하나로 정리해준다.
+const ITEMS_SELECT = "*, item_qr_codes(qr_code)";
+
+function qrCodeOf(item) {
+  const rel = item && item.item_qr_codes;
+  if (!rel) return null;
+  const row = Array.isArray(rel) ? rel[0] : rel;
+  return (row && row.qr_code) || null;
+}
+
 // 검색: 이름 부분일치 + category/location 필터를 동시에(AND) 적용
 async function searchItems({ name = "", category = "all", location = "all" } = {}) {
-  let query = supabaseClient.from("items").select("*").order("name", { ascending: true });
+  let query = supabaseClient.from("items").select(ITEMS_SELECT).order("name", { ascending: true });
 
   const trimmedName = name.trim();
   if (trimmedName) {
@@ -166,7 +179,7 @@ async function searchItems({ name = "", category = "all", location = "all" } = {
 }
 
 async function fetchItemById(id) {
-  const { data, error } = await supabaseClient.from("items").select("*").eq("id", id).single();
+  const { data, error } = await supabaseClient.from("items").select(ITEMS_SELECT).eq("id", id).single();
   if (error) throw error;
   return { ...data, categoryLabel: categoryLabelOf(data.category) };
 }
@@ -271,6 +284,7 @@ window.LabBotItems = {
   deleteItem,
   categoryLabelOf,
   categoryIconOf,
+  qrCodeOf,
   computeStockStatus,
   canRentItem,
   escapeHtml,

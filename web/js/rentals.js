@@ -8,7 +8,10 @@
 // 버튼 = 즉시 대여 완료"가 아니라 로봇이 실제로 확인한 뒤에만 대여가 되는 구조가 된다.
 // 반납도 마찬가지로 QR 재확인(confirmReturn) 없이는 처리되지 않는다.
 
-const LOAN_SELECT = "*, items(id, name, category, location, qr_code, item_type, available_qty, total_qty, unit)";
+// qr_code는 여기 넣지 않는다 — item_qr_codes는 관리자만 조회 가능해서(docs/labbot_schema.sql
+// 24번 섹션) 넣어봐야 일반 사용자에게는 null로 온다. 애초에 클라이언트가 QR 값을 미리 알
+// 필요가 없다 — 실제 대조는 서버(confirm_* RPC)가 카메라로 찍은 값과 대조한다.
+const LOAN_SELECT = "*, items(id, name, category, location, item_type, available_qty, total_qty, unit)";
 
 // 연체 여부: 대여중 상태(실제로 픽업 확정된 것)에만 의미가 있다 — 예약중인데 due_at이
 // 아직 없을(null) 수도 있어서, 그 경우는 연체가 아니라고 본다.
@@ -86,62 +89,10 @@ async function cancelReservation(loanId) {
   return data;
 }
 
-// 사용(소모, QR 확인 없이 바로 처리) — 지금 화면에서는 안 쓴다. 소모품도 이제
-// reserveItem() → (마이페이지에서 수량 입력 + QR 스캔) → confirmUsage() 순서를 거친다.
-// 이 함수는 남겨두되(예: 관리자용 즉시 사용 처리 등을 나중에 붙일 자리) UI에서 직접
-// 호출하지는 않는다.
-async function consumeItem(item, session, source = "manual") {
-  if (item.available_qty <= 0) {
-    throw new Error("남은 재고가 없습니다.");
-  }
-
-  const now = new Date().toISOString();
-  const { data, error } = await supabaseClient
-    .from("loans")
-    .insert({
-      user_id: session.id,
-      item_id: item.id,
-      source,
-      status: "반납완료",
-      borrowed_at: now,
-      returned_at: now,
-    })
-    .select(LOAN_SELECT)
-    .single();
-
-  if (error) {
-    if (error.code === "23514") {
-      throw new Error("남은 재고가 없습니다.");
-    }
-    throw error;
-  }
-  return data;
-}
-
 // item_type 기준으로 "대여"(반납 필요) vs "사용"(소모, 반납 없음)을 구분한다.
 // 장비/PPE/안전물품은 대여, 시약/소모품은 사용 — 여러 파일에서 각자 판단하지 않게 여기 한 곳에 둔다.
 function isConsumable(item) {
   return item.item_type === "REAGENT" || item.item_type === "CONSUMABLE";
-}
-
-// 반납(QR 확인 없이 바로 처리) — 지금 화면에서는 안 쓴다. 반납은 confirmReturn()을 거쳐야
-// 하지만, DB 함수 하나만으로 못 끝내는 관리자용 강제반납 등을 나중에 붙일 자리로 남겨둔다.
-async function returnLoan(loanId) {
-  const { data, error } = await supabaseClient
-    .from("loans")
-    .update({ returned_at: new Date().toISOString(), status: "반납완료" })
-    .eq("id", loanId)
-    .eq("status", "대여중")
-    .select(LOAN_SELECT)
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") {
-      throw new Error("이미 반납된 대여입니다.");
-    }
-    throw error;
-  }
-  return data;
 }
 
 // 내 대여 목록: 로그인한 사용자 본인 것만
@@ -173,9 +124,7 @@ window.LabBotRentals = {
   confirmReturn,
   confirmUsage,
   cancelReservation,
-  consumeItem,
   isConsumable,
-  returnLoan,
   fetchMyLoans,
   fetchAllLoans,
   isOverdue,

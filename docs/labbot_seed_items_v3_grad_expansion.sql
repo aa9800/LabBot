@@ -7,10 +7,15 @@
 -- 추가로 INSERT한다. 실행 후 총 물품 수: 61종(기존) + 38종(신규) = 99종.
 --
 -- 실행 순서: docs/labbot_schema.sql + docs/labbot_seed_items.sql이 이미 적용된 DB에서
---           이 파일만 그대로 실행하면 된다(재실행 시 중복 INSERT되므로 한 번만 실행).
+--           이 파일만 그대로 실행하면 된다. 아래 do 블록이 "초저온 냉동고" 존재 여부로
+--           이미 실행됐는지 확인하므로(GPT 리뷰 지적 — 재실행 시 중복 INSERT 위험),
+--           재실행해도 안전하다(두 번째부터는 조용히 건너뜀).
 -- =============================================================
 
-insert into items (name, category, location, total_qty, available_qty, item_type, unit, minimum_qty, storage_condition, expires_at, manual_status, notes) values
+do $$
+begin
+  if not exists (select 1 from items where name = '초저온 냉동고 (-80℃)') then
+    insert into items (name, category, location, total_qty, available_qty, item_type, unit, minimum_qty, storage_condition, expires_at, manual_status, notes) values
 
 -- ---------- 장비(EQUIPMENT) 10종 — 대학원 랩에 실제로 있는데 v2에는 없던 것들 ----------
 ('초저온 냉동고 (-80℃)','EQUIPMENT','냉동보관실',1,1,'EQUIPMENT','대',1,'냉동',null,null,''),
@@ -59,3 +64,5 @@ insert into items (name, category, location, total_qty, available_qty, item_type
 ('소화기','SAFETY','안전장비함',2,2,'SAFETY','개',1,'실온',null,null,''),
 ('방독마스크 (화학물질용)','SAFETY','안전장비함',4,4,'SAFETY','개',1,'실온',null,null,''),
 ('화상 처치 키트','SAFETY','안전장비함',2,2,'SAFETY','개',1,'실온',null,null,'');
+  end if;
+end $$;

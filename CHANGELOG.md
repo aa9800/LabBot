@@ -6,6 +6,70 @@
 
 ---
 
+## 2026-08-26 (22) — GPT Bugbot+Security 심층 리뷰 반영 (QR 비공개화 등 P0 4건 + P2 3건)
+
+사용자 지시("지금 최신리뷰 기반으로 수정 ㄱㄱ") — `01_GPT_최신리뷰.md`에 새로 추가된
+"10. Bugbot + Security 코드 리뷰" 섹션의 P0/P1/P2 항목을 반영. 로봇 실기기가 필요한
+P0-5(라즈베리파이 service-role 키)만 로봇 트랙 소관이라 제외.
+
+**P0-1 (QR 코드가 로그인만 하면 누구나 조회 가능했음)** — `items_select_all`이
+`qr_code`까지 그대로 노출해서, 실제로 QR을 스캔하지 않고도 콘솔에서
+`supabaseClient.from('items').select('qr_code')`로 값을 가져와 확인 RPC를 호출할 수
+있었다("물리적으로 QR을 찍어야만 확인된다"는 프로젝트 핵심 전제가 깨지는 구멍).
+`qr_code`를 `item_qr_codes` 별도 테이블로 분리하고 관리자만 조회 가능하게 막음
+(`docs/labbot_schema.sql` 24번 섹션). `confirm_loan_pickup`/`confirm_loan_return`/
+`confirm_item_usage`를 `security invoker` → `security definer`로 전환(item_qr_codes는
+관리자만 읽을 수 있어서 invoker로는 이 RPC들 자체가 항상 실패하게 됨).
+`web/js/items-data.js`(`item_qr_codes(qr_code)` embed + `qrCodeOf()` 헬퍼),
+`web/js/rentals.js`(LOAN_SELECT에서 qr_code 제거), `web/js/admin.js`(재고표 QR
+표시를 `qrCodeOf()`로 교체)도 함께 수정.
+
+**P0-2 (loans 직접 INSERT로 예약 단계 자체를 건너뛸 수 있었음)** — `loans_insert_own`
+정책이 `user_id`만 확인해서, 일반 사용자가 `status='대여중'`/`'반납완료'`를 직접
+INSERT하면 예약과 QR 확인을 통째로 건너뛸 수 있었다(재고 트리거는 그대로 작동해서
+겉보기엔 정상처럼 보여 더 위험했음). 새 `guard_loan_self_insert` 트리거로 일반
+사용자의 INSERT는 `예약중` 상태 + 진행 필드 전부 NULL일 때만 허용(25번 섹션).
+
+**P0-3 (소모품 수량 확정 시 권한 오류 가능성, Bugbot 지적)** — `confirm_item_usage`가
+`security invoker`인 채로 `items` UPDATE를 실행해서, 일반 사용자가 수량 1개가 아닌
+사용을 확정할 때마다 "items 쓰기는 관리자만" RLS에 걸려 실패할 수 있었다. 위 P0-1
+작업에서 함께 definer로 전환하며 같이 해결.
+
+**P0-4 (파손 AI 신고 분석 API가 소유권을 검증하지 않음)** — `gemini-damage-assess`
+Edge Function이 Authorization 헤더가 "있는지"만 확인하고 실제 JWT를 검증하지 않아서,
+임의의 `report_id`로 다른 사용자의 파손 신고를 분석 요청할 수 있었다(분석 결과로
+사진 내용을 간접적으로 알아낼 수 있음). Supabase Auth `/auth/v1/user`로 실제 로그인
+세션인지 검증하고, 신고 당사자 또는 관리자만 통과하도록 수정. 대시보드에서 배포까지
+완료(`supabase functions deploy`가 아니라 Editor 통해 배포하는 이 프로젝트 방식 그대로).
+
+**P2 보완 3건**: `is_admin()`에 빠져 있던 `set search_path = public` 추가(다른 definer
+함수들과 통일), `damage-photos` 업로드 정책에 조회 정책과 동일한 "업로드 경로 첫
+폴더 = 본인 UID" 조건 추가(다른 사용자 폴더에 사진을 올릴 수 있던 문제),
+`cancel_loan_reservation()`이 무조건 `+1`하던 것을 `least(available_qty+1, total_qty)`로
+캡(관리자가 예약 중에 total_qty를 낮추면 취소가 제약 위반으로 실패할 수 있던 문제).
+그 외 `web/js/rentals.js`의 미사용 우회 함수 `consumeItem()`/`returnLoan()`(QR 확인
+없이 대여를 끝낼 수 있던 죽은 코드) 제거, `docs/labbot_seed_items_v3_grad_expansion.sql`에
+재실행 시 중복 방지 가드 추가.
+
+실행한 검증(전부 실제 프로덕션 DB에서):
+- 비관리자로 가장(SQL Editor `set role authenticated` + 가짜 JWT)해서 `item_qr_codes`
+  직접 조회 → 0행(P0-1 확인), `status='대여중'`으로 직접 INSERT 시도 → 트리거가 정상
+  차단(P0-2 확인)
+- 같은 비관리자로 정상적인 `예약중` INSERT는 성공, 그 예약에 `confirm_item_usage(qty=2)`
+  호출 → 정상 처리되고 재고가 정확히 반영됨(P0-3이 실제로 고쳐졌는지 확인 — 이전
+  정의였다면 이 호출은 권한 오류로 실패했어야 함)
+- 관리자 세션으로 예약→틀린 QR 거부→올바른 QR 픽업→반납까지 전체 사이클 재확인,
+  재고 원복까지 확인
+- 관리자 재고관리 화면 QR 썸네일·다운로드 정상 렌더링, 물품목록/마이페이지/관리자
+  하드리로드 후 콘솔 에러 없음 확인
+- `gemini-damage-assess`를 가짜 토큰으로 호출 → 401 확인(다만 실제 "다른 사용자
+  소유 신고를 자기 계정으로 시도" 케이스는 로그인 가능한 두 번째 테스트 계정이 없어
+  실제 호출까지는 재현하지 못함 — 코드 리뷰 + 배포 성공까지만 확인)
+
+**이번에도 다루지 않음**: P0-5(라즈베리파이의 service-role 키 — 로봇 실기기 접근이
+필요해서 로봇 트랙 담당, 아래 참고), P3(Gemini 챗봇 비용 방어용 요청 제한 — 발표
+전 긴급하지 않다고 판단해 보류).
+
 ## 2026-08-26 (21) — 유효기간 시연용 물품 2종 복구 (DB 데이터만, 코드 변경 없음)
 
 사용자 질문("99종이면 충분해?")에 답하다가 실제 DB 상태를 점검했는데, "유효기간 임박"·

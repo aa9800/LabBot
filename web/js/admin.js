@@ -137,6 +137,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const statusLabel = STOCK_STATUS_FULL_LABEL[statusKey];
       const badgeClass = STOCK_STATUS_BADGE_CLASS[statusKey];
       const isMaintenance = item.manual_status === "MAINTENANCE";
+      const qrCode = window.LabBotItems.qrCodeOf(item);
 
       const row = document.createElement("tr");
       row.innerHTML = `
@@ -144,8 +145,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         <td data-label="카테고리">${escapeHtml(item.categoryLabel)}</td>
         <td data-label="위치">${escapeHtml(item.location)}</td>
         <td data-label="QR 코드" class="qr-cell">
-          <canvas class="qr-thumb" title="클릭하면 인쇄용 크기로 다운로드됩니다" data-qr="${escapeHtml(item.qr_code)}"></canvas>
-          <span class="mono">${escapeHtml(item.qr_code)}</span>
+          ${
+            qrCode
+              ? `<canvas class="qr-thumb" title="클릭하면 인쇄용 크기로 다운로드됩니다" data-qr="${escapeHtml(qrCode)}"></canvas>
+          <span class="mono">${escapeHtml(qrCode)}</span>`
+              : `<span class="mono" style="color: var(--text-faint);">-</span>`
+          }
         </td>
         <td data-label="상태"><span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span></td>
         <td data-label="대여가능"><input type="number" class="stock-input" min="0" value="${item.available_qty}" data-field="available" /></td>
@@ -160,23 +165,26 @@ document.addEventListener("DOMContentLoaded", async () => {
       `;
 
       // 물품마다 실제로 스캔 가능한 QR 이미지를 그려준다 — qr_code 문자열 자체는 DB 트리거가
-      // 물품 등록 시 자동 발급하고(items_set_qr_code), 여기서는 그 문자열을 이미지로 렌더링만 한다.
+      // 물품 등록 시 자동 발급해 item_qr_codes에 넣고(items_create_qr_code, 관리자만 조회
+      // 가능 — docs/labbot_schema.sql 24번 섹션), 여기서는 그 문자열을 이미지로 렌더링만 한다.
       const qrCanvas = row.querySelector(".qr-thumb");
-      window.QRCode.toCanvas(qrCanvas, item.qr_code, { width: 48, margin: 1 }, (err) => {
-        if (err) console.warn("LabBot: QR 코드 렌더링 실패", err);
-      });
-      qrCanvas.addEventListener("click", () => {
-        window.QRCode.toDataURL(item.qr_code, { width: 480, margin: 2 }, (err, url) => {
-          if (err) {
-            window.LabBotToast.error("QR 코드 생성에 실패했습니다.");
-            return;
-          }
-          const link = document.createElement("a");
-          link.href = url;
-          link.download = `${item.qr_code}.png`;
-          link.click();
+      if (qrCanvas && qrCode) {
+        window.QRCode.toCanvas(qrCanvas, qrCode, { width: 48, margin: 1 }, (err) => {
+          if (err) console.warn("LabBot: QR 코드 렌더링 실패", err);
         });
-      });
+        qrCanvas.addEventListener("click", () => {
+          window.QRCode.toDataURL(qrCode, { width: 480, margin: 2 }, (err, url) => {
+            if (err) {
+              window.LabBotToast.error("QR 코드 생성에 실패했습니다.");
+              return;
+            }
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${qrCode}.png`;
+            link.click();
+          });
+        });
+      }
 
       row.querySelector('[data-action="save"]').addEventListener("click", async (e) => {
         const button = e.currentTarget;

@@ -138,7 +138,7 @@ async function fetchDamageReport(reportId: number) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceKey = Deno.env.get("LABBOT_SERVICE_KEY");
   const res = await fetch(
-    `${supabaseUrl}/rest/v1/damage_reports?id=eq.${reportId}&select=id,photo_path,note,items(name,category)`,
+    `${supabaseUrl}/rest/v1/damage_reports?id=eq.${reportId}&select=id,reported_by,photo_path,note,items(name,category)`,
     {
       headers: { apikey: serviceKey!, Authorization: `Bearer ${serviceKey}` },
     }
@@ -148,18 +148,51 @@ async function fetchDamageReport(reportId: number) {
   return rows[0] ?? null;
 }
 
+// authHeader가 실제로 유효한 로그인 세션인지 Supabase Auth로 검증하고, 그 사용자의 id를
+// 돌려준다(무효하면 null) — 지금까지는 헤더가 "있는지"만 봐서 아무 문자열이나 넘겨도
+// 통과했다. /auth/v1/user는 Supabase Auth가 JWT 서명·만료를 직접 검사해주는 표준 엔드포인트.
+async function getAuthenticatedUserId(authHeader: string): Promise<string | null> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("LABBOT_SERVICE_KEY");
+  const res = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: { apikey: serviceKey!, Authorization: authHeader },
+  });
+  if (!res.ok) return null;
+  const user = await res.json();
+  return user?.id ?? null;
+}
+
+async function isAdminUser(userId: string): Promise<boolean> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("LABBOT_SERVICE_KEY");
+  const res = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${userId}&select=role`, {
+    headers: { apikey: serviceKey!, Authorization: `Bearer ${serviceKey}` },
+  });
+  if (!res.ok) return false;
+  const rows = await res.json();
+  return rows[0]?.role === "admin";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: CORS_HEADERS });
   }
 
-  // 이 함수는 로그인한 사용자만 호출할 수 있게 supabaseClient.functions.invoke()가
-  // 자동으로 실어 보내는 Authorization(사용자 JWT)이 있는지만 확인한다 — 실제 DB 접근은
-  // service role로 하되, 신고 자체는 본인이 이미 RLS(damage_insert_own)를 통과해 만든
-  // 행이라 report_id를 안다는 것 자체가 신고 당사자이거나 URL을 공유받은 경우뿐이다.
+  // 이 함수는 실제 DB 접근을 service role로 해서 RLS를 완전히 우회하므로, "헤더가
+  // 있는지"만 보는 건 인증이 아니었다 — 아무 문자열이나 Authorization으로 넣어도
+  // 통과했다(GPT Bugbot+Security 리뷰 P0-4). Supabase Auth로 실제 유효한 로그인
+  // 세션인지 검증하고, 그 사용자가 신고 당사자이거나 관리자일 때만 진행한다.
   const authHeader = req.headers.get("authorization");
   if (!authHeader) {
     return new Response(JSON.stringify({ error: "로그인이 필요합니다." }), {
+      status: 401,
+      headers: { ...CORS_HEADERS, "content-type": "application/json" },
+    });
+  }
+
+  const callerId = await getAuthenticatedUserId(authHeader);
+  if (!callerId) {
+    return new Response(JSON.stringify({ error: "로그인이 만료되었거나 유효하지 않습니다." }), {
       status: 401,
       headers: { ...CORS_HEADERS, "content-type": "application/json" },
     });
@@ -182,6 +215,13 @@ Deno.serve(async (req) => {
     if (!report) {
       return new Response(JSON.stringify({ error: "해당 파손 신고를 찾을 수 없습니다." }), {
         status: 404,
+        headers: { ...CORS_HEADERS, "content-type": "application/json" },
+      });
+    }
+
+    if (report.reported_by !== callerId && !(await isAdminUser(callerId))) {
+      return new Response(JSON.stringify({ error: "본인이 신고한 건만 분석할 수 있습니다." }), {
+        status: 403,
         headers: { ...CORS_HEADERS, "content-type": "application/json" },
       });
     }
