@@ -104,6 +104,15 @@ def main():
         from notify_supabase import record_audit_scan
         db_executor.submit(record_audit_scan, location, [it["id"] for it in items_here])
 
+    def on_manual_qr_scan():
+        """웹에서 [QR 체크하기] 버튼을 눌렀을 때 온디맨드로 1회 실행."""
+        code = hal.scan_qr_now()
+        if code:
+            on_scan(code)
+        return code
+
+    stream_server.set_qr_scan_callback(on_manual_qr_scan)
+
     def on_obstacle(distance):
         print(f"[labkeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 전송")
         run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")

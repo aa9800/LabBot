@@ -735,6 +735,46 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
+  const robotScanQrBtn = document.getElementById("robotScanQrBtn");
+  const robotScanQrResult = document.getElementById("robotScanQrResult");
+
+  if (robotScanQrBtn) {
+    robotScanQrBtn.addEventListener("click", async () => {
+      robotScanQrBtn.disabled = true;
+      robotScanQrBtn.innerHTML = `⌛ QR 인식 중...`;
+      if (robotScanQrResult) robotScanQrResult.innerHTML = ``;
+
+      try {
+        const localIp = robotCurrentIp || "10.42.0.1";
+        const result = await window.LabBotRobotConsole.triggerQrScan(localIp);
+        if (result && result.found) {
+          window.LabBotToast.success(`✅ QR 인식 성공: [${result.code}] 위치 실사가 완료되었습니다!`);
+          if (robotScanQrResult) {
+            robotScanQrResult.innerHTML = `
+              <span class="badge badge-st-resolved" style="font-size: 11px;">
+                <span class="badge-dot"></span>✅ 인식됨: <strong>${result.code}</strong>
+              </span>
+            `;
+          }
+        } else {
+          window.LabBotToast.warn(result.message || "QR 코드가 감지되지 않았습니다. 카메라 각도를 조절해 주세요.");
+          if (robotScanQrResult) {
+            robotScanQrResult.innerHTML = `
+              <span class="badge badge-st-in_progress" style="font-size: 11px;">
+                <span class="badge-dot"></span>⚠️ QR 미감지 (각도 확인)
+              </span>
+            `;
+          }
+        }
+      } catch (err) {
+        window.LabBotToast.error("QR 스캔 실패: " + (err.message || err));
+      } finally {
+        robotScanQrBtn.disabled = false;
+        robotScanQrBtn.innerHTML = `📸 현재 위치 QR 체크하기`;
+      }
+    });
+  }
+
   // 조이스틱: 원 안에서 드래그한 만큼 실시간으로 speed/turn을 보낸다(자동차 게임 방식).
   // 방향 버튼(한 번 클릭 -> 그 방향으로 계속 이동)이 답답하다는 피드백(2026-08-26)으로 교체.
   const JOY_SPEED_MAX = 70; // controller.py의 SPEED(70)와 동일 스케일

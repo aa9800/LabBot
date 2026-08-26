@@ -169,6 +169,24 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             data = _telemetry_provider() if _telemetry_provider is not None else {}
             self.wfile.write(json.dumps(data).encode("utf-8"))
+        elif self.path.startswith("/scan_qr"):
+            # 웹 버튼 클릭 시 온디맨드 1회 QR 스캔 실행
+            code = None
+            if _qr_scan_callback is not None:
+                try:
+                    code = _qr_scan_callback()
+                except Exception as e:
+                    logger.warn(f"QR scan callback failed: {e}")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.end_headers()
+            if code:
+                res = {"status": "ok", "found": True, "code": code, "timestamp": time.time()}
+            else:
+                res = {"status": "ok", "found": False, "message": "QR 코드가 감지되지 않았습니다. 카메라 각도를 맞춰주세요."}
+            self.wfile.write(json.dumps(res).encode("utf-8"))
         elif self.path in ("/health", "/status"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -190,12 +208,19 @@ class StreamingHandler(BaseHTTPRequestHandler):
 _camera_angle_callback = None
 _drive_callback = None
 _telemetry_provider = None
+_qr_scan_callback = None
 
 
 def set_camera_angle_callback(cb):
     """서보 각도 변경 콜백 등록 (RealHAL.set_camera_angle 연동)."""
     global _camera_angle_callback
     _camera_angle_callback = cb
+
+
+def set_qr_scan_callback(cb):
+    """온디맨드 QR 스캔 콜백 등록."""
+    global _qr_scan_callback
+    _qr_scan_callback = cb
 
 
 def set_drive_callback(cb):

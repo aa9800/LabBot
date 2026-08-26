@@ -154,6 +154,21 @@ async function fetchTelemetry(timeoutMs = 1000) {
   }
 }
 
+async function triggerQrScan(localIp = "10.42.0.1") {
+  const targetIp = _cachedLocalIp || localIp || "10.42.0.1";
+  const url = `http://${targetIp}:8080/scan_qr`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const resp = await fetch(url, { method: "GET", mode: "cors", signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return await resp.json();
+  } catch (err) {
+    return { status: "error", message: err.message || String(err) };
+  }
+}
+
 window.LabBotRobotConsole = {
   cameraSnapshotUrl,
   fetchRobotCommand,
@@ -162,6 +177,7 @@ window.LabBotRobotConsole = {
   checkStreamHealth,
   fetchCameraAngle,
   fetchTelemetry,
+  triggerQrScan,
   setRobotCommand,
   setCameraAngle,
 };

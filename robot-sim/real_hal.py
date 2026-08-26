@@ -181,17 +181,10 @@ class RealHAL:
         t2 = time.time()
         return ((t2 - t1) * SOUND_SPEED_M_S / 2) * 100
 
-    def try_read_qr(self):
-        """백그라운드 카메라 스레드가 잡아둔 가장 최근 프레임에서 QR/바코드를 디코드한다.
-        0.2초(5Hz) 캐싱을 적용하여 불필요한 pyzbar CPU 연산 및 발열을 원천 방지한다."""
-        now = time.time()
-        if now - self._last_qr_time < 0.2:
-            return self._last_qr_result
-        self._last_qr_time = now
-
+    def scan_qr_now(self):
+        """웹 버튼 클릭 시 온디맨드로 단 1회 현재 카메라 프레임에서 QR을 정밀 디코딩한다."""
         frame = self.capture_frame()
         if frame is None or self._pyzbar is None:
-            self._last_qr_result = None
             return None
         try:
             # Grayscale 변환으로 pyzbar 디코딩 속도 5배 향상 및 인식률 극대화
@@ -201,13 +194,15 @@ class RealHAL:
                 gray = frame
             codes = self._pyzbar.decode(gray)
             if not codes:
-                self._last_qr_result = None
                 return None
-            self._last_qr_result = codes[0].data.decode("utf-8")
-            return self._last_qr_result
-        except Exception:
-            self._last_qr_result = None
+            return codes[0].data.decode("utf-8")
+        except Exception as e:
+            print(f"[RealHAL] QR 디코딩 실패: {e}")
             return None
+
+    def try_read_qr(self):
+        """온디맨드 구조 전환: 평상시 자동 주행/대기 중에는 무거운 QR 연산을 0%로 차단하여 발열 및 쓰로틀링 방지."""
+        return None
 
     def set_motion(self, speed, turn):
         """아케이드 믹싱(모듈 docstring 참고) 후 클램프해서 Control_Car로 보낸다."""
