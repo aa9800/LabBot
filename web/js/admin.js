@@ -688,6 +688,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     robotCurrentIp = localIp;
     const streamUrl = `http://${localIp}:8080/stream`;
 
+    if (robotCameraMode === "stream") {
+      /* 브라우저 네트워크 병목을 유발하는 5초 헬스체크 비활성화 (스트리밍 끊김 방지)
+      if (robotHealthCheckTick % 5 === 0 && robotCurrentIp) {
+        const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(robotCurrentIp);
+        if (!isHealthy) {
+          console.warn("LabBot: 실시간 스트림 연결 끊김 감지 -> 스냅샷 모드로 전환");
+          robotCameraMode = "init";
+          await loadSnapshotFallback();
+        }
+      }
+      */
+      return;
+    }
+
     robotCameraImg.onload = () => {
       robotCameraImg.style.display = "block";
       robotCameraMode = "stream";
