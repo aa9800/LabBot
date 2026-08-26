@@ -644,22 +644,27 @@ document.addEventListener("DOMContentLoaded", async () => {
   const robotModeBadge = document.getElementById("robotModeBadge");
   const robotAutoBtn = document.getElementById("robotAutoBtn");
   const driveButtons = document.querySelectorAll("[data-drive]");
+  const joystickBase = document.getElementById("robotJoystickBase");
+  const joystickKnob = document.getElementById("robotJoystickKnob");
+  const joystickSpeedEl = document.getElementById("robotJoystickSpeed");
+  const joystickTurnEl = document.getElementById("robotJoystickTurn");
+  const camDpadButtons = document.querySelectorAll("[data-cam]");
+  const camResetBtn = document.getElementById("robotCamResetBtn");
+  const camPanValEl = document.getElementById("robotCamPanVal");
+  const camTiltValEl = document.getElementById("robotCamTiltVal");
 
   const DRIVE_VALUES = {
-    forward: { speed: 70, turn: 0 },
-    backward: { speed: -70, turn: 0 },
-    left: { speed: 0, turn: -90 },
-    right: { speed: 0, turn: 90 },
     stop: { speed: 0, turn: 0 },
   };
 
-  // 로봇이 아직 사진을 한 번도 안 올렸거나 오프라인이면 서명 URL 발급이 실패하거나
-  // 이미지 자체가 안 뜬다 — 예전에는 콘솔 경고만 남기고 화면에는 깨진 이미지 아이콘만
-  // 보여서 "로봇 기능이 전체적으로 고장 났다"처럼 보였다(GPT 리뷰 지적). 이제는 상태를
-  // 명확히 문구로 보여주고 마지막 수신 시각 + 다시 불러오기 버튼을 제공한다.
+  // 카메라 모드: "stream"(로컬 MJPEG 초고속 직결) | "snapshot"(Supabase 클라우드 스냅샷) | "offline"
+  let robotCameraMode = "init";
   let robotCameraLastOkAt = null;
+  let robotCurrentIp = null;
+  let robotHealthCheckTick = 0;
 
   function showRobotCameraOffline(message) {
+    robotCameraMode = "offline";
     robotCameraImg.style.display = "none";
     const lastText = robotCameraLastOkAt
       ? `마지막 수신: ${robotCameraLastOkAt.toLocaleTimeString("ko-KR")}`
@@ -669,10 +674,16 @@ document.addEventListener("DOMContentLoaded", async () => {
       <p class="robot-camera-meta mono">${lastText} · 시뮬레이션/실기기 연결 대기 중일 수 있습니다</p>
       <button type="button" class="btn btn-secondary btn-sm" id="robotCameraRetryBtn">다시 불러오기</button>
     `;
-    document.getElementById("robotCameraRetryBtn").addEventListener("click", refreshRobotCamera);
+    const retryBtn = document.getElementById("robotCameraRetryBtn");
+    if (retryBtn) {
+      retryBtn.addEventListener("click", () => {
+        robotCameraMode = "init";
+        refreshRobotCamera();
+      });
+    }
   }
 
-  async function refreshRobotCamera() {
+  async function loadSnapshotFallback() {
     let url;
     try {
       url = await window.LabBotRobotConsole.cameraSnapshotUrl();
@@ -682,18 +693,78 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
-    // 서명 URL 발급은 성공해도 실제 latest.jpg가 없거나 로봇이 오프라인이면 이미지 로드
-    // 자체가 실패할 수 있어서, onload/onerror로 실제 표시 여부를 한 번 더 확인한다.
     robotCameraImg.onload = () => {
+      robotCameraMode = "snapshot";
       robotCameraLastOkAt = new Date();
       robotCameraImg.style.display = "block";
-      robotCameraStatus.innerHTML = "";
+      robotCameraStatus.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+          <span class="badge badge-st-open" style="font-size: 11px;"><span class="badge-dot"></span>클라우드 스냅샷 모드</span>
+          <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 11px;" id="retryDirectStreamBtn">실시간 직결 시도</button>
+        </div>
+      `;
+      const btn = document.getElementById("retryDirectStreamBtn");
+      if (btn) {
+        btn.addEventListener("click", () => {
+          robotCameraMode = "init";
+          refreshRobotCamera();
+        });
+      }
     };
     robotCameraImg.onerror = () => {
       showRobotCameraOffline("스냅샷 이미지를 불러오지 못했습니다");
     };
     robotCameraImg.src = url;
   }
+
+  async function refreshRobotCamera() {
+    robotHealthCheckTick++;
+
+    // 1. 이미 실시간 직결 스트림이 정상 수신 중인 경우
+    if (robotCameraMode === "stream") {
+      // 5초마다 백그라운드 헬스체크 워치독 실행 -> 로봇이 갑자기 꺼졌을 때 자동 감지
+      if (robotHealthCheckTick % 5 === 0 && robotCurrentIp) {
+        const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(robotCurrentIp);
+        if (!isHealthy) {
+          console.warn("LabBot: 실시간 스트림 연결 끊김 감지 -> 스냅샷 모드로 전환");
+          robotCameraMode = "init";
+          await loadSnapshotFallback();
+        }
+      }
+      return;
+    }
+
+    // 2. 로봇의 로컬 IP가 확인되면 로컬 MJPEG 초고속 직결(30 FPS / ~30ms) 우선 시도
+    const localIp = await window.LabBotRobotConsole.fetchRobotIp();
+    robotCurrentIp = localIp;
+    const streamUrl = window.LabBotRobotConsole.getDirectStreamUrl(localIp);
+
+    if (streamUrl && (robotCameraMode === "init" || robotCameraMode === "offline" || robotHealthCheckTick % 5 === 0)) {
+      const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(localIp);
+      if (isHealthy) {
+        robotCameraImg.onload = () => {
+          robotCameraMode = "stream";
+          robotCameraLastOkAt = new Date();
+          robotCameraImg.style.display = "block";
+          robotCameraStatus.innerHTML = `
+            <div style="margin-top: 6px;">
+              <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>실시간 직결 스트림 (${localIp}:8080)</span>
+            </div>
+          `;
+        };
+        robotCameraImg.onerror = () => {
+          console.info("LabBot: 로컬 직결 스트림 오류 -> Supabase 스냅샷으로 자동 전환");
+          loadSnapshotFallback();
+        };
+        robotCameraImg.src = streamUrl;
+        return;
+      }
+    }
+
+    // 3. 직결 불가능하거나 스냅샷 모드일 때 스냅샷 폴링 갱신
+    await loadSnapshotFallback();
+  }
+
 
   async function refreshRobotModeBadge() {
     try {
@@ -719,6 +790,161 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
+  // 조이스틱: 원 안에서 드래그한 만큼 실시간으로 speed/turn을 보낸다(자동차 게임 방식).
+  // 방향 버튼(한 번 클릭 -> 그 방향으로 계속 이동)이 답답하다는 피드백(2026-08-26)으로 교체.
+  const JOY_SPEED_MAX = 70; // controller.py의 SPEED(70)와 동일 스케일
+  const JOY_TURN_MAX = 90; // controller.py의 TURN_GAIN(90)과 동일 스케일
+  const JOY_SEND_INTERVAL_MS = 150; // 드래그 중 너무 자주 DB에 쓰지 않도록 throttle
+  const JOY_KEEPALIVE_MS = 700; // 손을 안 움직여도 3초 dead-man switch보다 훨씬 짧게 계속 갱신
+
+  let joyDragging = false;
+  let joyRadius = 0;
+  let joyLastSpeed = 0;
+  let joyLastTurn = 0;
+  let joyLastSentAt = 0;
+  let joyKeepaliveTimer = null;
+
+  function joySetKnob(dx, dy) {
+    joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  }
+
+  async function joySendCommand(speed, turn) {
+    try {
+      await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", speed, turn });
+    } catch (err) {
+      window.LabBotToast.error("원격조작 명령을 보내지 못했습니다: " + (err.message || err));
+    }
+  }
+
+  function joyUpdateFromPointer(clientX, clientY) {
+    const rect = joystickBase.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    let dx = clientX - cx;
+    let dy = clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist > joyRadius) {
+      dx = (dx / dist) * joyRadius;
+      dy = (dy / dist) * joyRadius;
+    }
+    joySetKnob(dx, dy);
+
+    const speed = Math.round((-dy / joyRadius) * JOY_SPEED_MAX);
+    const turn = Math.round((dx / joyRadius) * JOY_TURN_MAX);
+    joyLastSpeed = speed;
+    joyLastTurn = turn;
+    joystickSpeedEl.textContent = speed;
+    joystickTurnEl.textContent = turn;
+
+    const now = Date.now();
+    if (now - joyLastSentAt >= JOY_SEND_INTERVAL_MS) {
+      joyLastSentAt = now;
+      joySendCommand(speed, turn);
+    }
+  }
+
+  function joyEnd() {
+    if (!joyDragging) return;
+    joyDragging = false;
+    joystickBase.classList.remove("is-dragging");
+    joySetKnob(0, 0);
+    joyLastSpeed = 0;
+    joyLastTurn = 0;
+    joystickSpeedEl.textContent = "0";
+    joystickTurnEl.textContent = "0";
+    if (joyKeepaliveTimer) {
+      clearInterval(joyKeepaliveTimer);
+      joyKeepaliveTimer = null;
+    }
+    joySendCommand(0, 0); // 손을 떼면 그 자리에서 즉시 정지
+    window.removeEventListener("pointermove", joyOnMove);
+    window.removeEventListener("pointerup", joyEnd);
+  }
+
+  function joyOnMove(e) {
+    if (!joyDragging) return;
+    joyUpdateFromPointer(e.clientX, e.clientY);
+  }
+
+  joystickBase.addEventListener("pointerdown", (e) => {
+    joyDragging = true;
+    joystickBase.classList.add("is-dragging");
+    const rect = joystickBase.getBoundingClientRect();
+    joyRadius = rect.width / 2 - joystickKnob.offsetWidth / 2;
+    joyUpdateFromPointer(e.clientX, e.clientY);
+    joyKeepaliveTimer = setInterval(() => {
+      // 드래그한 채로 손을 안 움직여도 dead-man switch(3초)에 안 걸리도록 주기적으로 재전송
+      joySendCommand(joyLastSpeed, joyLastTurn);
+    }, JOY_KEEPALIVE_MS);
+    window.addEventListener("pointermove", joyOnMove);
+    window.addEventListener("pointerup", joyEnd);
+  });
+
+  // 카메라 각도 십자패드: 누르고 있는 동안 그 방향으로 서보가 계속 움직이고, 손을 떼면
+  // (조이스틱과 달리) 그 각도에서 그대로 멈춘다 — 카메라는 "중앙 복귀"가 기본값이 아니라
+  // 사용자가 마지막으로 본 방향을 계속 보고 있는 게 자연스럽기 때문이다.
+  const CAM_STEP_DEG = 4;
+  const CAM_REPEAT_MS = 120;
+  const CAM_ANGLE_MIN = 0;
+  const CAM_ANGLE_MAX = 180;
+  const CAM_ANGLE_CENTER = 90;
+
+  let camPan = CAM_ANGLE_CENTER;
+  let camTilt = CAM_ANGLE_CENTER;
+  let camRepeatTimer = null;
+
+  function camClamp(v) {
+    return Math.max(CAM_ANGLE_MIN, Math.min(CAM_ANGLE_MAX, v));
+  }
+
+  function camRender() {
+    camPanValEl.textContent = camPan;
+    camTiltValEl.textContent = camTilt;
+  }
+
+  async function camSend() {
+    try {
+      await window.LabBotRobotConsole.setCameraAngle({ cam_pan: camPan, cam_tilt: camTilt });
+    } catch (err) {
+      window.LabBotToast.error("카메라 각도 명령을 보내지 못했습니다: " + (err.message || err));
+    }
+  }
+
+  function camStep(direction) {
+    if (direction === "up") camTilt = camClamp(camTilt - CAM_STEP_DEG);
+    else if (direction === "down") camTilt = camClamp(camTilt + CAM_STEP_DEG);
+    else if (direction === "left") camPan = camClamp(camPan - CAM_STEP_DEG);
+    else if (direction === "right") camPan = camClamp(camPan + CAM_STEP_DEG);
+    camRender();
+    camSend();
+  }
+
+  function camStopRepeat() {
+    if (camRepeatTimer) {
+      clearInterval(camRepeatTimer);
+      camRepeatTimer = null;
+    }
+    camDpadButtons.forEach((b) => b.classList.remove("is-active"));
+    window.removeEventListener("pointerup", camStopRepeat);
+  }
+
+  camDpadButtons.forEach((btn) => {
+    btn.addEventListener("pointerdown", () => {
+      const direction = btn.dataset.cam;
+      btn.classList.add("is-active");
+      camStep(direction); // 누르자마자 한 번 즉시 반응
+      camRepeatTimer = setInterval(() => camStep(direction), CAM_REPEAT_MS);
+      window.addEventListener("pointerup", camStopRepeat);
+    });
+  });
+
+  camResetBtn.addEventListener("click", () => {
+    camPan = CAM_ANGLE_CENTER;
+    camTilt = CAM_ANGLE_CENTER;
+    camRender();
+    camSend();
+  });
+
   robotAutoBtn.addEventListener("click", async () => {
     try {
       await window.LabBotRobotConsole.setRobotCommand({ mode: "auto", speed: 0, turn: 0 });
@@ -734,8 +960,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     robotConsoleStarted = true;
     refreshRobotCamera();
     refreshRobotModeBadge();
-    setInterval(refreshRobotCamera, 2000);
-    setInterval(refreshRobotModeBadge, 3000);
+    setInterval(refreshRobotCamera, 1000);
+    setInterval(refreshRobotModeBadge, 1000);
+
+    // 카메라 각도 초기값을 화면 기본값(90/90)이 아니라 실제 로봇 마지막 상태로 맞춘다.
+    // cam_pan/cam_tilt 컬럼이 아직 없으면(마이그레이션 전) 여기만 실패하고 화면 기본값
+    // 그대로 쓴다 — 모드 배지/카메라 스냅샷 등 나머지 폴링에는 영향 없음.
+    window.LabBotRobotConsole.fetchCameraAngle()
+      .then((cmd) => {
+        if (typeof cmd.cam_pan === "number") camPan = cmd.cam_pan;
+        if (typeof cmd.cam_tilt === "number") camTilt = cmd.cam_tilt;
+        camRender();
+      })
+      .catch(() => {
+        console.warn("LabBot: 카메라 초기 각도를 못 불러왔습니다(마이그레이션 미실행일 수 있음)");
+      });
   }
 
   function updateAuditSelectedCount() {

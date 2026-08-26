@@ -231,29 +231,51 @@
           <h3 style="margin: 0;">Robot Console</h3>
           <span class="badge badge-st-open" id="robotModeBadge"><span class="badge-dot"></span>-</span>
         </div>
-        <div class="robot-camera-wrap">
-          <img
-            id="robotCameraImg"
-            alt="로봇 카메라 스냅샷"
-            style="width: 100%; border-radius: 8px; border: 1px solid var(--border); display: none; background: var(--bg);"
-          />
-          <div class="robot-camera-status" id="robotCameraStatus"></div>
+        <div class="robot-console-layout">
+          <div class="robot-joystick-col">
+            <div class="robot-joystick-base" id="robotJoystickBase">
+              <div class="robot-joystick-knob" id="robotJoystickKnob"></div>
+            </div>
+            <div class="robot-joystick-readout">
+              <span>속도 <span class="mono" id="robotJoystickSpeed">0</span></span>
+              <span>회전 <span class="mono" id="robotJoystickTurn">0</span></span>
+            </div>
+          </div>
+
+          <div class="robot-camera-wrap">
+            <img
+              id="robotCameraImg"
+              alt="로봇 카메라 스냅샷"
+              style="width: 100%; border-radius: 8px; border: 1px solid var(--border); display: none; background: var(--bg);"
+            />
+            <div class="robot-camera-status" id="robotCameraStatus"></div>
+          </div>
+
+          <div class="robot-dpad-col">
+            <div class="robot-dpad" id="robotCamDpad">
+              <button type="button" class="robot-dpad-btn robot-dpad-up" data-cam="up" aria-label="카메라 위로">▲</button>
+              <button type="button" class="robot-dpad-btn robot-dpad-left" data-cam="left" aria-label="카메라 왼쪽">◀</button>
+              <button type="button" class="robot-dpad-btn robot-dpad-center" id="robotCamResetBtn" aria-label="카메라 정면 복귀">⌂</button>
+              <button type="button" class="robot-dpad-btn robot-dpad-right" data-cam="right" aria-label="카메라 오른쪽">▶</button>
+              <button type="button" class="robot-dpad-btn robot-dpad-down" data-cam="down" aria-label="카메라 아래로">▼</button>
+            </div>
+            <div class="robot-joystick-readout">
+              <span>팬 <span class="mono" id="robotCamPanVal">90</span>°</span>
+              <span>틸트 <span class="mono" id="robotCamTiltVal">90</span>°</span>
+            </div>
+          </div>
         </div>
         <div class="safety-actions">
-          <button type="button" class="btn btn-secondary btn-sm" data-drive="forward">▲ 전진</button>
-          <button type="button" class="btn btn-secondary btn-sm" data-drive="left">◀ 좌회전</button>
           <button type="button" class="btn btn-danger btn-sm" data-drive="stop">■ 정지</button>
-          <button type="button" class="btn btn-secondary btn-sm" data-drive="right">▶ 우회전</button>
-          <button type="button" class="btn btn-secondary btn-sm" data-drive="backward">▼ 후진</button>
           <button type="button" class="btn btn-primary btn-sm" id="robotAutoBtn">자동 순찰로 복귀</button>
         </div>
         <p class="robot-console-key-note" style="margin-top: 10px;">
           ⏱ 명령이 <strong>3초</strong> 이상 갱신되지 않으면 자동 정지 · 🛑 <strong>장애물 앞에서는 강제 정지</strong>(원격으로 해제 불가 — 현장 확인 필요)
         </p>
         <p class="mono" style="color: var(--text-faint); margin-top: 6px;">
-          방향 버튼은 누르고 있는 동안 이동하는 게 아니라, 한 번 클릭하면 그 방향으로 움직이기
-          시작하는 방식입니다(연결이 끊겨도 계속 움직이는 사고를 막기 위함) — 계속 이동하려면 같은
-          버튼을 반복해서 눌러주세요. 카메라는 실시간 영상이 아니라 몇 초 간격 스냅샷입니다.
+          왼쪽 원은 드래그해서 주행(위/아래=속도, 좌/우=회전, 손을 떼면 즉시 정지)하고, 오른쪽
+          십자패드는 카메라 각도만 따로 조절합니다(주행에는 영향 없음). 카메라는 로컬망 직결 시 30 FPS
+          초저지연 실시간 영상으로 송출되며, 외부망 접속 시 클라우드 스냅샷으로 자동 전환됩니다.
         </p>
       </div>
 
@@ -386,7 +408,7 @@
   <script src="js/items-data.js"></script>
   <script src="js/rentals.js"></script>
   <script src="js/safety-data.js"></script>
-  <script src="js/robot-console-data.js"></script>
+  <script src="js/robot-console-data.js?v=20260826"></script>
   <script src="js/audit-data.js"></script>
   <script src="js/damage-data.js"></script>
   <script src="js/stock-adjustments-data.js"></script>

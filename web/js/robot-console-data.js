@@ -4,12 +4,26 @@
 // 카메라는 실시간 영상이 아니라, 로봇이 몇 초에 한 번씩 올리는 스냅샷을 새로 불러오는 방식이다.
 
 // robot-camera 버킷이 비공개로 바뀌면서(docs/labbot_schema.sql 19번 섹션) 고정 공개 URL을
-// 못 쓴다 — 매번 짧게 유효한 서명 URL을 새로 발급받는다. RLS(robot_camera_read_admin)가
-// 관리자만 통과시키므로, 이 함수도 관리자 화면(admin.js)에서만 호출된다.
+// 못 쓴다 — 짧게 유효한 서명 URL을 발급받는다. RLS(robot_camera_read_admin)가 관리자만
+// 통과시키므로, 이 함수도 관리자 화면(admin.js)에서만 호출된다.
+//
+// 폴링 주기(1초)마다 매번 새 서명 URL을 발급받으면 Storage API 호출이 그만큼 늘어난다 —
+// 서명 URL 자체는 60초 유효하게 발급받아두고, 그 안에서는 캐시된 URL을 재사용하면서
+// 뒤에 타임스탬프 쿼리만 붙여 브라우저 캐시를 무력화한다(같은 URL이면 이미지가 안 바뀐
+//것처럼 캐시된 그림을 계속 보여줄 수 있어서).
+let _cachedSignedUrl = null;
+let _cachedSignedUrlExpiresAt = 0;
+
 async function cameraSnapshotUrl() {
-  const { data, error } = await supabaseClient.storage.from("robot-camera").createSignedUrl("latest.jpg", 30);
-  if (error) throw error;
-  return data.signedUrl;
+  const now = Date.now();
+  if (!_cachedSignedUrl || now > _cachedSignedUrlExpiresAt) {
+    const { data, error } = await supabaseClient.storage.from("robot-camera").createSignedUrl("latest.jpg", 60);
+    if (error) throw error;
+    _cachedSignedUrl = data.signedUrl;
+    _cachedSignedUrlExpiresAt = now + 55_000; // 60초 유효 중 55초까지만 재사용(여유분 5초)
+  }
+  const bust = _cachedSignedUrl.includes("?") ? "&" : "?";
+  return `${_cachedSignedUrl}${bust}_ts=${now}`;
 }
 
 async function fetchRobotCommand() {
@@ -22,17 +36,86 @@ async function fetchRobotCommand() {
   return data;
 }
 
-// mode: "auto" | "manual". manual일 때만 speed/turn이 실제로 로봇을 움직인다.
-async function setRobotCommand({ mode, speed = 0, turn = 0 }) {
-  const { error } = await supabaseClient
+// local_ip는 fetchRobotCommand와 분리 — 아직 마이그레이션 전이어도 기본 명령 폴링은 안전하게 유지
+async function fetchRobotIp() {
+  try {
+    const { data, error } = await supabaseClient
+      .from("robot_commands")
+      .select("local_ip")
+      .eq("id", 1)
+      .single();
+    if (error) return null;
+    return data && data.local_ip ? data.local_ip.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function getDirectStreamUrl(localIp, port = 8080) {
+  if (!localIp || localIp === "127.0.0.1") return null;
+  return `http://${localIp}:${port}/stream`;
+}
+
+// 스트림 서버의 /health 엔드포인트를 빠르게 찔러보아 로컬 직결 가능 여부를 판별한다.
+async function checkStreamHealth(localIp, port = 8080, timeoutMs = 1200) {
+  if (!localIp || localIp === "127.0.0.1") return false;
+  const url = `http://${localIp}:${port}/health`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const resp = await fetch(url, { method: "GET", mode: "cors", signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    return data && data.streaming === true;
+  } catch {
+    return false;
+  }
+}
+
+// cam_pan/cam_tilt는 fetchRobotCommand와 일부러 분리했다 — 이 두 컬럼은
+// docs/labbot_schema.sql의 마이그레이션을 실행해야 생기는데, 아직 안 돌렸으면 이 조회만
+// 실패하고(cam 초기값은 화면 기본값 90/90으로 대체) 모드 배지 등 나머지 폴링은 계속
+// 정상 동작해야 하기 때문이다.
+async function fetchCameraAngle() {
+  const { data, error } = await supabaseClient
     .from("robot_commands")
-    .update({ mode, speed, turn, updated_at: new Date().toISOString() })
-    .eq("id", 1);
+    .select("cam_pan, cam_tilt")
+    .eq("id", 1)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// mode: "auto" | "manual". manual일 때만 speed/turn이 실제로 로봇을 움직인다.
+// cam_pan/cam_tilt: 0~180도 서보 각도(생략하면 기존 값 유지 — 매번 안 보내도 됨).
+async function setRobotCommand({ mode, speed = 0, turn = 0, cam_pan, cam_tilt }) {
+  const payload = { mode, speed, turn, updated_at: new Date().toISOString() };
+  if (cam_pan !== undefined) payload.cam_pan = cam_pan;
+  if (cam_tilt !== undefined) payload.cam_tilt = cam_tilt;
+  const { error } = await supabaseClient.from("robot_commands").update(payload).eq("id", 1);
+  if (error) throw error;
+}
+
+// 카메라 각도만 바꿀 때는 mode/speed/turn을 건드리지 않는다 — 주행 중에 카메라만 돌려도
+// 로봇이 갑자기 멈추거나 자동/수동 모드가 바뀌면 안 되기 때문에, robot_commands의
+// mode/speed/turn은 그대로 두고 cam_pan/cam_tilt만 갱신하는 별도 함수로 분리했다.
+async function setCameraAngle({ cam_pan, cam_tilt }) {
+  const payload = {};
+  if (cam_pan !== undefined) payload.cam_pan = cam_pan;
+  if (cam_tilt !== undefined) payload.cam_tilt = cam_tilt;
+  const { error } = await supabaseClient.from("robot_commands").update(payload).eq("id", 1);
   if (error) throw error;
 }
 
 window.LabBotRobotConsole = {
   cameraSnapshotUrl,
   fetchRobotCommand,
+  fetchRobotIp,
+  getDirectStreamUrl,
+  checkStreamHealth,
+  fetchCameraAngle,
   setRobotCommand,
+  setCameraAngle,
 };
+

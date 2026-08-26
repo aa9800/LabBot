@@ -1,203 +1,70 @@
-# LabKeeper Robot Sim — 로봇 오기 전 연습용 시뮬레이터
+# LabKeeper Robot — 실물 로봇 + 웹 실시간 연동 + Isaac Sim
 
-Raspbot과 아두이노가 도착하기 전에, **라인트래킹 → 정지 → QR 스캔 → 장애물 회피**라는
-실사 순찰 판단 로직을 화면 위 가상 로봇으로 미리 짜고 연습하는 도구입니다.
+**2026-08-27부터**: 실제 Raspbot(Raspberry Pi 5)이 도착해서 개발/시연의 중심을
+**실물 로봇**으로 옮겼습니다. pygame 연습용 시뮬레이터와 Webots 시뮬레이터는
+`_archive_pygame_webots/`로 옮겨두었습니다(삭제는 아님 — 필요하면 꺼내 쓸 수 있게 보관만).
 
-## 핵심 아이디어 — HAL(하드웨어 추상화)
+## 핵심 3축
+
+이제부터 데모/개발은 이 세 가지로 통일합니다.
+
+1. **실물 로봇 (Raspbot)** — `real_hal.py` + `run_real.py`
+   실제로 라인트래킹/장애물회피/QR스캔이 동작하는 걸 직접 보여주는 축.
+2. **웹 실시간 연동** — `stream_server.py` + `notify_supabase.py` + `web/js/robot-console-data.js`
+   로봇 상태·카메라·명령이 LabKeeper 웹(Robot Console/안전 이벤트 화면)에 실시간으로
+   뜨는 걸 보여주는 축. DB(Supabase)는 명령/Safety 기록의 source of truth로 계속 쓰고,
+   카메라만 로컬 MJPEG 직결로 지연을 없앤다.
+3. **Isaac Sim** — `isaac_project/`
+   실험실 환경을 가상으로 재현해서 디테일(레이아웃, 여러 대 동시 시뮬레이션 등)을
+   보여주는 시연용 축. 실물 로봇을 대체하는 게 아니라 "가상 실험실"을 보여주는 용도.
+
+## HAL(하드웨어 추상화) 원칙 — 그대로 유지
 
 ```
 controller.py         판단 로직. "센서가 이렇게 읽히면 이렇게 움직인다"만 안다.
-                       pygame도, GPIO도 모른다 — 그래서 그대로 재사용 가능하다.
+                       GPIO도, Isaac도 모른다 — 그래서 그대로 재사용된다.
         │
-        ├─ sim/hal_sim.py   지금 쓰는 것. 가상 로봇(pygame)에 값을 묻고 명령한다.
-        └─ real_hal.py      나중에 Raspbot이 오면 이 파일만 채운다 (지금은 TODO만 있음).
+        ├─ real_hal.py           실물 Raspbot (지금의 기본 실행 환경)
+        └─ isaac_project/isaac_hal.py   Isaac Sim (가상 실험실 시연용)
 ```
 
 `controller.py`는 딱 5개 메서드만 있으면 동작합니다: `read_line_sensors()`,
-`read_ultrasonic()`, `try_read_qr()`, `set_motion()`, `stop()`.
-지금은 `sim/hal_sim.py`가 이 메서드들에 답하고, 나중에는 `real_hal.py`가 똑같은
-이름으로 답합니다 — **판단 로직 코드를 한 글자도 안 바꿔도** 실제 로봇으로 넘어갑니다.
+`read_ultrasonic()`, `try_read_qr()`, `set_motion()`, `stop()`. 이 시그니처는
+플랫폼이 바뀌어도 절대 안 바꿉니다.
 
-## 실행 방법
+## 실물 로봇 실행
 
-```bash
-pip install -r requirements.txt
-python main.py
-```
-
-pygame 창이 뜨고 가상 로봇이 사각형 순찰로를 따라 스스로 돕니다.
-
-**조작**
-
-| 키 | 동작 |
-|---|---|
-| `SPACE` | 로봇이 보고 있는 방향 바로 앞에 장애물 놓기 (초음파 회피 테스트) |
-| `C` | 장애물 전체 치우기 |
-| `R` | 로봇 위치 초기화 |
-| `ESC` | 종료 |
-
-화면 왼쪽 위 로그에 "QR 스캔: ..." / "장애물 감지 — 정지" 같은 이벤트가 표시됩니다.
-창은 로컬 파이썬 GUI라서, 이 세션에서 대신 열어드릴 수는 없습니다 — 직접 `python main.py`로 띄워서 확인해주세요.
-
-## 창 없이 로직만 빠르게 검증하기
+로봇(`~/labkeeper`)에서:
 
 ```bash
-python check_logic.py
+python3 run_real.py
 ```
 
-pygame 창 없이 2000틱을 빠르게 돌려서, 로직이 죽지 않고 마커를 순서대로 스캔하는지만 확인합니다.
-컨트롤러 로직을 고칠 때마다 이걸로 먼저 빠르게 확인하고, `main.py`로 눈으로 재확인하는 순서를 추천합니다.
+- 카메라: 백그라운드 스레드가 순찰 로직과 무관하게 항상 캡처 → `stream_server.py`가
+  `http://<로봇IP>:8080/stream`으로 MJPEG 직결 송출 (Supabase를 거치지 않아 지연이 거의 없음).
+- 명령/Safety: 계속 Supabase(`robot_commands`, `safety_events`)를 거친다 — 3초
+  dead-man switch, 안전 이벤트 폐쇄루프(`NEEDS_REVIEW → ... → CLOSED`)는 여기서 보장.
+- 로봇 자체 핫스팟(인터넷 없음)일 때는 `supabase_relay.py`를 PC에서 띄워 중계 가능
+  (파일 상단 주석 참고).
 
-## LabKeeper 웹과 연동 (Supabase 직접 연결)
+## Isaac Sim 실행
 
-> **2026-08-25 변경**: 예전엔 `notify.py`가 로컬 FastAPI 서버(`labkeeper-web-local`,
-> `127.0.0.1:8000`)를 봤지만, 그 로컬웹은 더 이상 쓰지 않기로 해서 **pygame도 Webots와
-> 똑같이 `notify_supabase.py`로 통일**했다 — 둘 다 실제 서비스 웹(Supabase)에 직접 붙는다.
-> `notify.py`는 삭제했다. 아래 1~3번 설정을 먼저 해야 물품/체크포인트를 불러올 수 있다.
+`isaac_project/` 참고 — 런타임은 `C:\Users\a9800\isaac_clean` (Python 3.12.10, Isaac Sim 6.0.1.0).
 
-1. `robot-sim/.env.example`을 복사해서 `robot-sim/.env`로 저장
-2. Supabase 대시보드 > Project Settings > API Keys > **Secret key**(Owner/Admin만 보임)를
-   확인해서 `.env`에 채움 — publishable key가 아니라 **secret key**를 써야 한다. 로그인
-   세션이 없는 로봇 스크립트는 RLS를 통과 못 해서, RLS를 우회하는 secret key로만 물품
-   목록을 읽고 안전이벤트를 쓸 수 있다.
-3. `.env`는 git에 안 올라간다 — 이 secret key는 절대 `web/`(브라우저 코드)에 넣지 않는다.
-
-`.env`가 없거나 값이 비어 있으면 콘솔과 화면 로그에 안내 메시지가 뜨고, 체크포인트는 빈
-목록으로 시작해서 그래도 라인트래킹/장애물 로직만은 정상 동작한다 — 원인이 ".env 미설정"인지
-"서버 연결 실패"인지도 화면 로그에서 구분해서 보여준다(`notify_supabase.is_configured()`).
-
-`main.py`는 시작할 때 웹의 실제 물품 목록(`items` 테이블)을 가져와서 **위치(location)별로
-가상 선반(체크포인트)을 자동으로 만든다.** 즉 "실험실을 꾸미는" 방법은 이 코드를 고치는 게
-아니라 **웹 admin.html에서 물품을 등록하는 것**이다 — 등록한 위치가 곧 가상 지도가 된다.
-
-1. 웹에서 물품을 원하는 만큼 등록(위치는 관리자 화면의 9개 고정 위치 중 선택)
-2. `python main.py` 실행 → 그 위치들이 화면에 체크포인트로 나타남 (괄호 안 숫자 = 그 선반의 남은 물품 수)
-3. 로봇이 각 체크포인트에 멈출 때마다 그 선반의 물품을 "스캔"해서 기록
-4. `M` 키로 무작위 물품 하나를 몰래 없애서 실사 불일치 상황을 만들어볼 수 있음
-5. `F` 키를 누르면 지금까지 스캔한 결과와 전체 물품 목록을 **로컬에서 비교**해 불일치를
-   화면 로그에 보여준다 — 몰래 없앤 물품이 정확히 잡힌다. **주의**: 아직 `audit_sessions`
-   DB에 실제로 기록되지는 않는다(`run_inventory_audit()` RPC 연동은 다음 단계 예정) — 지금은
-   로직 검증용 로컬 계산까지만이라는 걸 명확히 구분해서 알아두면 된다.
-6. `N` 키로 스캔 기록을 초기화하고 다시 순찰
-
-## LabKeeper 웹과 연동 (Safety 이벤트)
-
-장애물을 감지할 때마다 `notify_supabase.py`가 Supabase `safety_events` 테이블에 직접
-`POST`로 이벤트를 넣는다(항상 `NEEDS_REVIEW`로 시작, 자동 확정 없음). 웹의 **관리자 > 안전
-이벤트** 메뉴에서 실제로 확인·조치·해결·종결까지 눌러볼 수 있다 — 로봇 없이도 "감지 → 검토 →
-조치 → 종결"이라는 전체 폐쇄루프를 지금 바로 연습할 수 있는 부분이다.
-
-`.env`가 없거나 네트워크가 안 되어도 시뮬레이터는 죽지 않는다(콘솔에 전송 실패 로그만
-남긴다). 같은 장애물이 계속 있는 동안은 한 번만 보내고, 장애물이 사라지면 "장애물 제거됨"
-로그를 남긴다 — 매 프레임 스팸을 보내지 않는다.
-
-## 반복 가능한 스모크 테스트
+## 검증(사람 눈 없이 로직만 빠르게 확인)
 
 ```bash
-python smoke_test.py
+python real_hal_smoke_test.py   # RPi.GPIO 등을 mock으로 대체 — PC에서도 모터 믹싱/클램프 로직만 검증
 ```
 
-컨트롤러 로직(장애물 감지/해제)과 `notify_supabase.py`가 네트워크 실패 상황에서도 죽지
-않고 안전한 기본값을 돌려주는지 자동으로 확인한다(실제 네트워크 호출은 절대 하지 않음 —
-이 로컬 환경의 `.env`가 실제 프로덕션 Supabase를 가리키고 있어서, 진짜로 호출하면
-프로덕션 DB에 테스트 이벤트가 들어가 버리기 때문). Webots 쪽(3D 렌더링, 실제 장애물 정지,
-웹에 이벤트가 뜨는지)은 GUI 프로그램이라 자동화할 수 없어서, 실행하면 마지막에 사람이
-Webots에서 직접 확인할 체크리스트를 출력해준다.
+GPIO 읽기/쓰기·초음파 타이밍·카메라 캡처처럼 진짜 하드웨어가 있어야 의미 있는 부분은
+여기서 검증하지 않습니다 — 로봇 위에서 사람이 직접 확인합니다.
 
-## Webots 3D 주 개발·발표 환경
+## `_archive_pygame_webots/` — 보관된 이전 시뮬레이터
 
-pygame 버전은 로직을 빠르게 검증하는 **단위테스트용**으로 계속 씁니다(위 내용 그대로 유효).
-개발과 발표에서 보여줄 **3D 연구실**은 `webots_project/`에 만들었습니다 — `controller.py`는
-여기서도 똑같이 재사용하고, 새로 만든 `WebotsHAL`만 갈아 끼운 구조입니다.
-
-```
-controller.py (그대로, 수정 없음)
-        │
-        ├─ sim/hal_sim.py                              pygame용 (단위테스트)
-        └─ webots_project/controllers/labkeeper_controller/webots_hal.py   Webots용 (주 개발·발표)
-```
-
-**실행 방법**
-
-1. Webots 실행 (설치되어 있어야 함: https://cyberbotics.com)
-2. `File > Open World...` → `robot-sim/webots_project/worlds/lab.wbt` 선택
-3. 월드가 열리면 자동으로 로봇이 라인을 따라 순찰을 시작합니다 (재생 버튼이 꺼져 있으면 ▶ 눌러서 시작)
-4. `.env`가 설정돼 있으면 별도 FastAPI 서버 없이 Supabase로 물품 위치·명령·Safety 이벤트·
-   카메라 스냅샷을 직접 주고받습니다.
-
-**웹 DB와 연동(중요)**: 체크포인트는 더 이상 하드코딩이 아니라, 실제 웹(Supabase)에
-등록된 물품들의 위치(location)를 그대로 가져와서 자동으로 만든다 — 물품을 웹에서
-새로 등록하면 다음 실행부터 그 위치가 체크포인트가 된다. 이걸 쓰려면 먼저:
-
-1. `robot-sim/.env.example`을 복사해서 `robot-sim/.env`로 저장
-2. Supabase 대시보드 > Project Settings > API Keys > **Secret key**(Owner/Admin만 보임,
-   안 보이면 지훈님께 요청)를 확인해서 `.env`에 채움 — publishable key가 아니라
-   **secret key**를 써야 한다. 로그인 세션이 없는 로봇 스크립트는 RLS를 통과 못 해서,
-   RLS를 우회하는 secret key로만 물품 목록을 읽고 안전이벤트를 쓸 수 있다.
-3. `.env`는 git에 안 올라간다 — 이 secret key는 절대 `web/`(브라우저 코드)에 넣지 않는다.
-
-`.env`가 없거나 값이 비어 있으면 콘솔에 안내 메시지가 뜨고, 웹과 같은 9개 연구실 위치
-(일반실험실/기기실-1/기기실-2/세포배양실/시약보관실/냉장보관실/냉동보관실/
-소모품보관실/안전장비함)를 고정 체크포인트로 사용한다.
-
-**월드가 깨졌을 때 복구하는 법**: `lab.wbt`를 Webots에서 열어 실수로 "Save"를 누르면(장애물을
-지우거나 옮긴 상태 그대로 저장됨) 장애물(`OBSTACLE_1`)이 사라질 수 있다. 이럴 땐 기준
-월드(`lab_baseline.wbt`)로 되돌리면 된다:
-
-```bash
-cp robot-sim/webots_project/worlds/lab_baseline.wbt robot-sim/webots_project/worlds/lab.wbt
-```
-
-(Windows PowerShell이면 `Copy-Item ... -Force`.) `lab_baseline.wbt`는 절대 직접 열어서 편집하지
-않는다 — 항상 `lab.wbt`만 열고 고치고, 이 백업 파일은 복구용으로만 둔다.
-
-**구성 요소**
-
-- 6m × 4m 경량 생명공학 연구실 — 9개 보관구역, 중앙 실험대, 현미경, PCR, 원심분리기,
-  인큐베이터, 시약함, 냉장·냉동고, 소모품 선반, 안전장비함이 구분되어 있다.
-- 체크포인트 9곳, 라인 감지, 장애물 감지 — 현재는 **물리 센서가 아니라 좌표 계산**으로
-  판정합니다. 처음엔 e-puck 기본 지상센서(적외선)+실제 장애물 거리센서로 만들었는데,
-  바퀴가 트랙 박스에 걸리거나(물리 충돌) 장애물을 지워도 계속 같은 값이 나오는(센서 오작동)
-  문제가 반복돼서, pygame 버전과 똑같은 방식 — GPS 좌표 + Supervisor로 실제 위치를 직접 읽어
-  거리를 계산 — 로 통일했습니다. `webots_hal.py` 주석에 이 판단 과정이 남아있습니다.
-  - 라인: 로봇 앞쪽 4개 지점이 트랙 중심선(좌표)과 얼마나 가까운지 계산
-  - QR/체크포인트: GPS 좌표가 체크포인트 반경 안인지 확인
-  - 장애물: `robot.getFromDef("OBSTACLE_1")`로 장애물의 실제 좌표를 읽어 로봇과의 거리를 계산
-    (그래서 로봇의 `supervisor` 필드가 `TRUE`로 켜져 있어야 함)
-- 장애물 1개(`OBSTACLE_1`) — 물리 박스이자 좌표 기반 감지 대상. 옮기거나 지우면 장애물
-  시나리오를 켜고 끌 수 있습니다. 지워도
-  `lab.wbt` 파일 자체에는 남아있으니, 리로드하면 다시 나타납니다.
-- 통제구역(빨강)/충전구역(초록) — 지금은 시각 표시만, 판정 로직은 아직 없음(향후 확장 지점)
-- 로봇 물리는 Webots 공식 E-puck 차동구동을 사용하지만, 상부에 Raspbot형 직사각 차체와
-  전면 카메라 외형을 얹어 발표 화면에서 연구실 로봇카로 구분되게 했다. 실제 Raspbot 치수·
-  센서 물리모델은 실기기 확인 후 다음 단계에서 보정한다.
-- 장애물 정지 40cm, 재개 50cm의 히스테리시스를 적용해 물리 관성·센서 노이즈 때문에 같은
-  장애물이 반복 감지되는 현상을 줄였다.
-
-### Webots 주행 로그
-
-Webots를 실행하면 `robot-sim/logs/webots_YYYYMMDD_HHMMSS.jsonl` 파일이 자동 생성된다.
-약 1초마다 위치, 방향, 장애물 거리, 속도·회전 명령, 모드를 기록하고 체크포인트·장애물·
-모드전환은 발생 즉시 별도 이벤트로 남긴다. 로그 파일은 실행 결과라 git에는 올리지 않는다.
-
-JSONL은 한 줄이 하나의 JSON 레코드라 실행 중 종료돼도 앞부분이 보존된다. 향후 같은 월드에서
-`SPEED`, `TURN_GAIN`, `OBSTACLE_STOP_DISTANCE` 후보를 반복 실행해 경로 이탈·순찰시간·
-정지거리·체크포인트 성공률을 비교하는 기본 학습/자동 튜닝 입력으로 사용한다.
-
-주의: 기존 `run_inventory_audit()` RPC는 웹 로그인 사용자의 `auth.uid()`로 수행자 이름을
-정하는 구조라 service key로 실행되는 로봇이 그대로 호출하면 수행자가 NULL이 될 수 있다.
-로봇 실사 DB 제출은 함수에 안전한 로봇 수행자 입력 방식을 추가한 뒤 연결한다.
-
-## 실제 Raspbot으로 넘어갈 때
-
-1. `real_hal.py`의 5개 메서드를 실제 카메라(OpenCV/pyzbar)·GPIO(초음파, 라인센서)·모터 PWM 코드로 채운다.
-2. `main.py`(또는 그 역할을 하는 새 진입점)에서 `SimHAL(world)` 대신 `RealHAL()`을 넣는다.
-3. `controller.py`는 그대로 둔다 — 시뮬레이션에서 검증한 판단 로직이 곧바로 실물에 적용된다.
-
-이건 기술 설계 문서의 "03 디지털 트윈 & 가상 연구실"에서 정의한 구조와 동일합니다.
-
-## 지금 마커 QR 값은 임시값
-
-`sim/engine.py`의 `MARKERS`에 있는 `qr` 값은 LabKeeper 웹의 실제 물품 QR 코드와
-맞춰서 바꿔주면, 나중에 이 시뮬레이터가 실제 웹 API(`/api/audit-sessions` 등,
-아직 미구현)에 스캔 결과를 보내는 것까지도 그대로 이어붙일 수 있습니다.
+로봇이 오기 전 순찰 로직을 미리 연습하던 pygame 시뮬레이터(`main.py`, `sim/`,
+`check_logic.py`, `smoke_test.py`)와 Webots 프로젝트(`webots_project/`)를 그대로
+옮겨뒀습니다. 지금은 협업 범위에서 제외되어 있고(문서:
+`labkeeper-web-local/AI협업/robot/00_로봇협업_사용방법.md`), 다시 필요해지면 이
+폴더 안 파일들을 `robot-sim/`으로 다시 꺼내면 그대로 동작합니다(코드 자체는 안 건드림).
+`requirements.txt`(pygame)도 이 폴더 안에 있습니다.

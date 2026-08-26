@@ -93,20 +93,11 @@ def fetch_robot_command():
     return {"mode": "auto", "speed": 0.0, "turn": 0.0}
 
 
-def upload_camera_snapshot(image_path: str, bucket: str = "robot-camera", object_path: str = "latest.jpg"):
-    """카메라 사진 한 장을 Supabase Storage에 업로드해서, 웹 Robot Console이
-    그 URL을 계속 새로 불러와 '거의 실시간'처럼 보여줄 수 있게 한다.
-    (실시간 영상 스트리밍이 아니라 주기적 스냅샷 — 발표 범위에서는 이 정도로 충분하다)"""
-    if not _READY:
+def upload_camera_snapshot_bytes(data: bytes, bucket: str = "robot-camera", object_path: str = "latest.jpg"):
+    """메모리에 있는 JPEG 바이트를 Supabase Storage에 직접 업로드한다 (디스크 I/O 없음)."""
+    if not _READY or not data:
         return False
     url = f"{SUPABASE_URL}/storage/v1/object/{bucket}/{object_path}"
-    try:
-        with open(image_path, "rb") as f:
-            data = f.read()
-    except OSError as e:
-        print(f"[notify_supabase] 카메라 사진 파일을 못 읽었습니다: {e}")
-        return False
-
     headers = {
         "apikey": SUPABASE_SECRET_KEY,
         "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
@@ -119,7 +110,20 @@ def upload_camera_snapshot(image_path: str, bucket: str = "robot-camera", object
             resp.read()
             return True
     except (urllib.error.URLError, OSError) as e:
-        print(f"[notify_supabase] 카메라 사진 업로드 실패: {e}")
+        print(f"[notify_supabase] 카메라 사진 바이트 업로드 실패: {e}")
+        return False
+
+
+def upload_camera_snapshot(image_path: str, bucket: str = "robot-camera", object_path: str = "latest.jpg"):
+    """카메라 사진 파일 한 장을 Supabase Storage에 업로드한다."""
+    if not _READY:
+        return False
+    try:
+        with open(image_path, "rb") as f:
+            data = f.read()
+        return upload_camera_snapshot_bytes(data, bucket=bucket, object_path=object_path)
+    except OSError as e:
+        print(f"[notify_supabase] 카메라 사진 파일을 못 읽었습니다: {e}")
         return False
 
 
@@ -139,3 +143,41 @@ def report_safety_event(rule_id: str, severity: str = "MEDIUM", note: str = "", 
     except (urllib.error.URLError, OSError) as e:
         print(f"[notify_supabase] 안전이벤트 전송 실패: {e}")
         return False
+
+
+def get_my_local_ip() -> str:
+    """외부 라이브러리 없이 라즈베리파이의 실제 로컬 Wi-Fi/LAN IP를 가져온다."""
+    import socket
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # 실제 패킷을 보내지 않고 라우팅 테이블 상의 로컬 IP만 추출
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
+def report_local_ip(local_ip: str = None):
+    """로봇의 현재 로컬 IP(예: 192.168.0.22)를 robot_commands에 기록하여
+    웹 Robot Console이 MJPEG 직결 스트림 주소를 파악할 수 있게 한다."""
+    if not _READY:
+        return False
+    if local_ip is None:
+        local_ip = get_my_local_ip()
+
+    url = f"{SUPABASE_URL}/rest/v1/robot_commands?id=eq.1"
+    payload = {"local_ip": local_ip}
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=_headers(), method="PATCH")
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            resp.read()
+            print(f"[notify_supabase] 로봇 로컬 IP 보고 완료: {local_ip}")
+            return True
+    except (urllib.error.URLError, OSError) as e:
+        print(f"[notify_supabase] 로컬 IP 보고 실패: {e}")
+        return False
+

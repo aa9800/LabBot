@@ -2094,9 +2094,44 @@ tbody tr:hover td {
 
 /* ---------- 관리자 Robot Console 카메라 상태 ---------- */
 
+/* 왼쪽: 주행 조이스틱 / 가운데: 카메라(제일 크게) / 오른쪽: 카메라 각도 십자패드 —
+   좁은 화면에서는 세로로 쌓이고, 카메라가 항상 먼저(순서상 위에) 보이게 order로 조정. */
+.robot-console-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.robot-joystick-col,
+.robot-dpad-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  order: 2;
+}
+
 .robot-camera-wrap {
-  max-width: 360px;
-  margin-bottom: 12px;
+  flex: 1 1 420px;
+  max-width: 640px;
+  min-width: 260px;
+  margin-bottom: 0;
+  order: 1;
+}
+
+@media (min-width: 720px) {
+  .robot-joystick-col {
+    order: 0;
+  }
+  .robot-camera-wrap {
+    order: 1;
+  }
+  .robot-dpad-col {
+    order: 2;
+  }
 }
 
 .robot-camera-status:empty {
@@ -2131,6 +2166,124 @@ tbody tr:hover td {
   font-size: 0.88rem;
   line-height: 1.5;
   color: var(--text);
+}
+
+/* ---------- 로봇 조이스틱(원형 드래그 조작) ---------- */
+/* 방향 버튼은 "한 번 클릭하면 그 방향으로 계속 움직이는" 방식이라 조작감이 뚝뚝 끊겨서
+   불편하다는 피드백(2026-08-26) — 자동차 게임처럼 원 안에서 드래그한 만큼 실시간으로
+   속도/회전이 반영되고, 손을 떼면 즉시 정지하는 조이스틱으로 바꿨다. */
+.robot-joystick-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.robot-joystick-base {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  touch-action: none; /* 드래그 중 모바일 스크롤/줌 방지 */
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.robot-joystick-base.is-dragging {
+  cursor: grabbing;
+  border-color: var(--accent-border);
+}
+
+.robot-joystick-knob {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  pointer-events: none; /* 드래그 이벤트는 base가 받는다 — knob 위에서 놓쳐도 안 끊기게 */
+}
+
+.robot-joystick-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+  min-width: 140px;
+}
+
+.robot-joystick-readout .mono {
+  color: var(--text);
+}
+
+/* 카메라 각도 전용 십자패드 — 주행 조이스틱과 분리(운전 중 실수로 카메라가 같이
+   안 움직이도록). 누르고 있는 동안만 계속 움직이고 떼면 그 각도에서 멈춘다(서보라
+   조이스틱처럼 중앙 복귀할 필요가 없음 — 실제 카메라 각도를 그대로 유지). */
+.robot-dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 44px);
+  grid-template-rows: repeat(3, 44px);
+  gap: 4px;
+}
+
+.robot-dpad-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 1rem;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+}
+
+.robot-dpad-btn:hover {
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+}
+
+.robot-dpad-btn:active,
+.robot-dpad-btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+}
+
+.robot-dpad-up {
+  grid-column: 2;
+  grid-row: 1;
+}
+.robot-dpad-left {
+  grid-column: 1;
+  grid-row: 2;
+}
+.robot-dpad-center {
+  grid-column: 2;
+  grid-row: 2;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.robot-dpad-center:hover {
+  color: var(--accent-ink);
+}
+.robot-dpad-right {
+  grid-column: 3;
+  grid-row: 2;
+}
+.robot-dpad-down {
+  grid-column: 2;
+  grid-row: 3;
 }
 
 /* ---------- 로봇 안내 + QR 스캔 모달 (마이페이지 수령/반납) ---------- */

@@ -23,8 +23,11 @@ robot-sim/.env
 robot-sim/logs/*.jsonl
 
 # Webots — 창 배치/썸네일 같은 개인 UI 상태 파일 (프로젝트 소스 아님)
+# _archive_pygame_webots/로 보관된 경로에도 동일하게 적용(2026-08-27 구조 정리)
 robot-sim/webots_project/worlds/.*.wbproj
 robot-sim/webots_project/worlds/.*.jpg
+robot-sim/_archive_pygame_webots/webots_project/worlds/.*.wbproj
+robot-sim/_archive_pygame_webots/webots_project/worlds/.*.jpg
 
 # OS/에디터
 .DS_Store

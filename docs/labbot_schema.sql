@@ -414,8 +414,22 @@ on conflict (id) do nothing;
 -- controllers/labkeeper_controller/labkeeper_controller.py)이 이 값을 확인해서 3초
 -- 이상 오래된 수동조작 명령은 "연결 끊김"으로 보고 자동으로 정지한다(dead-man switch).
 
+-- 11-1. robot_commands에 카메라 팬/틸트(짐벌) 각도 추가 (2026-08-26)
+-- Raspbot 실물에 카메라 팬/틸트 서보가 있는 것을 공식 데모(色识别+云台追踪)로 확인함 —
+-- YB_Pcb_Car.Ctrl_Servo(id, angle)로 제어. 서보 각도는 보통 0~180도, 90이 정면(중앙).
+-- 이미 만든 테이블에 열만 추가하는 것이라 idempotent하게 작성 — 기존 프로젝트에도
+-- 안전하게 다시 실행할 수 있다.
+alter table robot_commands add column if not exists cam_pan smallint not null default 90 check (cam_pan between 0 and 180);
+alter table robot_commands add column if not exists cam_tilt smallint not null default 90 check (cam_tilt between 0 and 180);
+
+-- 11-2. robot_commands에 로봇 로컬 IP(local_ip) 추가 (2026-08-27)
+-- 웹 Robot Console이 같은 로컬 네트워크(와이파이/핫스팟)에서 로봇의 MJPEG 실시간 스트림
+-- (http://local_ip:8080/stream)에 직결할 수 있도록, 로봇이 켜질 때 자신의 현재 IP를 기록한다.
+alter table robot_commands add column if not exists local_ip text default '';
+
 -- =============================================================
 -- 12. 보안 강화 트리거 — RLS만으로는 못 막는 것들을 트리거로 한 번 더 막는다
+
 --     (RLS는 "이 행을 건드릴 수 있냐"만 보고, "어느 컬럼까지 바꿀 수 있냐"는 안 본다)
 -- =============================================================
 

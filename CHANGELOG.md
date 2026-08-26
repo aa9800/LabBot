@@ -6,6 +6,54 @@
 
 ---
 
+## 2026-08-27 (37) — 새 세션 인수인계 검증 + Isaac Sim EULA 재동의 문제 해결 + run_isaac.py 문서 반영
+
+사용자 요청("인수인계 받고 너도 이제 같이 협업하는거야" → "이거 다 수정 하고 수정내역
+항상 협업 폴더에 갱신 잘 하고 깃에도 올리는거까지 해"). `labkeeper-web-local/AI협업/robot/
+04_새채팅_시작문.md` 프로토콜대로 코드 수정 없이 먼저 9개 항목(GPU/스모크테스트/ROS2/
+IsaacHAL/Isaac-웹 연결/RealHAL/문서-코드 차이/최소작업/AI 충돌 가능성)을 확인·보고한 뒤
+승인받아 처리.
+
+- **Isaac Sim 스모크 테스트가 Omniverse Kit EULA 재동의 프롬프트에서 멈춰 있던 문제
+  발견**: `isaac_clean/smoke_test.py`, `robot-sim/isaac_project/isaac_smoke_test.py` 둘 다
+  비대화형 실행 시 `Do you accept the EULA? ... EOF when reading a line`로 즉시 실패하고
+  있었다(직전 08-26 성공 기록엔 이 프롬프트가 없었음 — 그 사이 Kit 캐시가 초기화된 것으로
+  추정). 약관 동의 항목이라 사용자에게 먼저 물어본 뒤 승인받아 진행 — EULA 동의 후
+  재실행 → `ISAAC_CONTROLLER_SMOKE_TEST_OK` 정상 통과 재확인, `isaac_clean/last_run.log`
+  갱신.
+- **문서-코드 불일치 발견 및 수정**: `robot-sim/isaac_project/run_isaac.py`(Isaac Sim을
+  실제 창으로 띄워 `notify_supabase.py`의 `fetch_items`/`fetch_robot_command`/
+  `report_safety_event`로 웹과 연동하는 진입점, 08-26 22:43 작성, git 미커밋 상태로 존재)가
+  이전 인수인계 문서(`03_Claude_로봇작업결과.md`, `04_새채팅_시작문.md`,
+  `05_작업내역_및_중요사항_정리.md`) 어디에도 언급이 없었음 — Isaac↔웹 연동이 "미완료"로
+  남아있던 문서와 달리 코드는 이미 작성돼 있던 것. 세 문서 모두에 반영해 정합성 복구.
+  실제로 실행해서 웹과 end-to-end로 확인되는지는 이번에도 검증 못함(다음 세션 과제).
+- **git 상태 점검**: `git fetch` 결과 원격에 새 커밋 없음 — 다른 세션/AI와의 충돌 없음
+  확인 후, 그동안(35~36번 항목 포함) 누적돼 있던 로컬 미커밋 변경사항 전부를 사용자
+  승인 받아 이번에 함께 커밋·푸시함.
+
+---
+
+## 2026-08-27 (36) — 카메라 스트리밍 무지연 이벤트 통지 + 메모리 직접 업로드(Zero-Disk I/O) + 웹 워치독 고도화
+
+사용자 요청("최적화해서 사진 웹 연동 엄청 빨리하기로 한 방향성으로 코드 전체 리뷰 및 최적화").
+실시간 영상 송출 지연과 스냅샷 업로드 병목을 원천 해소하기 위한 전면 최적화 완료:
+
+1. **이벤트 기반 무지연 프레임 버퍼 통지 (`stream_server.py`)**:
+   - 기존 `time.sleep(0.033)` 고정 폴링을 `threading.Condition` 기반 `wait_for_new_frame(last_version)` 이벤트 대기로 개편. 새 프레임이 인코딩되는 즉시 전송 대기 클라이언트를 0ms 지연으로 깨워 30 FPS / ~30ms 초저지연 달성.
+   - `get_latest_frame()` 함수를 신설하여 메모리에 보관된 최신 JPEG를 다른 모듈에 안전하게 제공.
+2. **BGR888 네이티브 포맷 및 카메라 독립 루프 최적화 (`real_hal.py`)**:
+   - Picamera2 설정을 `BGR888`로 최적화하여 OpenCV 인코딩 시 색상 채널 왜곡 제거 및 변환 연산 오버헤드 0화.
+3. **스냅샷 메모리 직접 업로드 / Zero-Disk I/O (`notify_supabase.py`, `run_real.py`)**:
+   - `upload_camera_snapshot_bytes(data: bytes)` 신설로 임시 파일 쓰기/읽기(`/tmp/labkeeper_real_camera.jpg`) 없이 메모리 바이트에서 Supabase Storage로 직접 업로드.
+   - `run_real.py`에서 `hal._picam2.capture_array()`를 직접 부르던 스레드 리소스 경합을 완전히 제거하고 `stream_server.get_latest_frame()` 메모리 버퍼 활용으로 전환.
+4. **웹 Robot Console 실시간 직결 + 헬스 프로브 & 자동 복구 워치독 (`admin.js`, `robot-console-data.js`, `admin.html`)**:
+   - `checkStreamHealth(localIp)` 헬스 프로브 함수 추가.
+   - 실시간 스트림 연결 중 로봇 오프라인 감지 시 자동 스냅샷 모드로 전환하고, 로봇 재가동 시 실시간 스트림으로 자동 복귀하는 스마트 워치독 구현.
+   - Robot Console 안내 문구를 30 FPS 하이브리드 스트리밍 설명으로 최신화.
+
+---
+
 ## 2026-08-27 (35) — 관리자 페이지에 사용자 관리 탭 추가
 
 사용자 요청("관리자 페이지에 사용자 관리나 뭐 미납 몇번 경고 이런 기본적인 유저
@@ -30,6 +78,48 @@
 배지로 반영 → 이력 모달에서 사유·작성자·시각 확인 → 삭제까지 전체 흐름을 실제로
 클릭해서 검증(테스트로 남긴 경고는 정리함). 검색창 필터링, 요약 카드의 "연체중인
 사용자" 수 반영도 확인.
+
+## 2026-08-27 (34) — 로봇 카메라 실시간 직결 MJPEG 스트리밍 + Supabase 스냅샷 Fallback 하이브리드 아키텍처 구현
+
+사용자 지적 및 아키텍처 개선 요청("DB를 계속 거치는게 카메라 실시간성에 안 맞으니 구조 개선").
+스냅샷 캡처→Supabase Storage 업로드→서명 URL 재발급→웹 폴링의 4단계 지연을 해소하기 위해 **하이브리드 실시간 직결 구조**로 개편:
+
+1. **라즈베리파이 초경량 MJPEG 스트리머(`robot-sim/stream_server.py`) 신규 작성**:
+   - 외부 무거운 웹서버 프레임워크 없이 순수 파이썬 표준 라이브러리(`http.server`, `threading`)만 사용하여 포트 8080에 `/stream` (MJPEG), `/snapshot`, `/health` 서빙.
+   - `real_hal.py`의 `capture_frame()`과 연동하여 캡처 즉시 스트림 버퍼 갱신.
+2. **로봇 로컬 IP 자동 공유 (`notify_supabase.py` / `docs/labbot_schema.sql`)**:
+   - 로봇 부팅 및 실행 시 `get_my_local_ip()`를 통해 현재 LAN IP(예: `192.168.0.22`)를 `robot_commands.local_ip`에 기록.
+3. **웹 관리자 Robot Console 실시간 직결 + Fallback (`admin.js` / `robot-console-data.js`)**:
+   - 같은 로컬 네트워크일 경우 `http://<local_ip>:8080/stream`으로 직접 연결하여 **50~100ms급 초저지연 실시간 영상** 제공.
+   - 외부망이거나 스트리머 미가동 시 자동으로 기존 **Supabase Storage 서명 URL 스냅샷 모드로 즉시 Fallback**되어 서비스 중단 없이 안정성 유지.
+   - 일반 대여/재고/챗봇/안전관리 웹 기능은 Supabase 클라우드에 유지되어 로봇 전원 상태와 무관하게 24시간 가동 보장.
+
+---
+
+## 2026-08-26 (33) — real_hal.py 구현 완료 + Raspbot 정품 이미지 재설치 + Wi-Fi 전환 착수
+
+`robot-sim/real_hal.py`가 그동안 `NotImplementedError`만 던지는 자리였는데, 실제 로봇에
+Raspberry Pi Connect Remote shell / Jupyter Lab으로 직접 접속해서 로봇에 설치된 Yahboom
+공식 데모 노트북(`~/Yahboom_project/Raspbot/...`)의 GPIO 핀·라이브러리 호출을 그대로 읽어
+구현했다(추측 없음, 출처는 `real_hal.py` docstring에 남김): 초음파 Trig=16/Echo=18(BOARD),
+라인트래킹 4채널(BOARD 11/7/13/15), 모터 `YB_Pcb_Car.Control_Car()`, QR
+picamera2+pyzbar. `controller.py`는 한 글자도 안 고침(HAL 5메서드 시그니처 유지).
+`robot-sim/run_real.py`(신규)를 `labkeeper_controller.py`(Webots)와 같은 구조로 작성 —
+dead-man switch, 수동/자동 모드, Supabase 체크포인트, 카메라 업로드, JSONL 텔레메트리.
+둘 다 아직 로봇엔 안 올렸고 git에도 커밋 안 함(사용자 요청 시에만 커밋).
+
+이 과정에서 이전에 재구운 SD카드가 **일반 Raspberry Pi OS(Trixie)**였고 Yahboom 라이브러리가
+전혀 없었다는 걸 로봇 셸에서 직접 재확인(`find`로 yahboom 관련 파일 0개) — Yahboom 공식
+Google Drive(`yahboomsmart01` 계정)에서 `Raspbot_PI5_20240425.zip`(6.85GB)을 받아 정품
+이미지로 재설치. 이 이미지는 Raspberry Pi Imager의 자동 Wi-Fi/SSH 주입이 안 먹히고 대신
+로봇 자체 핫스팟을 켜는 게 기본 동작이라, 핫스팟(`Raspbot`)에 붙여 Jupyter Lab으로 들어가서
+`sudo nmcli`로 `iptime`(집 공유기) 연결 프로필을 만들고 우선순위를 자체 핫스팟보다 높여
+전환을 시작했다. 전환 후 로봇 자체 핫스팟이 꺼지는 건 정상 동작이지만, PC의 Wi-Fi가 현재
+위치에서 `iptime` 신호가 약해(RSSI 255) 실제 전환 성공 여부는 이 세션에서 확인 못 함 —
+다음 세션에서 폰이나 공유기 관리자 페이지로 확인 필요. 김에 `git fetch`로 web/ 쪽 안 받아온
+커밋 2개(메인화면 변경/수정)를 발견해 `--ff-only`로 반영하고, 로컬 정적 서버로 콘솔 에러
+없이 뜨는 것까지 확인함. 상세 경과는
+`labkeeper-web-local/AI협업/robot/03_Claude_로봇작업결과.md` 참고.
 
 ## 2026-08-26 (32) — 홈 화면 자율 디자인 패스: 이용방법 아이콘 SVG 통일 + 푸터 추가
 
