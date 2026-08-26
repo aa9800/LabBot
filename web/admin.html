@@ -286,10 +286,11 @@
           <button type="button" class="btn btn-danger btn-sm" data-drive="stop">■ 정지 (Space)</button>
           <button type="button" class="btn btn-primary btn-sm" id="robotAutoBtn">자동 순찰로 복귀</button>
           <button type="button" class="btn btn-secondary btn-sm" id="robotScanQrBtn" style="background: #2563eb; color: #fff; border-color: #2563eb; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
-            📸 현재 위치 QR 체크하기
+            🔍 물품 QR 인식하기
           </button>
           <span id="robotScanQrResult"></span>
         </div>
+        <div id="scannedItemCard" style="display: none; width: 100%; margin-top: 12px;"></div>
         <p class="robot-console-key-note" style="margin-top: 10px;">
           ⏱ 명령이 <strong>3초</strong> 이상 갱신되지 않으면 자동 정지 · 🛑 <strong>장애물 앞에서는 강제 정지</strong>(원격으로 해제 불가 — 현장 확인 필요)
         </p>

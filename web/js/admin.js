@@ -738,11 +738,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   const robotScanQrBtn = document.getElementById("robotScanQrBtn");
   const robotScanQrResult = document.getElementById("robotScanQrResult");
 
+  const scannedItemCard = document.getElementById("scannedItemCard");
+
   if (robotScanQrBtn) {
     robotScanQrBtn.addEventListener("click", async () => {
       robotScanQrBtn.disabled = true;
-      robotScanQrBtn.innerHTML = `⌛ QR 인식 중...`;
+      robotScanQrBtn.innerHTML = `⌛ 물품 QR 인식 중...`;
       if (robotScanQrResult) robotScanQrResult.innerHTML = ``;
+      if (scannedItemCard) scannedItemCard.style.display = "none";
       if (robotHudOverlay) {
         robotHudOverlay.style.boxShadow = "inset 0 0 24px rgba(37, 99, 235, 0.7)";
       }
@@ -751,32 +754,105 @@ document.addEventListener("DOMContentLoaded", async () => {
         const localIp = robotCurrentIp || "10.42.0.1";
         const result = await window.LabBotRobotConsole.triggerQrScan(localIp);
         if (result && result.found) {
-          window.LabBotToast.success(`✅ QR 인식 성공: [${result.code}] 위치 실사가 완료되었습니다!`);
+          const rawCode = String(result.code).trim();
+
+          // Supabase items 테이블에서 물품 매칭
+          const allItems = await window.LabBotItems.searchItems({});
+          const matchedItem = allItems.find(
+            (it) =>
+              String(it.id) === rawCode ||
+              (it.qr_code && it.qr_code.toLowerCase() === rawCode.toLowerCase()) ||
+              it.name.toLowerCase().includes(rawCode.toLowerCase()) ||
+              it.location.toLowerCase() === rawCode.toLowerCase()
+          );
+
           if (robotHudOverlay) {
             robotHudOverlay.style.boxShadow = "inset 0 0 30px rgba(34, 197, 94, 0.8)";
             setTimeout(() => { if (robotHudOverlay) robotHudOverlay.style.boxShadow = "none"; }, 1500);
           }
-          if (hudSafetyBadge) {
-            const prevText = hudSafetyBadge.innerHTML;
-            const prevCls = hudSafetyBadge.className;
-            hudSafetyBadge.className = "hud-tag hud-status-ok";
-            hudSafetyBadge.innerHTML = `📍 실사완료: ${result.code}`;
-            setTimeout(() => {
-              if (hudSafetyBadge) {
-                hudSafetyBadge.innerHTML = prevText;
-                hudSafetyBadge.className = prevCls;
-              }
-            }, 3500);
-          }
-          if (robotScanQrResult) {
-            robotScanQrResult.innerHTML = `
-              <span class="badge badge-st-resolved" style="font-size: 11px;">
-                <span class="badge-dot"></span>✅ 인식됨: <strong>${result.code}</strong>
-              </span>
-            `;
+
+          if (matchedItem) {
+            const stockStatus = window.LabBotItems.computeStockStatus(matchedItem);
+            const statusLabel = window.LabBotItems.STOCK_STATUS_LABEL[stockStatus] || "정상";
+            const badgeCls = window.LabBotItems.STOCK_STATUS_BADGE_CLASS[stockStatus] || "badge-available";
+            const iconSvg = window.LabBotItems.categoryIconOf(matchedItem.category);
+
+            window.LabBotToast.success(`✅ 물품 인식 완료: [${matchedItem.name}] (${matchedItem.location})`);
+
+            if (hudSafetyBadge) {
+              hudSafetyBadge.className = "hud-tag hud-status-ok";
+              hudSafetyBadge.innerHTML = `📦 ${matchedItem.name}`;
+              setTimeout(() => {
+                if (hudSafetyBadge) {
+                  hudSafetyBadge.className = "hud-tag hud-status-ok";
+                  hudSafetyBadge.innerHTML = "🟢 정상 주행";
+                }
+              }, 4000);
+            }
+
+            if (robotScanQrResult) {
+              robotScanQrResult.innerHTML = `
+                <span class="badge badge-st-resolved" style="font-size: 11px;">
+                  <span class="badge-dot"></span>물품 확인: <strong>${matchedItem.name}</strong>
+                </span>
+              `;
+            }
+
+            if (scannedItemCard) {
+              scannedItemCard.style.display = "block";
+              scannedItemCard.innerHTML = `
+                <div class="card" style="background: var(--surface); border: 1px solid var(--accent-border); border-radius: 8px; padding: 14px 18px; box-shadow: var(--shadow);">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <span style="display: inline-flex; width: 22px; height: 22px; color: var(--accent);">${iconSvg}</span>
+                      <h4 style="margin: 0; font-size: 16px; color: var(--text);">${matchedItem.name}</h4>
+                      <span class="badge ${badgeCls}">${statusLabel}</span>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-sm" id="closeScannedItemCardBtn" style="padding: 2px 6px; font-size: 11px;">✕ 닫기</button>
+                  </div>
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+                    <div>📍 <strong>보관 위치:</strong> ${matchedItem.location}</div>
+                    <div>📦 <strong>가용 재고:</strong> <span class="mono" style="font-weight: 600; color: var(--text);">${matchedItem.available_qty}</span> / ${matchedItem.total_qty} ${matchedItem.unit || "개"}</div>
+                    <div>🏷️ <strong>분류:</strong> ${matchedItem.category}</div>
+                    ${matchedItem.storage_condition ? `<div>❄️ <strong>보관:</strong> ${matchedItem.storage_condition}</div>` : ""}
+                    ${matchedItem.expires_at ? `<div>📅 <strong>유효기간:</strong> ${matchedItem.expires_at}</div>` : ""}
+                  </div>
+                  <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="scannedItemAuditConfirmBtn">✅ 재고 실사 확정</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="scannedItemViewStockBtn">🔍 재고표에서 보기</button>
+                  </div>
+                </div>
+              `;
+
+              document.getElementById("closeScannedItemCardBtn")?.addEventListener("click", () => {
+                scannedItemCard.style.display = "none";
+              });
+
+              document.getElementById("scannedItemAuditConfirmBtn")?.addEventListener("click", async () => {
+                window.LabBotToast.success(`[${matchedItem.name}] 실사 확인이 등록되었습니다!`);
+                scannedItemCard.style.display = "none";
+              });
+
+              document.getElementById("scannedItemViewStockBtn")?.addEventListener("click", () => {
+                document.querySelector('[data-tab="stock"]')?.click();
+                if (stockSearchInput) {
+                  stockSearchInput.value = matchedItem.name;
+                  stockSearchInput.dispatchEvent(new Event("input"));
+                }
+              });
+            }
+          } else {
+            window.LabBotToast.success(`✅ QR 인식 성공: [${rawCode}]`);
+            if (robotScanQrResult) {
+              robotScanQrResult.innerHTML = `
+                <span class="badge badge-st-resolved" style="font-size: 11px;">
+                  <span class="badge-dot"></span>인식 코드: <strong>${rawCode}</strong>
+                </span>
+              `;
+            }
           }
         } else {
-          window.LabBotToast.warn(result.message || "QR 코드가 감지되지 않았습니다. 카메라 각도를 조절해 주세요.");
+          window.LabBotToast.warn(result.message || "물품 QR 코드가 감지되지 않았습니다. 카메라 각도를 조절해 주세요.");
           if (robotHudOverlay) {
             robotHudOverlay.style.boxShadow = "inset 0 0 20px rgba(245, 158, 11, 0.6)";
             setTimeout(() => { if (robotHudOverlay) robotHudOverlay.style.boxShadow = "none"; }, 1000);
@@ -790,11 +866,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
         }
       } catch (err) {
-        window.LabBotToast.error("QR 스캔 실패: " + (err.message || err));
+        window.LabBotToast.error("물품 QR 스캔 실패: " + (err.message || err));
         if (robotHudOverlay) robotHudOverlay.style.boxShadow = "none";
       } finally {
         robotScanQrBtn.disabled = false;
-        robotScanQrBtn.innerHTML = `📸 현재 위치 QR 체크하기`;
+        robotScanQrBtn.innerHTML = `🔍 물품 QR 인식하기`;
       }
     });
   }
