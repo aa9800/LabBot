@@ -1,34 +1,47 @@
 /* =========================================================================
-   LabBot — AI Vision 연구실 물품 대여관리 시스템
-   컨셉: 다크 테크 / AI 비전 스캐닝. 배경은 짙은 네이비, 포인트 컬러는 사이언
-   (cyan-blue) 한 가지로 통일하고, 카드·배지·챗봇 등에 "스캔/탐지" 모티프를 사용.
+   LabBot — 연구실 물품 대여관리 시스템
+   컨셉: Voltagent 스타일 "개발자 도구 다큐먼트" 톤. 근-검정 캔버스 위에 헤어라인(1px)
+   보더로만 카드/표/입력창 경계를 긋고, 강조색은 그린 하나만 쓴다. 그림자·글로우·그라데이션은
+   모달/토스트 같은 진짜 오버레이 레이어를 뺴고는 쓰지 않는다 — 자세한 원칙은 DESIGN.md 참고.
    ========================================================================= */
 
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 :root {
-  --bg: #090d16;
-  --surface: #121a2b;
-  --surface-2: #17233b;
-  --border: #223052;
-  --border-soft: #1a2438;
+  --bg: #18181b;
+  --surface: #1e1e22;
+  --surface-2: #26262b;
+  --border: #3a3a40;
+  --border-soft: #2c2c31;
 
-  --text: #e7ecfb;
-  --text-muted: #90a0c4;
-  --text-faint: #57648a;
+  --text: #f2f2f2;
+  --text-strong: #ffffff;
+  --text-muted: #bdbdbd;
+  --text-faint: #8b949e;
 
-  --accent: #38bdf8;
-  --accent-dark: #0ea5e9;
-  --accent-soft: rgba(56, 189, 248, 0.14);
-  --accent-glow: rgba(56, 189, 248, 0.45);
-  --accent-ink: #04141f;
+  --accent: #00d992;
+  --accent-text: #2fd6a1;
+  --accent-deep: #10b981;
+  --accent-soft: rgba(0, 217, 146, 0.12);
+  --accent-border: rgba(0, 217, 146, 0.35);
+  --accent-ink: #101010;
 
-  --font-display: "Space Grotesk", "Segoe UI", sans-serif;
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --danger-border: rgba(248, 113, 113, 0.35);
+
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --warning-border: rgba(251, 191, 36, 0.35);
+
+  --font-display: "Inter", "Segoe UI", sans-serif;
   --font-body: "Inter", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --font-mono: "JetBrains Mono", "Consolas", monospace;
 
-  --radius: 12px;
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --radius-sm: 6px;
+  --radius: 8px;
+  --shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
 .mono {
@@ -63,7 +76,6 @@ body {
   color: var(--text);
   min-height: 100vh;
   line-height: 1.55;
-  position: relative;
   opacity: 0;
   transition: opacity 0.32s ease;
 }
@@ -90,36 +102,6 @@ body.page-leaving {
   }
 }
 
-/* 배경 그리드 + 은은한 글로우 (AI 비전 스캔 필드 느낌) */
-body::before,
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-body::before {
-  background-image: linear-gradient(rgba(56, 189, 248, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(56, 189, 248, 0.06) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
-}
-
-body::after {
-  background: radial-gradient(circle at 12% 15%, rgba(56, 189, 248, 0.14), transparent 42%),
-    radial-gradient(circle at 88% 78%, rgba(124, 58, 237, 0.12), transparent 45%);
-}
-
-.navbar,
-main,
-.admin-login-link,
-.fab {
-  position: relative;
-  z-index: 1;
-}
-
 a {
   color: inherit;
   text-decoration: none;
@@ -132,7 +114,9 @@ button {
 h1,
 h2 {
   font-family: var(--font-display);
+  font-weight: 600;
   letter-spacing: -0.01em;
+  color: var(--text-strong);
 }
 
 /* 스크롤바 */
@@ -149,9 +133,8 @@ h2 {
 /* ---------- 네비게이션 바 ---------- */
 
 .navbar {
-  background: rgba(9, 13, 22, 0.75);
-  backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
 }
 
 .navbar-inner {
@@ -174,30 +157,13 @@ h2 {
 .logo-icon {
   color: var(--accent);
   flex-shrink: 0;
-  filter: drop-shadow(0 0 6px var(--accent-glow));
 }
 
 .logo-text {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 1.25rem;
-  background: linear-gradient(120deg, var(--text) 20%, var(--accent) 130%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.logo-tag {
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  color: var(--accent);
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  background: var(--accent-soft);
-  padding: 3px 7px;
-  border-radius: 999px;
-  white-space: nowrap;
+  color: var(--text-strong);
 }
 
 .nav-links {
@@ -220,10 +186,9 @@ h2 {
 }
 
 .nav-links a.active {
-  color: var(--text);
+  color: var(--text-strong);
   border-bottom-color: var(--accent);
   font-weight: 600;
-  text-shadow: 0 0 12px var(--accent-glow);
 }
 
 .nav-mypage-link {
@@ -246,7 +211,7 @@ h2 {
 .page-title {
   font-size: 1.6rem;
   margin: 0 0 6px;
-  color: var(--text);
+  color: var(--text-strong);
   word-break: keep-all; /* 좁은 화면에서 "재고관리"가 "재고관/리"처럼 글자 중간에서 끊기는 것 방지 */
 }
 
@@ -263,51 +228,49 @@ h2 {
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 10px 18px;
   font-size: 0.92rem;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.1s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   font-family: var(--font-body);
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+  background: var(--accent);
   color: var(--accent-ink);
-  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.3), 0 6px 18px rgba(56, 189, 248, 0.22);
 }
 
 .btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.45), 0 8px 22px rgba(56, 189, 248, 0.35);
+  background: var(--accent-text);
 }
 
 .btn:active {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .btn-secondary {
-  background: transparent;
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
 }
 
 .btn-secondary:hover {
   background: var(--surface-2);
-  border-color: rgba(56, 189, 248, 0.4);
-  color: var(--accent);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
 }
 
 .btn-danger {
-  background: transparent;
-  color: #f87171;
-  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: var(--surface);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
 }
 
 .btn-danger:hover {
-  background: rgba(248, 113, 113, 0.12);
-  border-color: rgba(248, 113, 113, 0.6);
+  background: var(--danger-soft);
+  border-color: var(--danger);
 }
 
 /* ---------- 관리자 로그인 링크 (좌측 하단) ---------- */
@@ -363,16 +326,17 @@ h2 {
 .hero-eyebrow {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   color: var(--accent);
   text-transform: uppercase;
 }
 
 .hero-title {
   font-size: 2.15rem;
+  font-weight: 600;
   line-height: 1.32;
   margin: 14px 0 14px;
-  color: var(--text);
+  color: var(--text-strong);
   word-break: keep-all;
 }
 
@@ -421,17 +385,7 @@ h2 {
     linear-gradient(var(--accent), var(--accent)) bottom right;
   background-size: 3px 26px, 26px 3px, 3px 26px, 26px 3px, 3px 26px, 26px 3px, 3px 26px, 26px 3px;
   background-repeat: no-repeat;
-  animation: frame-glow 2.6s ease-in-out infinite;
-}
-
-@keyframes frame-glow {
-  0%,
-  100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 1;
-  }
+  opacity: 0.7;
 }
 
 .flask-illustration {
@@ -439,16 +393,18 @@ h2 {
   height: 150px;
 }
 
-.bubble {
-  animation: bubble-rise 3s ease-in-out infinite;
-}
+@media (prefers-reduced-motion: no-preference) {
+  .bubble {
+    animation: bubble-rise 3s ease-in-out infinite;
+  }
 
-.bubble-2 {
-  animation-delay: 0.6s;
-}
+  .bubble-2 {
+    animation-delay: 0.6s;
+  }
 
-.bubble-3 {
-  animation-delay: 1.2s;
+  .bubble-3 {
+    animation-delay: 1.2s;
+  }
 }
 
 @keyframes bubble-rise {
@@ -465,47 +421,6 @@ h2 {
   }
 }
 
-.particle {
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-glow);
-  opacity: 0.6;
-  animation: particle-float 6s ease-in-out infinite;
-}
-
-.particle-1 {
-  top: 8%;
-  left: 4%;
-  animation-duration: 7s;
-}
-
-.particle-2 {
-  top: 72%;
-  left: 88%;
-  animation-duration: 5.5s;
-  animation-delay: 1s;
-}
-
-.particle-3 {
-  top: 86%;
-  left: 12%;
-  animation-duration: 6.5s;
-  animation-delay: 2s;
-}
-
-@keyframes particle-float {
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-  50% {
-    transform: translate(6px, -14px);
-  }
-}
-
 /* ---------- 이용 방법 3단계 ---------- */
 
 .how-it-works {
@@ -514,8 +429,9 @@ h2 {
 
 .section-title {
   font-size: 1.2rem;
+  font-weight: 600;
   margin: 0 0 20px;
-  color: var(--text);
+  color: var(--text-strong);
   text-align: center;
 }
 
@@ -537,12 +453,11 @@ h2 {
   border-radius: var(--radius);
   padding: 26px 18px 20px;
   text-align: center;
-  transition: border-color 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.2s ease;
 }
 
 .step-card:hover {
-  border-color: rgba(56, 189, 248, 0.4);
-  transform: translateY(-2px);
+  border-color: var(--accent-border);
 }
 
 .step-number {
@@ -563,7 +478,7 @@ h2 {
 .step-title {
   margin: 0 0 6px;
   font-size: 1rem;
-  color: var(--text);
+  color: var(--text-strong);
 }
 
 .step-desc {
@@ -575,9 +490,8 @@ h2 {
 
 .step-arrow {
   align-self: center;
-  color: var(--accent);
+  color: var(--text-faint);
   font-size: 1.3rem;
-  opacity: 0.6;
 }
 
 @media (max-width: 720px) {
@@ -588,6 +502,59 @@ h2 {
   .steps-row {
     flex-direction: column;
     align-items: center;
+  }
+}
+
+/* 이용 방법 — 대여/반납은 서로 다른 흐름이라 버튼으로 골라 각 3단계만 보여준다. */
+.usage-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 22px;
+}
+
+.usage-toggle-btn {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 8px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.usage-toggle-btn:hover {
+  color: var(--text);
+}
+
+.usage-toggle-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-color: var(--accent-border);
+}
+
+.usage-steps {
+  display: none;
+  gap: 14px;
+}
+
+.usage-steps.active {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.usage-steps .step-card {
+  max-width: none;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .usage-steps.active {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -615,16 +582,16 @@ h2 {
   top: 50%;
   transform: translateY(-50%);
   font-size: 0.85rem;
-  opacity: 0.7;
+  opacity: 0.6;
   pointer-events: none;
 }
 
 .search-box input {
   width: 100%;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 10px 12px 10px 34px;
   font-size: 0.92rem;
   font-family: var(--font-body);
@@ -642,9 +609,9 @@ h2 {
 
 .location-filter-select {
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 10px 12px;
   font-size: 0.85rem;
   font-family: var(--font-body);
@@ -670,7 +637,7 @@ h2 {
   padding: 7px 13px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: transparent;
+  background: var(--surface);
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
@@ -683,8 +650,8 @@ h2 {
 
 .category-filter-btn.active {
   background: var(--accent-soft);
-  color: var(--accent);
-  border-color: rgba(56, 189, 248, 0.4);
+  color: var(--accent-text);
+  border-color: var(--accent-border);
 }
 
 .item-list {
@@ -703,13 +670,12 @@ h2 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px 18px;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .item-row:hover {
-  border-color: rgba(56, 189, 248, 0.4);
+  border-color: var(--accent-border);
   background: var(--surface-2);
-  transform: translateX(2px);
 }
 
 /* 물품 사진을 따로 관리하지 않는 대신, 분류별 아이콘을 자동으로 붙여준다 (items-data.js의
@@ -717,7 +683,7 @@ h2 {
 .item-row-icon {
   width: 38px;
   height: 38px;
-  border-radius: 10px;
+  border-radius: var(--radius);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -743,7 +709,7 @@ h2 {
 .item-row-name {
   margin: 0;
   font-size: 1rem;
-  color: var(--text);
+  color: var(--text-strong);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -770,8 +736,8 @@ h2 {
   padding: 4px 9px;
   border-radius: 6px;
   background: var(--surface-2);
-  color: var(--accent);
-  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: var(--accent-text);
+  border: 1px solid var(--accent-border);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -835,14 +801,12 @@ h2 {
 
 .badge-available {
   background: var(--accent-soft);
-  color: var(--accent);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--accent-text);
+  border: 1px solid var(--accent-border);
 }
 
 .badge-available .badge-dot {
   background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow);
-  animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
 .badge-inuse {
@@ -855,35 +819,26 @@ h2 {
   background: var(--text-faint);
 }
 
-@keyframes pulse-dot {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
-}
-
-/* ---------- Safety 이벤트 배지(심각도/상태) ---------- */
+/* ---------- Safety 이벤트 배지(심각도/상태) ----------
+   상태·심각도를 알려주는 배지는 장식이 아니라 정보다 — red/amber/green은 그대로 쓰되,
+   근-검정 캔버스 위에서 읽히도록 밝은 텍스트 + 옅은 배경 조합으로 맞춘다. */
 
 .badge-sev-high {
-  background: rgba(248, 113, 113, 0.12);
-  color: #fca5a5;
-  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
 }
 .badge-sev-high .badge-dot {
-  background: #f87171;
-  box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
+  background: var(--danger);
 }
 
 .badge-sev-medium {
-  background: rgba(251, 191, 36, 0.12);
-  color: #fcd34d;
-  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
 }
 .badge-sev-medium .badge-dot {
-  background: #fbbf24;
+  background: var(--warning);
 }
 
 .badge-sev-low {
@@ -896,20 +851,20 @@ h2 {
 }
 
 .badge-st-needs_review {
-  background: rgba(251, 191, 36, 0.12);
-  color: #fcd34d;
-  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
 }
 .badge-st-needs_review .badge-dot {
-  background: #fbbf24;
+  background: var(--warning);
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
 .badge-st-open,
 .badge-st-assigned {
   background: var(--accent-soft);
-  color: var(--accent);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--accent-text);
+  border: 1px solid var(--accent-border);
 }
 .badge-st-open .badge-dot,
 .badge-st-assigned .badge-dot {
@@ -918,22 +873,21 @@ h2 {
 
 .badge-st-in_progress {
   background: var(--accent-soft);
-  color: var(--accent);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--accent-text);
+  border: 1px solid var(--accent-border);
 }
 .badge-st-in_progress .badge-dot {
   background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow);
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
 .badge-st-resolved {
-  background: rgba(74, 222, 128, 0.12);
-  color: #86efac;
-  border: 1px solid rgba(74, 222, 128, 0.35);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border: 1px solid var(--accent-border);
 }
 .badge-st-resolved .badge-dot {
-  background: #4ade80;
+  background: var(--accent);
 }
 
 .badge-st-closed,
@@ -945,6 +899,16 @@ h2 {
 .badge-st-closed .badge-dot,
 .badge-st-false_positive .badge-dot {
   background: var(--text-faint);
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
 .safety-detail {
@@ -992,9 +956,9 @@ h2 {
   width: 100%;
   margin-top: 10px;
   padding: 8px 10px;
-  background: var(--bg);
+  background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-family: var(--font-body);
   font-size: 0.85rem;
@@ -1009,30 +973,17 @@ h2 {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+  background: var(--accent);
   color: var(--accent-ink);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.4rem;
   z-index: 200;
-  animation: fab-ping 2.4s ease-out infinite;
 }
 
 .fab:hover {
-  filter: brightness(1.08);
-}
-
-@keyframes fab-ping {
-  0% {
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 0 0 rgba(56, 189, 248, 0.5);
-  }
-  70% {
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 0 14px rgba(56, 189, 248, 0);
-  }
-  100% {
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4), 0 0 0 14px rgba(56, 189, 248, 0);
-  }
+  background: var(--accent-text);
 }
 
 /* ---------- 챗봇 화면 ---------- */
@@ -1048,7 +999,6 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
   height: min(70vh, 640px);
@@ -1060,7 +1010,7 @@ h2 {
   padding: 14px 18px;
   font-size: 0.86rem;
   color: var(--text-muted);
-  background: var(--accent-soft);
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1070,8 +1020,8 @@ h2 {
   margin: 0;
   padding: 10px 18px;
   font-size: 0.8rem;
-  color: #fcd34d;
-  background: rgba(251, 191, 36, 0.08);
+  color: var(--warning);
+  background: var(--warning-soft);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1115,8 +1065,7 @@ h2 {
   font-size: 0.6rem;
   font-weight: 700;
   color: var(--accent-ink);
-  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
-  box-shadow: 0 0 10px var(--accent-glow);
+  background: var(--accent);
 }
 
 .chat-bubble {
@@ -1134,7 +1083,7 @@ h2 {
 }
 
 .chat-message-user .chat-bubble {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+  background: var(--accent);
   color: var(--accent-ink);
   font-weight: 500;
 }
@@ -1169,7 +1118,7 @@ h2 {
 
 .chat-recommend-name {
   font-size: 0.9rem;
-  color: var(--text);
+  color: var(--text-strong);
   white-space: nowrap;
 }
 
@@ -1184,9 +1133,9 @@ h2 {
 .chat-input-bar input {
   flex: 1;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--surface-2);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 10px 12px;
   font-size: 0.92rem;
   font-family: var(--font-body);
@@ -1227,9 +1176,9 @@ h2 {
 .item-manage-form input,
 .item-manage-form select {
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 9px 12px;
   font-size: 0.88rem;
   font-family: var(--font-body);
@@ -1251,9 +1200,9 @@ h2 {
 .stock-input {
   width: 72px;
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--surface-2);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 6px 8px;
   font-size: 0.85rem;
   font-family: var(--font-mono);
@@ -1277,6 +1226,7 @@ h2 {
   background: #fff; /* QR은 흰 배경 위에 찍혀야 스캐너가 안정적으로 인식한다 */
   cursor: pointer;
   flex-shrink: 0;
+  border: 1px solid var(--border);
 }
 
 .qr-thumb:hover {
@@ -1297,7 +1247,7 @@ h2 {
   background: none;
   border: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: underline;
   cursor: pointer;
   font: inherit;
@@ -1328,12 +1278,11 @@ h2 {
   padding: 14px 16px;
   cursor: pointer;
   font-family: inherit;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
 .summary-card:hover {
-  border-color: rgba(56, 189, 248, 0.4);
-  transform: translateY(-1px);
+  border-color: var(--accent-border);
 }
 
 .summary-card-value {
@@ -1341,7 +1290,7 @@ h2 {
   font-family: var(--font-display);
   font-size: 1.7rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .summary-card-label {
@@ -1353,11 +1302,11 @@ h2 {
 }
 
 .summary-card-warn .summary-card-value {
-  color: #fcd34d;
+  color: var(--warning);
 }
 
 .summary-card-danger .summary-card-value {
-  color: #fca5a5;
+  color: var(--danger);
 }
 
 .tabs {
@@ -1386,10 +1335,9 @@ h2 {
 }
 
 .tab-btn.active {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
   border-bottom-color: var(--accent);
-  text-shadow: 0 0 10px var(--accent-glow);
 }
 
 .tab-panel {
@@ -1405,7 +1353,6 @@ h2 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
   /* 관리자 재고표처럼 컬럼이 많은 표는 가로 스크롤이 생길 수밖에 없는데, 기본 스크롤바가
      너무 얇아서 잡기 불편하다는 피드백이 있어 눈에 잘 띄는 두께로 스타일링한다. */
   scrollbar-width: auto;
@@ -1481,11 +1428,11 @@ thead th {
   text-align: left;
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
   padding: 11px 13px;
-  border-bottom: 1px solid rgba(56, 189, 248, 0.3);
+  border-bottom: 1px solid var(--border);
   background: var(--surface-2);
   white-space: nowrap;
 }
@@ -1503,7 +1450,7 @@ tbody tr:last-child td {
 }
 
 tbody tr:hover td {
-  background: rgba(56, 189, 248, 0.05);
+  background: var(--surface-2);
 }
 
 /* ---------- 로그인 화면 ---------- */
@@ -1524,31 +1471,8 @@ tbody tr:hover td {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow), 0 0 40px rgba(56, 189, 248, 0.08);
   padding: 36px 28px 32px;
   text-align: center;
-}
-
-.scan-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  top: -10%;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  box-shadow: 0 0 14px var(--accent-glow);
-  opacity: 0.85;
-  animation: scan-move 3.2s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes scan-move {
-  0% {
-    top: -10%;
-  }
-  100% {
-    top: 110%;
-  }
 }
 
 .logo-large {
@@ -1556,10 +1480,7 @@ tbody tr:hover td {
   font-weight: 700;
   font-size: 1.9rem;
   margin: 0 0 4px;
-  background: linear-gradient(120deg, var(--text) 10%, var(--accent) 120%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--text-strong);
 }
 
 .auth-subtitle {
@@ -1571,10 +1492,10 @@ tbody tr:hover td {
 .auth-error {
   margin: -12px 0 18px;
   padding: 10px 12px;
-  border-radius: 8px;
-  background: rgba(248, 113, 113, 0.1);
-  border: 1px solid rgba(248, 113, 113, 0.3);
-  color: #fca5a5;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
   font-size: 0.82rem;
   text-align: left;
 }
@@ -1582,10 +1503,10 @@ tbody tr:hover td {
 .auth-info {
   margin: -12px 0 18px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--accent-soft);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-text);
   font-size: 0.82rem;
   text-align: left;
 }
@@ -1607,9 +1528,9 @@ tbody tr:hover td {
 
 .auth-card input {
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--surface-2);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 10px 12px;
   font-size: 0.92rem;
   font-family: var(--font-body);
@@ -1654,19 +1575,7 @@ tbody tr:hover td {
   font-family: var(--font-display);
   font-size: 1.9rem;
   font-weight: 700;
-  color: var(--text);
-  text-shadow: 0 0 24px var(--accent-glow);
-  animation: status-glow 2.4s ease-in-out infinite;
-}
-
-@keyframes status-glow {
-  0%,
-  100% {
-    text-shadow: 0 0 18px var(--accent-glow);
-  }
-  50% {
-    text-shadow: 0 0 34px var(--accent-glow);
-  }
+  color: var(--text-strong);
 }
 
 .status-caption {
@@ -1686,7 +1595,6 @@ tbody tr:hover td {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow);
   padding: 24px;
   margin-bottom: 32px;
 }
@@ -1703,8 +1611,7 @@ tbody tr:hover td {
   font-size: 1.4rem;
   font-weight: 700;
   color: var(--accent-ink);
-  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
-  box-shadow: 0 0 16px var(--accent-glow);
+  background: var(--accent);
 }
 
 .profile-info {
@@ -1715,7 +1622,7 @@ tbody tr:hover td {
 .profile-name {
   margin: 0 0 2px;
   font-size: 1.1rem;
-  color: var(--text);
+  color: var(--text-strong);
 }
 
 .profile-email {
@@ -1730,9 +1637,9 @@ tbody tr:hover td {
   font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.04em;
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
-  border: 1px solid rgba(56, 189, 248, 0.3);
+  border: 1px solid var(--accent-border);
   padding: 3px 9px;
   border-radius: 999px;
 }
@@ -1757,7 +1664,7 @@ tbody tr:hover td {
   font-family: var(--font-display);
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .stat-label {
@@ -1774,8 +1681,9 @@ tbody tr:hover td {
 
 .section-heading {
   font-size: 1.05rem;
+  font-weight: 600;
   margin: 0 0 14px;
-  color: var(--text);
+  color: var(--text-strong);
 }
 
 .rental-list {
@@ -1795,16 +1703,15 @@ tbody tr:hover td {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px 18px;
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
 .rental-card:hover {
-  border-color: rgba(56, 189, 248, 0.4);
-  transform: translateX(2px);
+  border-color: var(--accent-border);
 }
 
 .rental-card-overdue {
-  border-color: rgba(248, 113, 113, 0.4);
+  border-color: var(--danger-border);
 }
 
 .rental-card-main {
@@ -1823,7 +1730,7 @@ tbody tr:hover td {
 .rental-card-name {
   margin: 0;
   font-size: 1rem;
-  color: var(--text);
+  color: var(--text-strong);
   white-space: nowrap;
 }
 
@@ -1842,27 +1749,25 @@ tbody tr:hover td {
 }
 
 .badge-overdue {
-  background: rgba(248, 113, 113, 0.12);
-  color: #fca5a5;
-  border: 1px solid rgba(248, 113, 113, 0.35);
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
 }
 
 .badge-overdue .badge-dot {
-  background: #f87171;
-  box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
+  background: var(--danger);
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
 /* ---------- 파손 신고: severity 4단계 중 "즉시교체"만 badge-sev-high보다 한 단계 더 강하게 ---------- */
 
 .badge-sev-critical {
-  background: rgba(248, 113, 113, 0.22);
-  color: #fecaca;
-  border: 1px solid rgba(248, 113, 113, 0.55);
+  background: rgba(248, 113, 113, 0.2);
+  color: var(--danger);
+  border: 1px solid rgba(248, 113, 113, 0.5);
 }
 .badge-sev-critical .badge-dot {
-  background: #f87171;
-  box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
+  background: var(--danger);
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
@@ -1876,12 +1781,13 @@ tbody tr:hover td {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
-/* ---------- 공용 모달 (파손 신고 등) ---------- */
+/* ---------- 공용 모달 (파손 신고 등) — 다른 레이어 위에 실제로 뜨는 유일한 곳이라
+   진한 그림자를 예외로 쓴다(DESIGN.md 고도 규칙 참고). ---------- */
 
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(4, 8, 16, 0.72);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1894,7 +1800,7 @@ tbody tr:hover td {
   max-width: 420px;
   max-height: 90vh;
   overflow-y: auto;
-  background: var(--surface);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -1904,8 +1810,9 @@ tbody tr:hover td {
 .modal-title {
   margin: 0 0 4px;
   font-family: var(--font-display);
+  font-weight: 600;
   font-size: 1.05rem;
-  color: var(--text);
+  color: var(--text-strong);
 }
 
 .modal-subtitle {
@@ -1935,9 +1842,9 @@ tbody tr:hover td {
 .modal-field textarea {
   width: 100%;
   border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 10px 12px;
   font-size: 0.88rem;
   font-family: var(--font-body);
@@ -1982,7 +1889,7 @@ tbody tr:hover td {
 
 .rental-card-reserved {
   border-style: dashed;
-  border-color: rgba(56, 189, 248, 0.35);
+  border-color: var(--accent-border);
 }
 
 .qty-stepper {
@@ -2000,9 +1907,9 @@ tbody tr:hover td {
 .qty-stepper input {
   width: 60px;
   border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 6px 8px;
   font-size: 0.85rem;
   font-family: var(--font-mono);
@@ -2038,7 +1945,7 @@ tbody tr:hover td {
   gap: 8px;
   padding: 20px 16px;
   border: 1px dashed var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
 
@@ -2077,7 +1984,7 @@ tbody tr:hover td {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg);
+  background: var(--surface);
   padding: 28px 20px 22px;
   margin-bottom: 16px;
 }
@@ -2085,18 +1992,18 @@ tbody tr:hover td {
 .guide-eyebrow {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--accent);
   margin: 0 0 8px;
 }
 
 .guide-message {
   font-family: var(--font-display);
-  font-size: 1.3rem;
   font-weight: 700;
-  color: var(--text);
+  font-size: 1.3rem;
+  color: var(--text-strong);
   margin: 0 0 6px;
-  text-shadow: 0 0 18px var(--accent-glow);
 }
 
 .guide-caption {
@@ -2137,12 +2044,14 @@ tbody tr:hover td {
   object-fit: cover;
 }
 
+/* 카메라 프레임 밖을 어둡게 하는 기능적 오버레이 — 장식용 글로우가 아니라 "지금 이 사각형
+   안에 QR을 맞추라"는 실제 UI 신호라 DESIGN.md 예외 조항에 따라 그대로 유지한다. */
 .qr-scan-reticle {
   position: absolute;
   inset: 14%;
   border: 2px solid var(--accent);
   border-radius: 12px;
-  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.5);
   pointer-events: none;
 }
 
@@ -2177,9 +2086,9 @@ tbody tr:hover td {
 .guide-manual-row input {
   flex: 1;
   border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--surface);
   color: var(--text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 8px 10px;
   font-size: 0.85rem;
   font-family: var(--font-mono);
@@ -2210,10 +2119,6 @@ tbody tr:hover td {
     margin-left: 0;
   }
 
-  .logo-tag {
-    display: none;
-  }
-
   .auth-actions {
     flex-direction: column;
   }
@@ -2223,7 +2128,8 @@ tbody tr:hover td {
   }
 }
 
-/* ---------- 토스트 알림 (alert() 대체, js/toast.js) ---------- */
+/* ---------- 토스트 알림 (alert() 대체, js/toast.js) — 모달과 함께 그림자를 쓰는
+   유일한 예외(다른 레이어 위에 뜨는 요소). ---------- */
 
 .toast-container {
   position: fixed;
@@ -2237,7 +2143,7 @@ tbody tr:hover td {
 }
 
 .toast {
-  background: var(--surface);
+  background: var(--surface-2);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
   border-radius: var(--radius);
@@ -2245,7 +2151,7 @@ tbody tr:hover td {
   font-size: 0.88rem;
   line-height: 1.5;
   color: var(--text);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-toast);
   opacity: 0;
   transform: translateX(24px);
   transition: opacity 0.2s ease, transform 0.2s ease;
@@ -2259,15 +2165,15 @@ tbody tr:hover td {
 }
 
 .toast-success {
-  border-left-color: #34d399;
+  border-left-color: var(--accent);
 }
 
 .toast-error {
-  border-left-color: #fca5a5;
+  border-left-color: var(--danger);
 }
 
 .toast-info {
-  border-left-color: var(--accent);
+  border-left-color: var(--warning);
 }
 
 @media (max-width: 480px) {
@@ -2304,7 +2210,7 @@ tbody tr:hover td {
 
 .summary-sparkline rect {
   fill: currentColor;
-  opacity: 0.55;
+  opacity: 0.7;
 }
 
 /* ---------- 로딩 스켈레톤 ---------- */

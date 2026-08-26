@@ -177,7 +177,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       <div class="modal-card guide-modal-card">
         <div class="guide-step" data-step="nav">
           <div class="guide-scanline-box">
-            <div class="scan-line"></div>
             <p class="guide-eyebrow">${copy.eyebrow} · 로봇 안내</p>
             <h3 class="guide-message">${copy.message}</h3>
             <p class="guide-caption">표시된 위치로 이동한 뒤 물품 QR로 확인하세요</p>

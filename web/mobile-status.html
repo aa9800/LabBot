@@ -21,12 +21,10 @@
           <path d="M19 12H22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
         </svg>
         <span class="logo-text">LabBot</span>
-        <span class="logo-tag">AI VISION</span>
       </a>
       <nav class="nav-links">
         <a href="index.html" data-nav="home">홈</a>
         <a href="items.html" data-nav="items">물품목록</a>
-        <a href="chatbot.html" data-nav="chatbot">챗봇</a>
         <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
         <a href="login.html" data-nav="login">로그인</a>
         <a href="admin.html" data-nav="admin" class="nav-admin-link">
@@ -40,10 +38,11 @@
     </div>
   </header>
   <main class="status-page">
-    <div class="scan-line"></div>
     <p class="status-message" id="statusMessage">로봇을 따라가세요</p>
     <p class="status-caption">AI 카메라가 경로를 인식하고 있습니다</p>
   </main>
+
+  <a href="chatbot.html" class="fab" aria-label="챗봇 열기">💬</a>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/config.js"></script>
