@@ -69,11 +69,12 @@ class StreamingHandler(BaseHTTPRequestHandler):
             pass
 
     def do_OPTIONS(self):
-        # CORS 프리플라이트 요청 허용
+        # CORS 프리플라이트 요청 허용 (Private Network Access 포함)
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
 
     def do_GET(self):
@@ -84,6 +85,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.send_header("Pragma", "no-cache")
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=FRAME")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
             client_version = 0
             try:
@@ -109,14 +111,34 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(frame)))
                 self.send_header("Cache-Control", "no-cache, no-store")
                 self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Private-Network", "true")
                 self.end_headers()
                 self.wfile.write(frame)
             else:
                 self.send_error(404, "No frame available")
+        elif self.path.startswith("/camera"):
+            # 초저지연 로컬 카메라 서보 각도 조절 직결 엔드포인트
+            import urllib.parse
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            pan = int(qs["pan"][0]) if "pan" in qs else None
+            tilt = int(qs["tilt"][0]) if "tilt" in qs else None
+            if _camera_angle_callback is not None:
+                try:
+                    _camera_angle_callback(pan, tilt)
+                except Exception as e:
+                    logger.warn(f"Camera angle callback failed: {e}")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
         elif self.path in ("/health", "/status"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
             status_data = {
                 "status": "ok",
@@ -128,6 +150,15 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(status_data).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
+
+
+_camera_angle_callback = None
+
+
+def set_camera_angle_callback(cb):
+    """서보 각도 변경 콜백 등록 (RealHAL.set_camera_angle 연동)."""
+    global _camera_angle_callback
+    _camera_angle_callback = cb
 
 
 def set_camera_frame(jpeg_bytes: bytes):

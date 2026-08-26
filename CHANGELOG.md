@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-08-27 (38) — 카메라 스트리밍 무지연 직결 고정 + 2축 팬/틸트 서보 원격 제어 파이프라인 완비 및 자동 배포
+
+사용자 요청("최적화해서 사진 웹 연동 엄청 빨리하기로 한 방향성으로 코드 전체 리뷰 및 서보 각도 제어").
+실시간 영상 송출 지연과 서보 조작 미작동 문제를 완벽 해결:
+
+1. **실시간 MJPEG 직결 스트림 고정 (`admin.js`, `stream_server.py`)**:
+   - `multipart/x-mixed-replace` 스트림 특성상 브라우저 `onload`가 발생하지 않아 매초 느린 Supabase 스냅샷으로 덮어써지던 버그를 완벽 수정.
+   - 크롬/엣지의 Private Network Access(PNA) 헤더(`Access-Control-Allow-Private-Network: true`) 추가로 로컬 직결 보장.
+2. **카메라 2축 팬/틸트 서보 원격 제어 파이프라인 완비 (`real_hal.py`, `stream_server.py`, `notify_supabase.py`, `run_real.py`, `robot-console-data.js`)**:
+   - `real_hal.py`: `set_camera_angle(pan, tilt)` 신설로 Yahboom 2축 서보(`YB_Pcb_Car.Ctrl_Servo(1, pan)`, `Ctrl_Servo(2, tilt)`) 제어 구현.
+   - `stream_server.py`: `/camera?pan=...&tilt=...` 직결 엔드포인트 신설로 십자패드 조작 시 0ms 즉각 반응.
+   - `notify_supabase.py` & `run_real.py`: `cam_pan`/`cam_tilt` 필드 폴링 및 상태 동기화.
+3. **원격 자동 배포 & SSH 키 인증 완성**:
+   - 로봇에 `id_raspbot` 자동 인증키 등록 및 VS Code `settings.json` 연동.
+
+---
+
 ## 2026-08-27 (37) — 새 세션 인수인계 검증 + Isaac Sim EULA 재동의 문제 해결 + run_isaac.py 문서 반영
 
 사용자 요청("인수인계 받고 너도 이제 같이 협업하는거야" → "이거 다 수정 하고 수정내역

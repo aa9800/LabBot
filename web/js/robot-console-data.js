@@ -36,6 +36,8 @@ async function fetchRobotCommand() {
   return data;
 }
 
+let _cachedLocalIp = null;
+
 // local_ip는 fetchRobotCommand와 분리 — 아직 마이그레이션 전이어도 기본 명령 폴링은 안전하게 유지
 async function fetchRobotIp() {
   try {
@@ -44,10 +46,12 @@ async function fetchRobotIp() {
       .select("local_ip")
       .eq("id", 1)
       .single();
-    if (error) return null;
-    return data && data.local_ip ? data.local_ip.trim() : null;
+    if (error) return _cachedLocalIp;
+    const ip = data && data.local_ip ? data.local_ip.trim() : null;
+    if (ip) _cachedLocalIp = ip;
+    return ip || _cachedLocalIp;
   } catch {
-    return null;
+    return _cachedLocalIp;
   }
 }
 
@@ -100,12 +104,26 @@ async function setRobotCommand({ mode, speed = 0, turn = 0, cam_pan, cam_tilt })
 // 카메라 각도만 바꿀 때는 mode/speed/turn을 건드리지 않는다 — 주행 중에 카메라만 돌려도
 // 로봇이 갑자기 멈추거나 자동/수동 모드가 바뀌면 안 되기 때문에, robot_commands의
 // mode/speed/turn은 그대로 두고 cam_pan/cam_tilt만 갱신하는 별도 함수로 분리했다.
+// 로컬 직결 스트림 IP가 있으면 0ms 초저지연으로 로봇에 직접 쏘고, Supabase에도 상태를 동기화한다.
 async function setCameraAngle({ cam_pan, cam_tilt }) {
+  // 1. 로컬 직결 초저지연(0ms) 서보 명령 전송
+  const targetIp = _cachedLocalIp || "10.42.0.1";
+  if (targetIp && targetIp !== "127.0.0.1") {
+    const params = new URLSearchParams();
+    if (cam_pan !== undefined) params.set("pan", cam_pan);
+    if (cam_tilt !== undefined) params.set("tilt", cam_tilt);
+    fetch(`http://${targetIp}:8080/camera?${params.toString()}`, { mode: "no-cors" }).catch(() => {});
+  }
+
+  // 2. Supabase DB 상태 동기화 (클라우드 상태 보존)
   const payload = {};
   if (cam_pan !== undefined) payload.cam_pan = cam_pan;
   if (cam_tilt !== undefined) payload.cam_tilt = cam_tilt;
-  const { error } = await supabaseClient.from("robot_commands").update(payload).eq("id", 1);
-  if (error) throw error;
+  try {
+    await supabaseClient.from("robot_commands").update(payload).eq("id", 1);
+  } catch (err) {
+    console.debug("LabBot: Supabase 카메라 각도 동기화 실패(로컬 직결 동작 중)", err);
+  }
 }
 
 window.LabBotRobotConsole = {

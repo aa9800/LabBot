@@ -75,6 +75,13 @@ class RealHAL:
         self.car = YB_Pcb_Car.YB_Pcb_Car()
         self.last_speed = 0.0
         self.last_turn = 0.0
+        self.cam_pan = 90
+        self.cam_tilt = 90
+        try:
+            self.car.Ctrl_Servo(1, 90)
+            self.car.Ctrl_Servo(2, 90)
+        except Exception:
+            pass
 
         self._picam2 = None
         self._pyzbar = None
@@ -199,6 +206,26 @@ class RealHAL:
         self.last_speed = 0.0
         self.last_turn = 0.0
         self.car.Car_Stop()
+
+    def set_camera_angle(self, pan=None, tilt=None):
+        """카메라 2축 팬/틸트 서보 각도 조절 (0~180도, 중앙 90도).
+        Servo 1: Pan (좌우, 0~180도)
+        Servo 2: Tilt (상하, 0~180도)
+        """
+        if pan is not None:
+            pan = max(0, min(180, int(pan)))
+            try:
+                self.car.Ctrl_Servo(1, pan)
+            except Exception as e:
+                print(f"[RealHAL] Pan 서보 제어 실패: {e}")
+            self.cam_pan = pan
+        if tilt is not None:
+            tilt = max(0, min(180, int(tilt)))
+            try:
+                self.car.Ctrl_Servo(2, tilt)
+            except Exception as e:
+                print(f"[RealHAL] Tilt 서보 제어 실패: {e}")
+            self.cam_tilt = tilt
 
     def cleanup(self):
         """프로그램 종료 시 호출 — 카메라 스레드 정지 + GPIO 핀 정리. controller.py의

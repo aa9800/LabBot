@@ -77,11 +77,11 @@ def fetch_items():
 
 def fetch_robot_command():
     """robot_commands(단일 행, id=1)을 읽어온다. 웹의 관리자가 'Robot Console'에서
-    수동조작으로 바꾸면 여기 mode가 'manual'이 되고 speed/turn 값이 들어온다.
-    실패하면 안전하게 '자동 순찰'로 취급한다."""
+    수동조작으로 바꾸면 여기 mode가 'manual'이 되고 speed/turn/cam_pan/cam_tilt 값이 들어온다.
+    실패하면 안전하게 기본값으로 취급한다."""
     if not _READY:
-        return {"mode": "auto", "speed": 0.0, "turn": 0.0}
-    url = f"{SUPABASE_URL}/rest/v1/robot_commands?id=eq.1&select=mode,speed,turn,updated_at"
+        return {"mode": "auto", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
+    url = f"{SUPABASE_URL}/rest/v1/robot_commands?id=eq.1&select=mode,speed,turn,cam_pan,cam_tilt,updated_at"
     req = urllib.request.Request(url, headers=_headers(), method="GET")
     try:
         with urllib.request.urlopen(req, timeout=2) as resp:
@@ -90,7 +90,7 @@ def fetch_robot_command():
                 return rows[0]
     except (urllib.error.URLError, OSError) as e:
         print(f"[notify_supabase] 원격조작 명령을 못 가져왔습니다(자동 순찰 유지): {e}")
-    return {"mode": "auto", "speed": 0.0, "turn": 0.0}
+    return {"mode": "auto", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
 
 
 def upload_camera_snapshot_bytes(data: bytes, bucket: str = "robot-camera", object_path: str = "latest.jpg"):

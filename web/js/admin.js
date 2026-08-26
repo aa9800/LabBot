@@ -739,24 +739,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     robotCurrentIp = localIp;
     const streamUrl = window.LabBotRobotConsole.getDirectStreamUrl(localIp);
 
-    if (streamUrl && (robotCameraMode === "init" || robotCameraMode === "offline" || robotHealthCheckTick % 5 === 0)) {
+    if (streamUrl && (robotCameraMode === "init" || robotCameraMode === "offline" || robotCameraMode === "snapshot" || robotHealthCheckTick % 5 === 0)) {
       const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(localIp);
       if (isHealthy) {
-        robotCameraImg.onload = () => {
-          robotCameraMode = "stream";
-          robotCameraLastOkAt = new Date();
-          robotCameraImg.style.display = "block";
-          robotCameraStatus.innerHTML = `
-            <div style="margin-top: 6px;">
-              <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>실시간 직결 스트림 (${localIp}:8080)</span>
-            </div>
-          `;
-        };
+        robotCameraMode = "stream";
+        robotCameraLastOkAt = new Date();
+        robotCameraImg.style.display = "block";
+        robotCameraStatus.innerHTML = `
+          <div style="margin-top: 6px;">
+            <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>실시간 직결 스트림 (${localIp}:8080)</span>
+          </div>
+        `;
         robotCameraImg.onerror = () => {
           console.info("LabBot: 로컬 직결 스트림 오류 -> Supabase 스냅샷으로 자동 전환");
+          robotCameraMode = "init";
           loadSnapshotFallback();
         };
-        robotCameraImg.src = streamUrl;
+        if (robotCameraImg.src !== streamUrl) {
+          robotCameraImg.src = streamUrl;
+        }
         return;
       }
     }

@@ -66,7 +66,10 @@ def main():
         print("[labkeeper] 웹에서 물품을 못 가져왔습니다 — .env 확인 (스캔은 되지만 물품 매칭은 안 됨)")
 
     hal = RealHAL(enable_camera=True)
+    stream_server.set_camera_angle_callback(hal.set_camera_angle)
     scanned_ids = set()
+    last_pan = 90
+    last_tilt = 90
 
     def on_scan(location):
         items_here = items_by_location.get(location, [])
@@ -92,7 +95,7 @@ def main():
     )
 
     tick = 0
-    command = {"mode": "auto", "speed": 0.0, "turn": 0.0}
+    command = {"mode": "auto", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
     was_manual = False
 
     try:
@@ -107,6 +110,16 @@ def main():
                     print(f"[labkeeper] 모드 전환: {'수동조작' if is_manual else '자동순찰'}")
                     run_log.write("mode_changed", mode="manual" if is_manual else "auto")
                 was_manual = is_manual
+
+                new_pan = command.get("cam_pan")
+                new_tilt = command.get("cam_tilt")
+                if new_pan is not None or new_tilt is not None:
+                    if new_pan != last_pan or new_tilt != last_tilt:
+                        hal.set_camera_angle(new_pan, new_tilt)
+                        if new_pan is not None:
+                            last_pan = new_pan
+                        if new_tilt is not None:
+                            last_tilt = new_tilt
 
             if command.get("mode") == "manual":
                 distance = hal.read_ultrasonic()
