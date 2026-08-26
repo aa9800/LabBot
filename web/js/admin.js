@@ -683,21 +683,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  async function refreshRobotCamera() {
-    const localIp = (await window.LabBotRobotConsole.fetchRobotIp()) || "10.42.0.1";
+  function refreshRobotCamera() {
+    const localIp = "10.42.0.1";
     robotCurrentIp = localIp;
     const streamUrl = `http://${localIp}:8080/stream`;
 
-    if (robotCameraImg.src !== streamUrl) {
-      robotCameraImg.src = streamUrl;
-    }
-    robotCameraImg.style.display = "block";
-    robotCameraMode = "stream";
-    robotCameraStatus.innerHTML = `
-      <div style="margin-top: 6px;">
-        <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 직결 스트림 (${localIp}:8080 · 30 FPS)</span>
-      </div>
-    `;
+    robotCameraImg.onload = () => {
+      robotCameraImg.style.display = "block";
+      robotCameraMode = "stream";
+      if (robotHudOverlay) robotHudOverlay.style.display = "flex";
+      robotCameraStatus.innerHTML = `
+        <div style="margin-top: 6px;">
+          <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 직결 스트림 (${localIp}:8080 · 30 FPS)</span>
+        </div>
+      `;
+    };
 
     robotCameraImg.onerror = () => {
       robotCameraMode = "offline";
@@ -706,8 +706,20 @@ document.addEventListener("DOMContentLoaded", async () => {
           <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
         </div>
       `;
-      setTimeout(refreshRobotCamera, 2000);
+      setTimeout(() => {
+        robotCameraImg.src = `${streamUrl}?_retry=${Date.now()}`;
+      }, 1500);
     };
+
+    robotCameraImg.src = streamUrl;
+    robotCameraImg.style.display = "block";
+    robotCameraMode = "stream";
+    if (robotHudOverlay) robotHudOverlay.style.display = "flex";
+    robotCameraStatus.innerHTML = `
+      <div style="margin-top: 6px;">
+        <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 직결 스트림 (${localIp}:8080 · 30 FPS)</span>
+      </div>
+    `;
   }
 
 
@@ -1134,8 +1146,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     robotConsoleStarted = true;
     refreshRobotCamera();
     refreshRobotModeBadge();
-    setInterval(refreshRobotCamera, 1000);
-    setInterval(refreshRobotModeBadge, 1000);
+    setInterval(refreshRobotModeBadge, 2000);
 
     // 카메라 각도 초기값을 화면 기본값(90/90)이 아니라 실제 로봇 마지막 상태로 맞춘다.
     // cam_pan/cam_tilt 컬럼이 아직 없으면(마이그레이션 전) 여기만 실패하고 화면 기본값

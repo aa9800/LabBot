@@ -36,23 +36,11 @@ async function fetchRobotCommand() {
   return data;
 }
 
-let _cachedLocalIp = null;
+let _cachedLocalIp = "10.42.0.1";
 
-// local_ip는 fetchRobotCommand와 분리 — 아직 마이그레이션 전이어도 기본 명령 폴링은 안전하게 유지
+// local_ip는 핫스팟 기본 IP(10.42.0.1)를 즉시 반환하여 Supabase 타임아웃 지연을 원천 방지
 async function fetchRobotIp() {
-  try {
-    const { data, error } = await supabaseClient
-      .from("robot_commands")
-      .select("local_ip")
-      .eq("id", 1)
-      .single();
-    if (error) return _cachedLocalIp;
-    const ip = data && data.local_ip ? data.local_ip.trim() : null;
-    if (ip) _cachedLocalIp = ip;
-    return ip || _cachedLocalIp;
-  } catch {
-    return _cachedLocalIp;
-  }
+  return _cachedLocalIp || "10.42.0.1";
 }
 
 function getDirectStreamUrl(localIp, port = 8080) {
