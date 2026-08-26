@@ -153,6 +153,14 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
+        elif self.path == "/telemetry":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.end_headers()
+            data = _telemetry_provider() if _telemetry_provider is not None else {}
+            self.wfile.write(json.dumps(data).encode("utf-8"))
         elif self.path in ("/health", "/status"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -173,6 +181,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
 
 _camera_angle_callback = None
 _drive_callback = None
+_telemetry_provider = None
 
 
 def set_camera_angle_callback(cb):
@@ -185,6 +194,12 @@ def set_drive_callback(cb):
     """직결 주행 명령 콜백 등록 (run_real 연동)."""
     global _drive_callback
     _drive_callback = cb
+
+
+def set_telemetry_provider(fn):
+    """실시간 텔레메트리 제공 함수 등록 (거리, 모드, 서보 각도 등)."""
+    global _telemetry_provider
+    _telemetry_provider = fn
 
 
 def set_camera_frame(jpeg_bytes: bytes):

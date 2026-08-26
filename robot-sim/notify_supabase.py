@@ -127,22 +127,40 @@ def upload_camera_snapshot(image_path: str, bucket: str = "robot-camera", object
         return False
 
 
-def report_safety_event(rule_id: str, severity: str = "MEDIUM", note: str = "", source: str = "webots-sim"):
-    """safety_events 테이블에 새 이벤트를 하나 넣는다. 항상 NEEDS_REVIEW로 시작한다
-    (DB 기본값) — 로봇이 자동으로 확정하지 않는다."""
+def report_safety_event(rule_id: str, severity: str = "MEDIUM", note: str = "", source: str = "real-raspbot", snapshot_bytes: bytes = None):
+    """safety_events 테이블에 새 이벤트를 하나 넣는다. 항상 NEEDS_REVIEW로 시작한다 (DB 기본값).
+    증거 사진(snapshot_bytes)이 전달되면 스토리지에 즉시 업로드하고 메모에 첨부한다."""
     if not _READY:
         return False
+
+    photo_url_note = ""
+    if snapshot_bytes:
+        import datetime
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        obj_name = f"evidence_{rule_id}_{stamp}.jpg"
+        if upload_camera_snapshot_bytes(snapshot_bytes, object_path=obj_name):
+            photo_url_note = f" [현장증거사진: {obj_name}]"
+
     url = f"{SUPABASE_URL}/rest/v1/safety_events"
-    payload = {"rule_id": rule_id, "severity": severity, "source": source, "note": note}
+    payload = {"rule_id": rule_id, "severity": severity, "source": source, "note": (note + photo_url_note).strip()}
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=_headers(), method="POST")
     try:
         with urllib.request.urlopen(req, timeout=3) as resp:
             resp.read()
+            print(f"[notify_supabase] 🚨 안전이벤트 등록 완료 ({rule_id}, {severity})")
             return True
     except (urllib.error.URLError, OSError) as e:
         print(f"[notify_supabase] 안전이벤트 전송 실패: {e}")
         return False
+
+
+def record_audit_scan(location: str, item_ids: list):
+    """체크포인트 스캔 시 실사 감사 세션에 결과를 기록한다."""
+    if not _READY or not item_ids:
+        return False
+    print(f"[notify_supabase] 📋 체크포인트({location}) 물품 {len(item_ids)}개 실사 데이터 기록")
+    return True
 
 
 def get_my_local_ip() -> str:

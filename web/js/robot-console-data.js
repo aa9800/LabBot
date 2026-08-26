@@ -138,6 +138,22 @@ async function setCameraAngle({ cam_pan, cam_tilt }) {
   }
 }
 
+async function fetchTelemetry(timeoutMs = 1000) {
+  const targetIp = _cachedLocalIp || "10.42.0.1";
+  if (!targetIp || targetIp === "127.0.0.1") return null;
+  const url = `http://${targetIp}:8080/telemetry`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const resp = await fetch(url, { method: "GET", mode: "cors", signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch {
+    return null;
+  }
+}
+
 window.LabBotRobotConsole = {
   cameraSnapshotUrl,
   fetchRobotCommand,
@@ -145,6 +161,7 @@ window.LabBotRobotConsole = {
   getDirectStreamUrl,
   checkStreamHealth,
   fetchCameraAngle,
+  fetchTelemetry,
   setRobotCommand,
   setCameraAngle,
 };

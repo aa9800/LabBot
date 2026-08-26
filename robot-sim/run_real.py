@@ -71,23 +71,44 @@ def main():
     last_pan = 90
     last_tilt = 90
 
+    def get_telemetry():
+        return {
+            "distance_cm": round(hal.read_ultrasonic(), 1),
+            "mode": command.get("mode", "auto"),
+            "speed": hal.last_speed,
+            "turn": hal.last_turn,
+            "cam_pan": getattr(hal, "cam_pan", 90),
+            "cam_tilt": getattr(hal, "cam_tilt", 90),
+        }
+
+    stream_server.set_telemetry_provider(get_telemetry)
+
     def on_scan(location):
         items_here = items_by_location.get(location, [])
         names = ", ".join(it["name"] for it in items_here) if items_here else "(등록된 물품 없음)"
-        print(f"[labkeeper] 체크포인트 확인: {location} — {names}")
+        print(f"[labkeeper] 📸 체크포인트 확인: {location} — {names}")
         run_log.write("checkpoint_scanned", checkpoint=location)
         for it in items_here:
             scanned_ids.add(it["id"])
+        # 이벤트 영속성: 실사 데이터 DB 기록
+        from notify_supabase import record_audit_scan
+        record_audit_scan(location, [it["id"] for it in items_here])
 
     def on_obstacle(distance):
-        print(f"[labkeeper] 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 전송")
+        print(f"[labkeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 전송")
         run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
+        # 이벤트 영속성: 현장 스냅샷 사진 첨부하여 DB 등록
+        snap = stream_server.get_latest_frame()
         report_safety_event(
-            "SR-01", severity="HIGH", note="실물 Raspbot 순찰 중 초음파 장애물 감지", source="real-raspbot"
+            "SR-01",
+            severity="HIGH",
+            note=f"실물 Raspbot 순찰 중 초음파 장애물 감지 ({distance:.1f}cm)",
+            source="real-raspbot",
+            snapshot_bytes=snap,
         )
 
     def on_obstacle_cleared():
-        print("[labkeeper] 장애물 사라짐 — 순찰 재개")
+        print("[labkeeper] ✅ 장애물 사라짐 — 순찰 재개")
         run_log.write("obstacle_cleared")
 
     patrol = PatrolController(

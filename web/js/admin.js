@@ -795,8 +795,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 방향 버튼(한 번 클릭 -> 그 방향으로 계속 이동)이 답답하다는 피드백(2026-08-26)으로 교체.
   const JOY_SPEED_MAX = 70; // controller.py의 SPEED(70)와 동일 스케일
   const JOY_TURN_MAX = 90; // controller.py의 TURN_GAIN(90)과 동일 스케일
-  const JOY_SEND_INTERVAL_MS = 150; // 드래그 중 너무 자주 DB에 쓰지 않도록 throttle
-  const JOY_KEEPALIVE_MS = 700; // 손을 안 움직여도 3초 dead-man switch보다 훨씬 짧게 계속 갱신
+  const JOY_SEND_INTERVAL_MS = 50; // 로컬 직결 20Hz 초고속 반응 (0ms 지연)
+  const JOY_KEEPALIVE_MS = 500; // 손을 안 움직여도 3초 dead-man switch보다 훨씬 짧게 계속 갱신
 
   let joyDragging = false;
   let joyRadius = 0;
