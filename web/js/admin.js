@@ -878,7 +878,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
           }
         } else {
-          window.LabBotToast.warn(result.message || "물품 QR 코드가 감지되지 않았습니다. 카메라 각도를 조절해 주세요.");
+          window.LabBotToast.error(result.message || "물품 QR 코드가 감지되지 않았습니다. 카메라 각도를 조절해 주세요.");
           if (robotHudOverlay) {
             robotHudOverlay.style.boxShadow = "inset 0 0 20px rgba(245, 158, 11, 0.6)";
             setTimeout(() => { if (robotHudOverlay) robotHudOverlay.style.boxShadow = "none"; }, 1000);

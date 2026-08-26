@@ -297,7 +297,13 @@ document.addEventListener("DOMContentLoaded", async () => {
           await renderAll();
         }, 1400);
       } catch (err) {
-        scanStatus.textContent = err.message || "확인에 실패했습니다. 다시 스캔해주세요.";
+        const message = err.message || "확인에 실패했습니다. 다시 스캔해주세요.";
+        scanStatus.textContent = message;
+        // QR 코드가 이 대여 건의 물품이 아닐 때(서버 RPC의 qr_code 불일치 예외) —
+        // 화면 하단 문구만으로는 놓치기 쉬워서 토스트로도 눈에 띄게 알려준다.
+        if (message.includes("일치하지 않습니다")) {
+          window.LabBotToast.error(`다른 물품입니다 — "${item.name}"의 QR 코드가 아니에요.`);
+        }
       }
     }
 
