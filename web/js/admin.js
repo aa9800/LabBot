@@ -683,63 +683,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  async function loadSnapshotFallback() {
-    let url;
-    try {
-      url = await window.LabBotRobotConsole.cameraSnapshotUrl();
-    } catch (err) {
-      console.warn("LabBot: 로봇 카메라 서명 URL 발급 실패", err);
-      showRobotCameraOffline("로봇 오프라인 또는 아직 업로드된 스냅샷이 없습니다");
-      return;
-    }
-
-    robotCameraImg.onload = () => {
-      robotCameraMode = "snapshot";
-      robotCameraLastOkAt = new Date();
-      robotCameraImg.style.display = "block";
-      robotCameraStatus.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
-          <span class="badge badge-st-open" style="font-size: 11px;"><span class="badge-dot"></span>클라우드 스냅샷 모드</span>
-          <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 11px;" id="retryDirectStreamBtn">실시간 직결 시도</button>
-        </div>
-      `;
-      const btn = document.getElementById("retryDirectStreamBtn");
-      if (btn) {
-        btn.addEventListener("click", () => {
-          robotCameraMode = "init";
-          refreshRobotCamera();
-        });
-      }
-    };
-    robotCameraImg.onerror = () => {
-      showRobotCameraOffline("스냅샷 이미지를 불러오지 못했습니다");
-    };
-    robotCameraImg.src = url;
-  }
-
   async function refreshRobotCamera() {
     robotHealthCheckTick++;
 
-    // 1. 이미 실시간 직결 스트림이 정상 수신 중인 경우
+    const localIp = (await window.LabBotRobotConsole.fetchRobotIp()) || "10.42.0.1";
+    robotCurrentIp = localIp;
+    const streamUrl = window.LabBotRobotConsole.getDirectStreamUrl(localIp);
+
+    // 1. 이미 실시간 직결 스트림이 정상 수신 중인 경우 주기적 헬스체크만 수행
     if (robotCameraMode === "stream") {
-      // 5초마다 백그라운드 헬스체크 워치독 실행 -> 로봇이 갑자기 꺼졌을 때 자동 감지
-      if (robotHealthCheckTick % 5 === 0 && robotCurrentIp) {
-        const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(robotCurrentIp);
+      if (robotHealthCheckTick % 4 === 0) {
+        const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(localIp);
         if (!isHealthy) {
-          console.warn("LabBot: 실시간 스트림 연결 끊김 감지 -> 스냅샷 모드로 전환");
-          robotCameraMode = "init";
-          await loadSnapshotFallback();
+          robotCameraMode = "offline";
+          robotCameraStatus.innerHTML = `
+            <div style="margin-top: 6px;">
+              <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
+            </div>
+          `;
         }
       }
       return;
     }
 
-    // 2. 로봇의 로컬 IP가 확인되면 로컬 MJPEG 초고속 직결(30 FPS / ~30ms) 우선 시도
-    const localIp = await window.LabBotRobotConsole.fetchRobotIp();
-    robotCurrentIp = localIp;
-    const streamUrl = window.LabBotRobotConsole.getDirectStreamUrl(localIp);
-
-    if (streamUrl && (robotCameraMode === "init" || robotCameraMode === "offline" || robotCameraMode === "snapshot" || robotHealthCheckTick % 5 === 0)) {
+    // 2. 실시간 직결 시도
+    if (streamUrl) {
       const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(localIp);
       if (isHealthy) {
         robotCameraMode = "stream";
@@ -747,13 +715,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         robotCameraImg.style.display = "block";
         robotCameraStatus.innerHTML = `
           <div style="margin-top: 6px;">
-            <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>실시간 직결 스트림 (${localIp}:8080)</span>
+            <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 직결 스트림 (${localIp}:8080 · 30 FPS)</span>
           </div>
         `;
         robotCameraImg.onerror = () => {
-          console.info("LabBot: 로컬 직결 스트림 오류 -> Supabase 스냅샷으로 자동 전환");
-          robotCameraMode = "init";
-          loadSnapshotFallback();
+          robotCameraMode = "offline";
+          robotCameraStatus.innerHTML = `
+            <div style="margin-top: 6px;">
+              <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
+            </div>
+          `;
         };
         if (robotCameraImg.src !== streamUrl) {
           robotCameraImg.src = streamUrl;
@@ -762,8 +733,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
-    // 3. 직결 불가능하거나 스냅샷 모드일 때 스냅샷 폴링 갱신
-    await loadSnapshotFallback();
+    // 3. 로봇 미연결 상태
+    robotCameraMode = "offline";
+    robotCameraStatus.innerHTML = `
+      <div style="margin-top: 6px;">
+        <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
+      </div>
+    `;
   }
 
 

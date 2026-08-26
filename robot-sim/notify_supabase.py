@@ -94,24 +94,30 @@ def fetch_robot_command():
 
 
 def upload_camera_snapshot_bytes(data: bytes, bucket: str = "robot-camera", object_path: str = "latest.jpg"):
-    """메모리에 있는 JPEG 바이트를 Supabase Storage에 직접 업로드한다 (디스크 I/O 없음)."""
+    """메모리에 있는 JPEG 바이트를 Supabase Storage에 비동기로 업로드한다 (메인 루프 차단 없음)."""
     if not _READY or not data:
         return False
-    url = f"{SUPABASE_URL}/storage/v1/object/{bucket}/{object_path}"
-    headers = {
-        "apikey": SUPABASE_SECRET_KEY,
-        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
-        "Content-Type": "image/jpeg",
-        "x-upsert": "true",  # 같은 파일 이름에 매번 덮어쓰기
-    }
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            resp.read()
-            return True
-    except (urllib.error.URLError, OSError) as e:
-        print(f"[notify_supabase] 카메라 사진 바이트 업로드 실패: {e}")
-        return False
+
+    def _do_upload():
+        url = f"{SUPABASE_URL}/storage/v1/object/{bucket}/{object_path}"
+        headers = {
+            "apikey": SUPABASE_SECRET_KEY,
+            "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+            "Content-Type": "image/jpeg",
+            "x-upsert": "true",
+        }
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                resp.read()
+                return True
+        except Exception:
+            return False
+
+    import threading
+    t = threading.Thread(target=_do_upload, daemon=True)
+    t.start()
+    return True
 
 
 def upload_camera_snapshot(image_path: str, bucket: str = "robot-camera", object_path: str = "latest.jpg"):
@@ -128,31 +134,35 @@ def upload_camera_snapshot(image_path: str, bucket: str = "robot-camera", object
 
 
 def report_safety_event(rule_id: str, severity: str = "MEDIUM", note: str = "", source: str = "real-raspbot", snapshot_bytes: bytes = None):
-    """safety_events 테이블에 새 이벤트를 하나 넣는다. 항상 NEEDS_REVIEW로 시작한다 (DB 기본값).
-    증거 사진(snapshot_bytes)이 전달되면 스토리지에 즉시 업로드하고 메모에 첨부한다."""
+    """safety_events 테이블에 새 이벤트를 비동기로 기록한다 (메인 루프 0ms 지연)."""
     if not _READY:
         return False
 
-    photo_url_note = ""
-    if snapshot_bytes:
-        import datetime
-        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        obj_name = f"evidence_{rule_id}_{stamp}.jpg"
-        if upload_camera_snapshot_bytes(snapshot_bytes, object_path=obj_name):
+    def _do_report():
+        photo_url_note = ""
+        if snapshot_bytes:
+            import datetime
+            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            obj_name = f"evidence_{rule_id}_{stamp}.jpg"
+            upload_camera_snapshot_bytes(snapshot_bytes, object_path=obj_name)
             photo_url_note = f" [현장증거사진: {obj_name}]"
 
-    url = f"{SUPABASE_URL}/rest/v1/safety_events"
-    payload = {"rule_id": rule_id, "severity": severity, "source": source, "note": (note + photo_url_note).strip()}
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=_headers(), method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            resp.read()
-            print(f"[notify_supabase] 🚨 안전이벤트 등록 완료 ({rule_id}, {severity})")
-            return True
-    except (urllib.error.URLError, OSError) as e:
-        print(f"[notify_supabase] 안전이벤트 전송 실패: {e}")
-        return False
+        url = f"{SUPABASE_URL}/rest/v1/safety_events"
+        payload = {"rule_id": rule_id, "severity": severity, "source": source, "note": (note + photo_url_note).strip()}
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=_headers(), method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                resp.read()
+                print(f"[notify_supabase] 🚨 안전이벤트 등록 완료 ({rule_id}, {severity})")
+                return True
+        except Exception:
+            return False
+
+    import threading
+    t = threading.Thread(target=_do_report, daemon=True)
+    t.start()
+    return True
 
 
 def record_audit_scan(location: str, item_ids: list):

@@ -119,13 +119,21 @@ def main():
     command = {"mode": "auto", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
     was_manual = False
 
+    last_command_time = time.time()
+
     def on_direct_drive(mode, speed, turn):
-        nonlocal command, was_manual
+        nonlocal command, was_manual, last_command_time
         command["mode"] = mode
         command["speed"] = speed
         command["turn"] = turn
-        command["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        if mode == "manual":
+        last_command_time = time.time()
+        is_manual = mode == "manual"
+        if is_manual != was_manual:
+            print(f"[labkeeper] 🎮 모드 전환: {'수동조작' if is_manual else '자동순찰'}")
+            run_log.write("mode_changed", mode=mode)
+            was_manual = is_manual
+
+        if is_manual:
             distance = hal.read_ultrasonic()
             if distance < OBSTACLE_STOP_DISTANCE:
                 hal.stop()
@@ -141,29 +149,12 @@ def main():
             loop_start = time.time()
             tick += 1
 
-            if tick % COMMAND_POLL_EVERY == 0:
-                command = fetch_robot_command()
-                is_manual = command.get("mode") == "manual"
-                if is_manual != was_manual:
-                    print(f"[labkeeper] 모드 전환: {'수동조작' if is_manual else '자동순찰'}")
-                    run_log.write("mode_changed", mode="manual" if is_manual else "auto")
-                was_manual = is_manual
-
-                new_pan = command.get("cam_pan")
-                new_tilt = command.get("cam_tilt")
-                if new_pan is not None or new_tilt is not None:
-                    if new_pan != last_pan or new_tilt != last_tilt:
-                        hal.set_camera_angle(new_pan, new_tilt)
-                        if new_pan is not None:
-                            last_pan = new_pan
-                        if new_tilt is not None:
-                            last_tilt = new_tilt
-
+            # 수동 조작 시 3초 데드맨 스위치 감시
             if command.get("mode") == "manual":
                 distance = hal.read_ultrasonic()
-                stale = _command_age_seconds(command) > MANUAL_COMMAND_MAX_AGE_SECONDS
+                stale = (time.time() - last_command_time) > MANUAL_COMMAND_MAX_AGE_SECONDS
                 if stale:
-                    hal.stop()  # dead-man switch
+                    hal.stop()  # 3초 동안 웹에서 조이스틱 신호가 없으면 자동 정지
                 elif distance < OBSTACLE_STOP_DISTANCE:
                     hal.stop()
                 else:
