@@ -113,8 +113,17 @@ def main():
 
     stream_server.set_qr_scan_callback(on_manual_qr_scan)
 
+    last_obstacle_alert_time = 0.0
+    OBSTACLE_ALERT_COOLDOWN = 15.0  # 장애물이 계속 있어도 알림 전송은 15초에 최대 1회만 단발 수행
+
     def on_obstacle(distance):
-        print(f"[labkeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 전송")
+        nonlocal last_obstacle_alert_time
+        now = time.time()
+        if (now - last_obstacle_alert_time) < OBSTACLE_ALERT_COOLDOWN:
+            return  # 쿨다운 중에는 중복 알림/DB 업로드 스팸 방지
+
+        last_obstacle_alert_time = now
+        print(f"[labkeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 단발 전송")
         run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
         # 이벤트 영속성: 비동기 스레드 풀에서 증거 스냅샷 첨부하여 DB 등록
         snap = stream_server.get_latest_frame()

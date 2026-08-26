@@ -22,6 +22,7 @@ class PatrolController:
         self._scanned_marker = None
         self._scan_elapsed = 0.0
         self._obstacle_active = False
+        self._clear_elapsed = 0.0
 
     def tick(self, dt):
         """dt: 이번 틱에 흐른 시뮬레이션 시간(초). 실제 시계가 아니라 이 값 기준으로만 판단한다."""
@@ -30,14 +31,21 @@ class PatrolController:
             self._obstacle_active and distance < OBSTACLE_CLEAR_DISTANCE
         ):
             self.hal.stop()
+            self._clear_elapsed = 0.0
             if not self._obstacle_active:
-                # 새로 감지된 순간에만 콜백 — 정지해 있는 동안 매 틱마다 이벤트를 보내지 않는다.
                 self._obstacle_active = True
                 if self.on_obstacle:
                     self.on_obstacle(distance)
             return
+
         if self._obstacle_active:
+            # 장애물이 사라져도 1.5초 동안 완전히 안전한지 지속 확인 후 출발
+            self._clear_elapsed += dt
+            if self._clear_elapsed < 1.5:
+                self.hal.stop()
+                return
             self._obstacle_active = False
+            self._clear_elapsed = 0.0
             if self.on_obstacle_cleared:
                 self.on_obstacle_cleared()
 
