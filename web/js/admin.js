@@ -31,6 +31,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   const auditSessionTableBody = document.getElementById("auditSessionTableBody");
   const auditDetail = document.getElementById("auditDetail");
 
+  const inquiryListEl = document.getElementById("inquiryList");
+  const inquiryEmptyState = document.getElementById("inquiryEmptyState");
+  const inquiryPaginationEl = document.getElementById("inquiryPagination");
+  const INQUIRY_PAGE_SIZE = 10;
+  let inquiryPage = 1;
+
   const locationSelect = document.getElementById("newItemLocation");
   const minimumInput = document.getElementById("newItemMinimum");
   const unitInput = document.getElementById("newItemUnit");
@@ -856,6 +862,159 @@ document.addEventListener("DOMContentLoaded", async () => {
     `;
   }
 
+  // ---------- 문의 (사용자가 우하단 ✉️ 버튼으로 남긴 문의) ----------
+  // 마이페이지의 "내 문의" 카드(.inquiry-card)와 같은 모양을 재사용하고, 관리자용으로
+  // 답변 입력칸+등록 버튼만 카드 안에 그대로 붙여둔다 — 목록 따로/상세 패널 따로 열 필요
+  // 없이, 카드 하나에서 바로 답변까지 끝낼 수 있게.
+  function inquiryStatusBadge(status) {
+    const { INQUIRY_STATUS_LABEL, INQUIRY_STATUS_BADGE_CLASS } = window.LabBotInquiry;
+    const label = INQUIRY_STATUS_LABEL[status] || status;
+    const cls = INQUIRY_STATUS_BADGE_CLASS[status] || "badge-inuse";
+    return `<span class="badge ${cls}"><span class="badge-dot"></span>${label}</span>`;
+  }
+
+  function renderInquiryCard(q) {
+    const { escapeHtml } = window.LabBotItems;
+
+    const isClosed = q.status === "closed";
+    const isAnswered = q.status === "answered";
+
+    // 종결된 문의는 더 손댈 일이 없으니 답변을 읽기 전용으로만 보여준다. 그 외(open/answered)는
+    // 답변 입력칸을 계속 열어두되, 이미 답변한 건은 실수로 조용히 덮어쓰지 않도록 등록 전 확인을
+    // 받고 버튼 문구도 "수정"으로 구분한다. answered일 때 기존 답변을 textarea에 다시 채워
+    // 보여주므로, 위에 별도로 또 표시하면 같은 내용이 중복되어 그때는 생략한다.
+    const bodyHtml = isClosed
+      ? `${q.admin_reply ? `<p class="inquiry-card-reply"><strong>답변</strong> · ${escapeHtml(q.admin_reply)}</p>` : ""}
+         <p class="inquiry-card-closed-note">종결된 문의입니다.</p>`
+      : `
+        <textarea class="safety-note-input" placeholder="답변을 입력하세요" rows="2">${escapeHtml(q.admin_reply || "")}</textarea>
+        <div class="safety-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="reply">${isAnswered ? "답변 수정" : "답변 등록"}</button>
+          ${isAnswered ? `<button type="button" class="btn btn-secondary btn-sm" data-action="close-inquiry">종결</button>` : ""}
+        </div>
+      `;
+
+    const card = document.createElement("article");
+    card.className = "inquiry-card";
+    card.innerHTML = `
+      <div class="inquiry-card-header">
+        ${inquiryStatusBadge(q.status)}
+        <h3 class="inquiry-card-subject">${escapeHtml(q.subject)}</h3>
+        <span class="inquiry-card-date">${escapeHtml((q.profiles && q.profiles.name) || "알 수 없음")} · ${new Date(q.created_at).toLocaleString("ko-KR")}</span>
+      </div>
+      <p class="inquiry-card-message">${escapeHtml(q.message)}</p>
+      ${bodyHtml}
+    `;
+
+    const replyBtn = card.querySelector('[data-action="reply"]');
+    if (replyBtn) {
+      replyBtn.addEventListener("click", async (e) => {
+        const reply = card.querySelector("textarea").value.trim();
+        if (!reply) {
+          window.LabBotToast.error("답변 내용을 입력해주세요.");
+          return;
+        }
+        if (isAnswered && !confirm("이미 등록된 답변을 덮어씁니다. 계속할까요?")) return;
+
+        const btn = e.currentTarget;
+        const originalLabel = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "등록 중...";
+        try {
+          await window.LabBotInquiry.replyInquiry(q.id, reply);
+          window.LabBotToast.success("답변을 등록했습니다.");
+          await renderInquiryCards();
+        } catch (err) {
+          window.LabBotToast.error("답변 등록에 실패했습니다: " + (err.message || err));
+          btn.disabled = false;
+          btn.textContent = originalLabel;
+        }
+      });
+    }
+
+    const closeBtn = card.querySelector('[data-action="close-inquiry"]');
+    if (closeBtn) {
+      closeBtn.addEventListener("click", async (e) => {
+        if (!confirm("이 문의를 종결할까요? 종결 후에는 답변을 다시 수정할 수 없습니다.")) return;
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+          await window.LabBotInquiry.closeInquiry(q.id);
+          window.LabBotToast.success("문의를 종결했습니다.");
+          await renderInquiryCards();
+        } catch (err) {
+          window.LabBotToast.error("종결 처리에 실패했습니다: " + (err.message || err));
+          btn.disabled = false;
+        }
+      });
+    }
+
+    return card;
+  }
+
+  function renderInquiryPagination(totalCount) {
+    const totalPages = Math.max(1, Math.ceil(totalCount / INQUIRY_PAGE_SIZE));
+    if (inquiryPage > totalPages) inquiryPage = totalPages;
+
+    if (totalPages <= 1) {
+      inquiryPaginationEl.innerHTML = "";
+      return;
+    }
+
+    const goTo = (page) => {
+      inquiryPage = page;
+      renderInquiryCards();
+      inquiryListEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+
+    inquiryPaginationEl.innerHTML = `
+      <button type="button" class="btn btn-secondary btn-sm" data-page-action="prev" ${inquiryPage === 1 ? "disabled" : ""}>이전</button>
+      <span class="pagination-status mono">${inquiryPage} / ${totalPages}</span>
+      <button type="button" class="btn btn-secondary btn-sm" data-page-action="next" ${inquiryPage === totalPages ? "disabled" : ""}>다음</button>
+    `;
+    inquiryPaginationEl.querySelector('[data-page-action="prev"]').addEventListener("click", () => goTo(inquiryPage - 1));
+    inquiryPaginationEl.querySelector('[data-page-action="next"]').addEventListener("click", () => goTo(inquiryPage + 1));
+  }
+
+  // 관리자가 마지막으로 본 문의 id(localStorage)보다 새로운 게 있으면 토스트로 알려준다.
+  // 처음 켜보는 관리자 화면(저장된 값이 아예 없을 때)은 기존 문의 전체가 "새 문의"로
+  // 오인되지 않게 조용히 기준점만 저장하고 넘어간다.
+  function notifyNewInquiries(inquiries) {
+    const KEY = "labbot_admin_seen_max_inquiry_id";
+    const lastMaxId = Number(localStorage.getItem(KEY) || 0);
+    const currentMaxId = inquiries.reduce((max, q) => Math.max(max, q.id), 0);
+
+    if (lastMaxId > 0) {
+      const newCount = inquiries.filter((q) => q.id > lastMaxId).length;
+      if (newCount > 0) {
+        window.LabBotToast.info(`새 문의가 ${newCount}건 접수되었습니다.`);
+      }
+    }
+
+    if (currentMaxId > lastMaxId) {
+      localStorage.setItem(KEY, String(currentMaxId));
+    }
+  }
+
+  async function renderInquiryCards() {
+    let inquiries;
+    try {
+      inquiries = await window.LabBotInquiry.fetchAllInquiries();
+    } catch (err) {
+      window.LabBotToast.error("문의 목록을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    notifyNewInquiries(inquiries);
+
+    inquiryEmptyState.style.display = inquiries.length === 0 ? "block" : "none";
+    const start = (inquiryPage - 1) * INQUIRY_PAGE_SIZE;
+    const pageInquiries = inquiries.slice(start, start + INQUIRY_PAGE_SIZE);
+    inquiryListEl.innerHTML = "";
+    pageInquiries.forEach((q) => inquiryListEl.appendChild(renderInquiryCard(q)));
+    renderInquiryPagination(inquiries.length);
+  }
+
   addForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -915,48 +1074,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     card.addEventListener("click", () => switchTab(card.dataset.gotoTab));
   });
 
-  // "대여중" 요약 카드 아래 최근 7일 대여 건수 미니 막대그래프 — 새 테이블/컬럼 없이
-  // 이미 불러온 loans.borrowed_at만으로 계산한다(오늘이 맨 오른쪽 막대).
-  function renderLoanSparkline(loans) {
-    const svg = document.getElementById("summaryLoanSparkline");
-    if (!svg) return;
-
-    const DAYS = 7;
-    const counts = Array.from({ length: DAYS }, () => 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    loans.forEach((loan) => {
-      const borrowed = new Date(loan.borrowed_at);
-      borrowed.setHours(0, 0, 0, 0);
-      const diffDays = Math.round((today - borrowed) / (1000 * 60 * 60 * 24));
-      if (diffDays >= 0 && diffDays < DAYS) {
-        counts[DAYS - 1 - diffDays] += 1;
-      }
-    });
-
-    const max = Math.max(1, ...counts);
-    const barWidth = 100 / DAYS;
-    svg.innerHTML = counts
-      .map((count, i) => {
-        const height = count === 0 ? 1 : (count / max) * 18 + 4;
-        const x = i * barWidth + barWidth * 0.15;
-        const width = barWidth * 0.7;
-        const y = 24 - height;
-        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${width.toFixed(1)}" height="${height.toFixed(1)}" rx="1"></rect>`;
-      })
-      .join("");
-  }
 
   // 요약 카드 — 탭마다 이미 fetch하는 데이터를 여기서 다시 세는 대신, 굳이 캐시를 만들지
   // 않고 그냥 한 번씩 더 불러온다(관리자 화면 데이터량이 적어서 성능에 영향 없음).
   async function renderSummaryCards() {
     try {
-      const [items, loans, damageReports, safetyEvents] = await Promise.all([
+      const [items, loans, damageReports, safetyEvents, inquiries] = await Promise.all([
         window.LabBotItems.searchItems({}),
         window.LabBotRentals.fetchAllLoans(),
         window.LabBotDamage.fetchAllDamageReports(),
         window.LabBotSafety.fetchSafetyEvents({}),
+        window.LabBotInquiry.fetchAllInquiries(),
       ]);
 
       const { computeStockStatus } = window.LabBotItems;
@@ -974,8 +1102,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById("summaryNeedsReview").textContent = safetyEvents.filter(
         (e) => e.status === "NEEDS_REVIEW"
       ).length;
-
-      renderLoanSparkline(loans);
+      document.getElementById("summaryPendingInquiry").textContent = inquiries.filter(
+        (q) => q.status === "open"
+      ).length;
     } catch (err) {
       console.warn("LabBot: 관리자 요약 카드를 불러오지 못했습니다", err);
     }
@@ -992,6 +1121,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await renderSafetyTable();
     await renderAuditChecklist();
     await renderAuditSessions();
+    await renderInquiryCards();
     await renderSummaryCards();
     // startRobotConsolePolling() 호출이 빠져 있어서 로봇 카메라/모드 배지가 아예 갱신되지
     // 않고 있었다(이미지 태그가 항상 빈 채로 남는 문제 — GPT 리뷰 지적의 실제 원인).

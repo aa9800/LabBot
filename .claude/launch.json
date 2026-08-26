@@ -4,8 +4,8 @@
     {
       "name": "labbot-web-static",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8532", "--directory", "web"],
-      "port": 8532
+      "runtimeArgs": ["-m", "http.server", "8541", "--directory", "web"],
+      "port": 8541
     }
   ]
 }

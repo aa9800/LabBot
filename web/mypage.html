@@ -72,6 +72,13 @@
     </section>
 
     <section class="mypage-section">
+      <h2 class="section-heading">내 문의</h2>
+      <div class="inquiry-list" id="inquiryList"></div>
+      <p class="item-empty-state" id="inquiryEmpty">남긴 문의가 없습니다.</p>
+      <div class="pagination" id="inquiryPagination"></div>
+    </section>
+
+    <section class="mypage-section">
       <h2 class="section-heading">이용 이력</h2>
       <div class="table-wrap">
         <table>
@@ -89,6 +96,7 @@
     </section>
   </main>
 
+  <button type="button" class="fab fab-inquiry" id="inquiryFabBtn" aria-label="문의하기">✉️</button>
   <a href="chatbot.html" class="fab" aria-label="챗봇 열기">💬</a>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -102,6 +110,8 @@
   <script src="js/items-data.js"></script>
   <script src="js/rentals.js"></script>
   <script src="js/damage-data.js"></script>
+  <script src="js/inquiry-data.js"></script>
+  <script src="js/inquiry-widget.js"></script>
   <script src="js/mypage.js"></script>
 </body>
 </html>

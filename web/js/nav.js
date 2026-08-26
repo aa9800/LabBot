@@ -1,5 +1,33 @@
 // LabBot - 공통 네비게이션 스크립트
 
+// 로그인한 사용자의 문의 중 "답변완료"인데 아직 안 알려준 게 있으면 토스트로 알려준다.
+// 페이지를 옮길 때마다(로그인 상태로 있는 한 매 페이지에서) 확인하지만, 한 번 알려준
+// 문의 id는 localStorage에 남겨둬서 같은 답변을 또 알려주지 않는다.
+async function notifyAnsweredInquiries(session) {
+  if (!window.LabBotInquiry || !window.LabBotToast) return;
+
+  try {
+    const inquiries = await window.LabBotInquiry.fetchMyInquiries(session.id);
+    const answered = inquiries.filter((q) => q.status === "answered");
+    if (answered.length === 0) return;
+
+    const key = `labbot_notified_inquiry_ids_${session.id}`;
+    const notifiedIds = new Set(JSON.parse(localStorage.getItem(key) || "[]"));
+    const newlyAnswered = answered.filter((q) => !notifiedIds.has(q.id));
+    if (newlyAnswered.length === 0) return;
+
+    window.LabBotToast.success(
+      newlyAnswered.length === 1
+        ? `"${newlyAnswered[0].subject}" 문의에 답변이 도착했습니다.`
+        : `문의 ${newlyAnswered.length}건에 답변이 도착했습니다.`
+    );
+    newlyAnswered.forEach((q) => notifiedIds.add(q.id));
+    localStorage.setItem(key, JSON.stringify([...notifiedIds]));
+  } catch (err) {
+    console.warn("LabBot: 문의 답변 알림 확인 실패", err);
+  }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const currentPage = document.body.dataset.page;
 
@@ -39,4 +67,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  if (session) {
+    notifyAnsweredInquiries(session);
+  }
 });

@@ -986,6 +986,12 @@ h2 {
   background: var(--accent-text);
 }
 
+/* 문의하기 버튼 — 챗봇 버튼과 완전히 같은 디자인(.fab의 크기·색·모양 그대로), 위치만
+   챗봇 버튼(56px 높이, bottom:20px) 바로 위에 쌓이도록 bottom만 다르게 잡는다. */
+.fab-inquiry {
+  bottom: 88px;
+}
+
 /* ---------- 챗봇 화면 ---------- */
 
 .chat-page {
@@ -1270,12 +1276,13 @@ h2 {
 
 .summary-card {
   flex: 1;
-  min-width: 130px;
+  min-width: 108px;
+  max-width: 200px;
   text-align: left;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 12px 14px;
   cursor: pointer;
   font-family: inherit;
   transition: border-color 0.15s ease;
@@ -1759,6 +1766,69 @@ tbody tr:hover td {
   animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
+/* ---------- 내 문의 (마이페이지) ---------- */
+
+.inquiry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.inquiry-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+}
+
+.inquiry-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.inquiry-card-subject {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-strong);
+}
+
+.inquiry-card-date {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-faint);
+}
+
+.inquiry-card-message {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: pre-line;
+}
+
+.inquiry-card-reply {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: pre-line;
+}
+
+.inquiry-card-reply strong {
+  color: var(--accent-text);
+}
+
+.inquiry-card-closed-note {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
 /* ---------- 파손 신고: severity 4단계 중 "즉시교체"만 badge-sev-high보다 한 단계 더 강하게 ---------- */
 
 .badge-sev-critical {
@@ -1837,6 +1907,23 @@ tbody tr:hover td {
   width: 100%;
   font-size: 0.82rem;
   color: var(--text-muted);
+}
+
+.modal-field input[type="text"] {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  font-family: var(--font-body);
+}
+
+.modal-field input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .modal-field textarea {
@@ -2181,7 +2268,10 @@ tbody tr:hover td {
     left: 16px;
     right: 16px;
     top: auto;
-    bottom: 16px;
+    /* 챗봇(.fab, bottom:20px)+문의하기(.fab-inquiry, bottom:88px) 버튼이 세로로 쌓여
+       위쪽 끝이 144px까지 올라오므로, 그 위에 뜨도록 충분히 띄운다(겹치면 토스트를
+       가리거나 버튼을 못 누르게 됨). */
+    bottom: 156px;
     max-width: none;
   }
 }
@@ -2199,19 +2289,6 @@ tbody tr:hover td {
 }
 
 /* ---------- 요약 카드 미니 추이(스파크라인) ---------- */
-
-.summary-sparkline {
-  display: block;
-  width: 100%;
-  height: 22px;
-  margin-top: 8px;
-  color: var(--accent);
-}
-
-.summary-sparkline rect {
-  fill: currentColor;
-  opacity: 0.7;
-}
 
 /* ---------- 로딩 스켈레톤 ---------- */
 

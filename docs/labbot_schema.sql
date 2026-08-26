@@ -1394,3 +1394,94 @@ begin
   return v_loan;
 end;
 $$ language plpgsql security definer set search_path = public;
+
+-- =============================================================
+-- 27. 관리자에게 문의하기 (사용자 요청) — damage_reports와 같은 패턴: 사용자는 본인 글만
+--     쓰고 보고, 관리자는 전체를 보고 답변할 수 있다. 별도 알림 없이 마이페이지/관리자
+--     페이지에서 각자 확인하는 방식으로 충분하다고 보고 우선 단순하게 만든다.
+-- =============================================================
+
+create table if not exists inquiries (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references profiles(id),
+  subject text not null,
+  message text not null,
+  status text not null default 'open' check (status in ('open', 'answered', 'closed')),
+  admin_reply text,
+  replied_by uuid references profiles(id),
+  replied_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_inquiries_user on inquiries(user_id);
+
+alter table inquiries enable row level security;
+
+-- 본인 문의만 조회/작성, 관리자는 전체 조회
+drop policy if exists "inquiries_select_own_or_admin" on inquiries;
+create policy "inquiries_select_own_or_admin" on inquiries
+  for select using (user_id = auth.uid() or is_admin());
+
+drop policy if exists "inquiries_insert_own" on inquiries;
+create policy "inquiries_insert_own" on inquiries
+  for insert with check (user_id = auth.uid());
+
+-- 답변 작성(status/admin_reply 등 수정)은 관리자만 — 본인 글이라도 직접 못 고치게 막아서
+-- "문의 남겼는데 내용을 조용히 바꿔치기" 같은 위변조를 방지한다(loans 자기수정 방지와 같은 원칙).
+drop policy if exists "inquiries_admin_update" on inquiries;
+create policy "inquiries_admin_update" on inquiries
+  for update using (is_admin()) with check (is_admin());
+
+-- 답변 등록: status/admin_reply/replied_by/replied_at을 한 번에 원자적으로 갱신한다
+-- (safety_events의 transition_safety_event()와 같은 이유 — 여러 UPDATE로 나누면 중간에
+-- 일부만 반영될 위험이 있다). security definer를 안 붙였다 — 호출자(관리자)의 권한으로
+-- 그대로 실행되어야 위 inquiries_admin_update RLS가 적용된다.
+create or replace function public.reply_inquiry(
+  p_inquiry_id bigint,
+  p_reply text
+)
+returns inquiries as $$
+declare
+  v_inquiry inquiries;
+begin
+  update inquiries
+  set admin_reply = p_reply,
+      status = 'answered',
+      replied_by = auth.uid(),
+      replied_at = now()
+  where id = p_inquiry_id
+  returning * into v_inquiry;
+
+  if not found then
+    raise exception '문의 id %를 찾을 수 없습니다', p_inquiry_id;
+  end if;
+
+  return v_inquiry;
+end;
+$$ language plpgsql set search_path = public;
+
+-- =============================================================
+-- 28. 문의 종결 (자체 디자인 점검 지적) — status에 'closed'가 정의만 되어있고 실제로
+--     이 상태로 바꿀 방법이 코드 어디에도 없어서, DB 스키마에만 존재하는 죽은 값이었다.
+--     reply_inquiry와 같은 원칙(원자적 갱신, security invoker로 관리자 RLS 그대로 적용).
+-- =============================================================
+
+create or replace function public.close_inquiry(
+  p_inquiry_id bigint
+)
+returns inquiries as $$
+declare
+  v_inquiry inquiries;
+begin
+  update inquiries
+  set status = 'closed'
+  where id = p_inquiry_id
+  returning * into v_inquiry;
+
+  if not found then
+    raise exception '문의 id %를 찾을 수 없습니다', p_inquiry_id;
+  end if;
+
+  return v_inquiry;
+end;
+$$ language plpgsql set search_path = public;

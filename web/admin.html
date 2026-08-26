@@ -83,7 +83,6 @@
       <button type="button" class="summary-card" data-goto-tab="history">
         <span class="summary-card-value" id="summaryActiveLoans">-</span>
         <span class="summary-card-label">대여중</span>
-        <svg class="summary-sparkline" id="summaryLoanSparkline" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"></svg>
       </button>
       <button type="button" class="summary-card summary-card-warn" data-goto-tab="damage">
         <span class="summary-card-value" id="summaryPendingDamage">-</span>
@@ -93,6 +92,10 @@
         <span class="summary-card-value" id="summaryNeedsReview">-</span>
         <span class="summary-card-label">안전 이벤트 검토 필요</span>
       </button>
+      <button type="button" class="summary-card summary-card-warn" data-goto-tab="inquiry">
+        <span class="summary-card-value" id="summaryPendingInquiry">-</span>
+        <span class="summary-card-label">답변 대기중인 문의</span>
+      </button>
     </div>
 
     <div class="tabs">
@@ -101,6 +104,7 @@
       <button type="button" class="tab-btn" data-tab="damage">파손 신고 목록</button>
       <button type="button" class="tab-btn" data-tab="safety">안전 이벤트</button>
       <button type="button" class="tab-btn" data-tab="audit">재고 실사</button>
+      <button type="button" class="tab-btn" data-tab="inquiry">문의</button>
     </div>
 
     <!-- 재고 · 물품 관리 -->
@@ -330,9 +334,14 @@
         <!-- js/admin.js가 선택한 실사 세션의 미확인 물품 목록을 여기 채워넣음 -->
       </div>
     </section>
-  </main>
 
-  <a href="chatbot.html" class="fab" aria-label="챗봇 열기">💬</a>
+    <!-- 문의 (사용자가 우하단 ✉️ 버튼으로 남긴 문의 → 관리자가 여기서 확인·답변) -->
+    <section class="tab-panel" id="tab-inquiry">
+      <div class="inquiry-list" id="inquiryList"></div>
+      <p class="item-empty-state" id="inquiryEmptyState">접수된 문의가 없습니다.</p>
+      <div class="pagination" id="inquiryPagination"></div>
+    </section>
+  </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
@@ -349,6 +358,7 @@
   <script src="js/audit-data.js"></script>
   <script src="js/damage-data.js"></script>
   <script src="js/stock-adjustments-data.js"></script>
+  <script src="js/inquiry-data.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

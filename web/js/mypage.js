@@ -17,6 +17,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   const activeEmptyEl = document.getElementById("activeRentalEmpty");
   const historyBodyEl = document.getElementById("rentalHistoryBody");
   const historyEmptyEl = document.getElementById("rentalHistoryEmpty");
+  const inquiryListEl = document.getElementById("inquiryList");
+  const inquiryEmptyEl = document.getElementById("inquiryEmpty");
+  const inquiryPaginationEl = document.getElementById("inquiryPagination");
+  const INQUIRY_PAGE_SIZE = 10;
+  let inquiryPage = 1;
 
   profileAvatar.textContent = session.name.trim().charAt(0).toUpperCase() || "?";
   profileName.textContent = session.name;
@@ -483,5 +488,67 @@ document.addEventListener("DOMContentLoaded", async () => {
     historyEmptyEl.style.display = history.length === 0 ? "block" : "none";
   }
 
+  // 우하단 ✉️ 버튼(inquiry-widget.js)으로 남긴 문의와 관리자 답변을 여기서 보여준다.
+  async function renderInquiries() {
+    let inquiries;
+    try {
+      inquiries = await window.LabBotInquiry.fetchMyInquiries(session.id);
+    } catch (err) {
+      window.LabBotToast.error("문의 내역을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    const { escapeHtml } = window.LabBotItems;
+    const { INQUIRY_STATUS_LABEL, INQUIRY_STATUS_BADGE_CLASS } = window.LabBotInquiry;
+
+    inquiryEmptyEl.style.display = inquiries.length === 0 ? "block" : "none";
+
+    const start = (inquiryPage - 1) * INQUIRY_PAGE_SIZE;
+    const pageInquiries = inquiries.slice(start, start + INQUIRY_PAGE_SIZE);
+
+    inquiryListEl.innerHTML = pageInquiries
+      .map(
+        (q) => `
+        <article class="inquiry-card">
+          <div class="inquiry-card-header">
+            <span class="badge ${INQUIRY_STATUS_BADGE_CLASS[q.status]}"><span class="badge-dot"></span>${INQUIRY_STATUS_LABEL[q.status]}</span>
+            <h3 class="inquiry-card-subject">${escapeHtml(q.subject)}</h3>
+            <span class="inquiry-card-date">${formatDateTime(q.created_at)}</span>
+          </div>
+          <p class="inquiry-card-message">${escapeHtml(q.message)}</p>
+          ${q.admin_reply ? `<p class="inquiry-card-reply"><strong>답변</strong> · ${escapeHtml(q.admin_reply)}</p>` : ""}
+        </article>
+      `
+      )
+      .join("");
+
+    renderInquiryPagination(inquiries.length);
+  }
+
+  function renderInquiryPagination(totalCount) {
+    const totalPages = Math.max(1, Math.ceil(totalCount / INQUIRY_PAGE_SIZE));
+    if (inquiryPage > totalPages) inquiryPage = totalPages;
+
+    if (totalPages <= 1) {
+      inquiryPaginationEl.innerHTML = "";
+      return;
+    }
+
+    const goTo = (page) => {
+      inquiryPage = page;
+      renderInquiries();
+      inquiryListEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+
+    inquiryPaginationEl.innerHTML = `
+      <button type="button" class="btn btn-secondary btn-sm" data-page-action="prev" ${inquiryPage === 1 ? "disabled" : ""}>이전</button>
+      <span class="pagination-status mono">${inquiryPage} / ${totalPages}</span>
+      <button type="button" class="btn btn-secondary btn-sm" data-page-action="next" ${inquiryPage === totalPages ? "disabled" : ""}>다음</button>
+    `;
+    inquiryPaginationEl.querySelector('[data-page-action="prev"]').addEventListener("click", () => goTo(inquiryPage - 1));
+    inquiryPaginationEl.querySelector('[data-page-action="next"]').addEventListener("click", () => goTo(inquiryPage + 1));
+  }
+
   await renderAll();
+  await renderInquiries();
 });
