@@ -130,12 +130,12 @@ class RealHAL:
                 with self._frame_lock:
                     self._latest_frame = frame
                 if self._cv2 is not None and self._stream_server is not None:
-                    # 품질 55 — 대역폭 절약 및 모바일/웹 0ms 초고속 전송
+                    # 품질 45 (~5KB) — 2.4GHz Wi-Fi 대역폭 지연 및 버퍼블로트 완전 차단
                     _, jpeg = self._cv2.imencode(
-                        ".jpg", frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 55]
+                        ".jpg", frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 45]
                     )
                     self._stream_server.set_camera_frame(jpeg.tobytes())
-                time.sleep(0.001)  # 초경량 yield
+                time.sleep(0.04)  # 25 FPS 안정적 페이싱 (지연 누적 0)
             except Exception as e:
                 print(f"[RealHAL] 카메라 캡처 실패: {e}")
                 time.sleep(0.2)  # 에러 시 CPU 폭주 방지 대기

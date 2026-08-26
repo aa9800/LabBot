@@ -62,9 +62,10 @@ class StreamingHandler(BaseHTTPRequestHandler):
 
     def setup(self):
         super().setup()
-        # Nagle 알고리즘 비활성화 — 프레임 패킷을 모으지 않고 즉시 송출(전송 지연 수백ms 제거)
+        # Nagle 알고리즘 비활성화 및 송신 버퍼 16KB 제한 — 프레임 지연 누적(Bufferbloat) 원천 차단
         try:
             self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 16384)
         except OSError:
             pass
 
@@ -90,7 +91,11 @@ class StreamingHandler(BaseHTTPRequestHandler):
             client_version = 0
             try:
                 while True:
-                    frame, client_version = _buffer.wait_for_new_frame(client_version, timeout=0.5)
+                    # 새 프레임 알림 대기
+                    _buffer.wait_for_new_frame(client_version, timeout=0.5)
+                    # 중간에 밀린 과거 프레임은 버리고 메모리의 '가장 최신 프레임'만 즉시 획득
+                    frame = _buffer.get_latest()
+                    client_version = _buffer.version
                     if frame:
                         chunk = (
                             b"--FRAME\r\n"
