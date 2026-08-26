@@ -743,12 +743,31 @@ document.addEventListener("DOMContentLoaded", async () => {
       robotScanQrBtn.disabled = true;
       robotScanQrBtn.innerHTML = `⌛ QR 인식 중...`;
       if (robotScanQrResult) robotScanQrResult.innerHTML = ``;
+      if (robotHudOverlay) {
+        robotHudOverlay.style.boxShadow = "inset 0 0 24px rgba(37, 99, 235, 0.7)";
+      }
 
       try {
         const localIp = robotCurrentIp || "10.42.0.1";
         const result = await window.LabBotRobotConsole.triggerQrScan(localIp);
         if (result && result.found) {
           window.LabBotToast.success(`✅ QR 인식 성공: [${result.code}] 위치 실사가 완료되었습니다!`);
+          if (robotHudOverlay) {
+            robotHudOverlay.style.boxShadow = "inset 0 0 30px rgba(34, 197, 94, 0.8)";
+            setTimeout(() => { if (robotHudOverlay) robotHudOverlay.style.boxShadow = "none"; }, 1500);
+          }
+          if (hudSafetyBadge) {
+            const prevText = hudSafetyBadge.innerHTML;
+            const prevCls = hudSafetyBadge.className;
+            hudSafetyBadge.className = "hud-tag hud-status-ok";
+            hudSafetyBadge.innerHTML = `📍 실사완료: ${result.code}`;
+            setTimeout(() => {
+              if (hudSafetyBadge) {
+                hudSafetyBadge.innerHTML = prevText;
+                hudSafetyBadge.className = prevCls;
+              }
+            }, 3500);
+          }
           if (robotScanQrResult) {
             robotScanQrResult.innerHTML = `
               <span class="badge badge-st-resolved" style="font-size: 11px;">
@@ -758,6 +777,10 @@ document.addEventListener("DOMContentLoaded", async () => {
           }
         } else {
           window.LabBotToast.warn(result.message || "QR 코드가 감지되지 않았습니다. 카메라 각도를 조절해 주세요.");
+          if (robotHudOverlay) {
+            robotHudOverlay.style.boxShadow = "inset 0 0 20px rgba(245, 158, 11, 0.6)";
+            setTimeout(() => { if (robotHudOverlay) robotHudOverlay.style.boxShadow = "none"; }, 1000);
+          }
           if (robotScanQrResult) {
             robotScanQrResult.innerHTML = `
               <span class="badge badge-st-in_progress" style="font-size: 11px;">
@@ -768,6 +791,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
       } catch (err) {
         window.LabBotToast.error("QR 스캔 실패: " + (err.message || err));
+        if (robotHudOverlay) robotHudOverlay.style.boxShadow = "none";
       } finally {
         robotScanQrBtn.disabled = false;
         robotScanQrBtn.innerHTML = `📸 현재 위치 QR 체크하기`;
