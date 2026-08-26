@@ -683,63 +683,78 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  async function refreshRobotCamera() {
-    robotHealthCheckTick++;
+  let streamPumpRunning = false;
+  let streamPumpCurrentIp = null;
+  let activeBlobUrl = null;
 
+  async function startZeroLagStream(localIp) {
+    if (streamPumpRunning && streamPumpCurrentIp === localIp) return;
+    streamPumpRunning = true;
+    streamPumpCurrentIp = localIp;
+
+    const targetUrl = `http://${localIp}:8080/snapshot`;
+    let consecutiveErrors = 0;
+
+    while (streamPumpRunning && streamPumpCurrentIp === localIp) {
+      const startTime = performance.now();
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1200);
+        const resp = await fetch(`${targetUrl}?t=${Date.now()}`, {
+          cache: "no-store",
+          mode: "cors",
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (resp.ok) {
+          consecutiveErrors = 0;
+          const blob = await resp.blob();
+          const newUrl = URL.createObjectURL(blob);
+          const oldUrl = activeBlobUrl;
+          activeBlobUrl = newUrl;
+          robotCameraImg.src = newUrl;
+          if (oldUrl) {
+            requestAnimationFrame(() => URL.revokeObjectURL(oldUrl));
+          }
+          if (robotCameraMode !== "stream") {
+            robotCameraMode = "stream";
+            robotCameraImg.style.display = "block";
+            robotCameraStatus.innerHTML = `
+              <div style="margin-top: 6px;">
+                <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 무지연 스트림 (${localIp}:8080 · 25 FPS)</span>
+              </div>
+            `;
+          }
+        } else {
+          throw new Error("HTTP " + resp.status);
+        }
+      } catch (err) {
+        consecutiveErrors++;
+        if (consecutiveErrors > 4 && robotCameraMode !== "offline") {
+          robotCameraMode = "offline";
+          robotCameraStatus.innerHTML = `
+            <div style="margin-top: 6px;">
+              <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
+            </div>
+          `;
+        }
+        await new Promise((r) => setTimeout(r, 150));
+      }
+
+      // 25 FPS 목표 안정적 페이싱 (지연 누적 0)
+      const elapsed = performance.now() - startTime;
+      const delay = Math.max(0, 38 - elapsed);
+      if (delay > 0) {
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  async function refreshRobotCamera() {
     const localIp = (await window.LabBotRobotConsole.fetchRobotIp()) || "10.42.0.1";
     robotCurrentIp = localIp;
-    const streamUrl = window.LabBotRobotConsole.getDirectStreamUrl(localIp);
-
-    // 1. 이미 실시간 직결 스트림이 정상 수신 중인 경우 주기적 헬스체크만 수행
-    if (robotCameraMode === "stream") {
-      if (robotHealthCheckTick % 4 === 0) {
-        const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(localIp);
-        if (!isHealthy) {
-          robotCameraMode = "offline";
-          robotCameraStatus.innerHTML = `
-            <div style="margin-top: 6px;">
-              <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
-            </div>
-          `;
-        }
-      }
-      return;
-    }
-
-    // 2. 실시간 직결 시도
-    if (streamUrl) {
-      const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(localIp);
-      if (isHealthy) {
-        robotCameraMode = "stream";
-        robotCameraLastOkAt = new Date();
-        robotCameraImg.style.display = "block";
-        robotCameraStatus.innerHTML = `
-          <div style="margin-top: 6px;">
-            <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 직결 스트림 (${localIp}:8080 · 30 FPS)</span>
-          </div>
-        `;
-        robotCameraImg.onerror = () => {
-          robotCameraMode = "offline";
-          robotCameraStatus.innerHTML = `
-            <div style="margin-top: 6px;">
-              <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
-            </div>
-          `;
-        };
-        if (robotCameraImg.src !== streamUrl) {
-          robotCameraImg.src = streamUrl;
-        }
-        return;
-      }
-    }
-
-    // 3. 로봇 미연결 상태
-    robotCameraMode = "offline";
-    robotCameraStatus.innerHTML = `
-      <div style="margin-top: 6px;">
-        <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
-      </div>
-    `;
+    startZeroLagStream(localIp);
   }
 
 

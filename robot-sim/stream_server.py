@@ -108,13 +108,13 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 pass
             except Exception as e:
                 logger.debug(f"Stream client disconnected: {e}")
-        elif self.path == "/snapshot":
+        elif self.path.startswith("/snapshot"):
             frame = _buffer.get_latest()
             if frame:
                 self.send_response(200)
                 self.send_header("Content-Type", "image/jpeg")
                 self.send_header("Content-Length", str(len(frame)))
-                self.send_header("Cache-Control", "no-cache, no-store")
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.send_header("Access-Control-Allow-Private-Network", "true")
                 self.end_headers()
