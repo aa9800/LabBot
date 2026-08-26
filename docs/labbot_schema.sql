@@ -1574,3 +1574,53 @@ begin
   where id in (select id from promotable);
 end;
 $$ language plpgsql security definer set search_path = public;
+-- =============================================================
+-- 31. 관리자용 사용자 관리 (사용자 요청 — "사용자 관리나 미납 몇번 경고 이런 기본적인
+--     유저 관리시스템") — 관리자가 전체 사용자를 한눈에 보고(대여 이력, 연체 이력,
+--     파손 신고 횟수), 필요하면 직접 경고를 남길 수 있게 한다. 경고는 계정을 자동으로
+--     막거나 정지시키지 않는다 — 다른 화면들과 같은 원칙으로, 기록만 남기고 실제 판단은
+--     계속 관리자가 사람이 직접 한다.
+-- =============================================================
+
+-- 이메일은 profiles에 없고 auth.users에만 있다(회원가입 트리거가 name/role만 복사해서
+-- 넣어둔다 — 1번 섹션 참고). 관리자 화면에서만 필요한 값이라 profiles에 컬럼을 추가하는
+-- 대신, 관리자만 호출 가능한 RPC로 그때그때 join해서 보여준다.
+create or replace function public.admin_list_users()
+returns table (
+  id uuid,
+  name text,
+  role text,
+  created_at timestamptz,
+  email text
+) as $$
+begin
+  if not public.is_admin() then
+    raise exception '관리자만 조회할 수 있습니다.';
+  end if;
+
+  return query
+  select p.id, p.name, p.role, p.created_at, u.email::text
+  from public.profiles p
+  join auth.users u on u.id = p.id
+  order by p.created_at desc;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create table if not exists user_warnings (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references profiles(id) on delete cascade,
+  reason text not null,
+  note text default '',
+  created_by uuid references profiles(id),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_user_warnings_user on user_warnings(user_id);
+
+alter table user_warnings enable row level security;
+
+-- 관리자 전용 내부 메모 성격이라(당사자에게 알림을 보내는 기능은 아직 없음) select/insert/
+-- delete 전부 관리자만 허용한다 — safety_events 등 다른 관리자 전용 테이블과 같은 원칙.
+drop policy if exists "user_warnings_admin_only" on user_warnings;
+create policy "user_warnings_admin_only" on user_warnings
+  for all using (is_admin()) with check (is_admin());

@@ -90,6 +90,10 @@
         <span class="summary-card-value" id="summaryPendingInquiry">-</span>
         <span class="summary-card-label">답변 대기중인 문의</span>
       </button>
+      <button type="button" class="summary-card summary-card-danger" data-goto-tab="users">
+        <span class="summary-card-value" id="summaryOverdueUsers">-</span>
+        <span class="summary-card-label">연체중인 사용자</span>
+      </button>
     </div>
 
     <div class="tabs">
@@ -99,6 +103,7 @@
       <button type="button" class="tab-btn" data-tab="safety">안전 이벤트</button>
       <button type="button" class="tab-btn" data-tab="audit">재고 실사</button>
       <button type="button" class="tab-btn" data-tab="inquiry">문의</button>
+      <button type="button" class="tab-btn" data-tab="users">사용자 관리</button>
     </div>
 
     <!-- 재고 · 물품 관리 -->
@@ -335,6 +340,39 @@
       <p class="item-empty-state" id="inquiryEmptyState">접수된 문의가 없습니다.</p>
       <div class="pagination" id="inquiryPagination"></div>
     </section>
+
+    <!-- 사용자 관리 — 전체 사용자를 한 표로, 대여/연체/파손신고 이력을 바로 보고
+         필요하면 경고를 남길 수 있다. 경고는 계정을 자동으로 막지 않는다(기록만) —
+         실제 조치(대여 제한 등)는 관리자가 사람이 판단해서 별도로 한다. -->
+    <section class="tab-panel" id="tab-users">
+      <div class="list-toolbar">
+        <div class="search-box">
+          <input type="text" id="userSearch" placeholder="이름 또는 이메일로 검색" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="table-wrap table-wrap-wide">
+        <table class="sticky-first-col">
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>이메일</th>
+              <th>권한</th>
+              <th>가입일</th>
+              <th>대여 이력</th>
+              <th>현재 연체</th>
+              <th>연체 이력</th>
+              <th>파손 신고</th>
+              <th>경고</th>
+              <th>작업</th>
+            </tr>
+          </thead>
+          <tbody id="userTableBody">
+            <!-- js/admin.js에서 LabBotUserAdmin 기준으로 렌더링 -->
+          </tbody>
+        </table>
+      </div>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -354,6 +392,7 @@
   <script src="js/stock-adjustments-data.js"></script>
   <script src="js/inquiry-data.js"></script>
   <script src="js/restock-data.js"></script>
+  <script src="js/user-admin-data.js"></script>
   <script src="js/admin.js"></script>
 </body>
 </html>

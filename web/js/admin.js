@@ -35,6 +35,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const INQUIRY_PAGE_SIZE = 10;
   let inquiryPage = 1;
 
+  const userTableBody = document.getElementById("userTableBody");
+  const userSearchInput = document.getElementById("userSearch");
+
   const locationSelect = document.getElementById("newItemLocation");
   const minimumInput = document.getElementById("newItemMinimum");
   const unitInput = document.getElementById("newItemUnit");
@@ -1013,6 +1016,223 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderInquiryPagination(inquiries.length);
   }
 
+  // ---------- 사용자 관리 (전체 사용자 + 대여/연체/파손신고 이력 + 경고) ----------
+  let userSearchTerm = "";
+
+  // "연체"는 loans 테이블에 별도 컬럼이 없다 — isOverdue()와 같은 기준(반납 안 됐고
+  // due_at이 지났음)으로 매번 다시 계산한다(rentals.js의 연체 판단 로직을 그대로 재사용).
+  function computeUserStats(userId, loans, damageReports) {
+    const userLoans = loans.filter((l) => l.user_id === userId);
+    // 예약중/취소됨은 실제로 받아가거나 쓴 게 아니라서 "대여 이력"에서 뺀다.
+    const totalLoans = userLoans.filter((l) => l.status !== "예약중" && l.status !== "취소됨").length;
+    const currentOverdue = userLoans.filter((l) => window.LabBotRentals.isOverdue(l)).length;
+    const pastLateReturns = userLoans.filter(
+      (l) => l.returned_at && l.due_at && new Date(l.returned_at) > new Date(l.due_at)
+    ).length;
+    const damageCount = damageReports.filter((r) => r.reported_by === userId).length;
+    return { totalLoans, currentOverdue, pastLateReturns, damageCount };
+  }
+
+  function filterUsers(users) {
+    const term = userSearchTerm.trim().toLowerCase();
+    if (!term) return users;
+    return users.filter(
+      (u) => u.name.toLowerCase().includes(term) || (u.email || "").toLowerCase().includes(term)
+    );
+  }
+
+  async function renderUserTable() {
+    const { escapeHtml } = window.LabBotItems;
+
+    let users, loans, damageReports, warningCounts;
+    try {
+      [users, loans, damageReports, warningCounts] = await Promise.all([
+        window.LabBotUserAdmin.fetchAllUsers(),
+        window.LabBotRentals.fetchAllLoans(),
+        window.LabBotDamage.fetchAllDamageReports(),
+        window.LabBotUserAdmin.fetchWarningCounts(),
+      ]);
+    } catch (err) {
+      window.LabBotToast.error("사용자 목록을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    const filtered = filterUsers(users);
+
+    if (filtered.length === 0) {
+      userTableBody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:var(--text-muted);">검색 결과가 없습니다.</td></tr>`;
+      return;
+    }
+
+    userTableBody.innerHTML = "";
+    filtered.forEach((u) => {
+      const stats = computeUserStats(u.id, loans, damageReports);
+      const warningCount = warningCounts[u.id] || 0;
+
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td data-label="이름">${escapeHtml(u.name)}</td>
+        <td data-label="이메일" class="mono">${escapeHtml(u.email || "-")}</td>
+        <td data-label="권한">${u.role === "admin" ? '<span class="badge badge-st-resolved"><span class="badge-dot"></span>관리자</span>' : "일반"}</td>
+        <td data-label="가입일" class="mono">${new Date(u.created_at).toLocaleDateString("ko-KR")}</td>
+        <td data-label="대여 이력">${stats.totalLoans}건</td>
+        <td data-label="현재 연체">${
+          stats.currentOverdue > 0
+            ? `<span class="badge badge-sev-high"><span class="badge-dot"></span>${stats.currentOverdue}건</span>`
+            : "-"
+        }</td>
+        <td data-label="연체 이력">${stats.pastLateReturns > 0 ? `${stats.pastLateReturns}건` : "-"}</td>
+        <td data-label="파손 신고">${stats.damageCount > 0 ? `${stats.damageCount}건` : "-"}</td>
+        <td data-label="경고">${
+          warningCount > 0
+            ? `<span class="badge badge-sev-medium"><span class="badge-dot"></span>${warningCount}회</span>`
+            : "-"
+        }</td>
+        <td data-label="작업" class="stock-actions">
+          <button type="button" class="btn btn-secondary btn-sm" data-action="warn">경고 추가</button>
+          <button type="button" class="btn btn-secondary btn-sm" data-action="history">이력</button>
+        </td>
+      `;
+
+      row.querySelector('[data-action="warn"]').addEventListener("click", () => promptAddWarning(u));
+      row.querySelector('[data-action="history"]').addEventListener("click", () => showUserWarningHistory(u));
+
+      userTableBody.appendChild(row);
+    });
+  }
+
+  let userSearchDebounceTimer = null;
+  userSearchInput.addEventListener("input", () => {
+    clearTimeout(userSearchDebounceTimer);
+    userSearchDebounceTimer = setTimeout(() => {
+      userSearchTerm = userSearchInput.value;
+      renderUserTable();
+    }, 300);
+  });
+
+  // 경고 사유를 고르게 하는 모달 — 재고 조정 사유 모달(promptStockAdjustmentReason)과
+  // 같은 패턴: 선택지로 강제하고 "기타"일 때만 메모를 받는다.
+  function promptAddWarning(user) {
+    const { escapeHtml } = window.LabBotItems;
+    const { WARNING_REASONS } = window.LabBotUserAdmin;
+
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <h3 class="modal-title">경고 추가 — ${escapeHtml(user.name)}</h3>
+        <div class="modal-field">
+          <label>사유</label>
+          <select id="warnReasonSelect" class="location-filter-select" style="width: 100%;">
+            ${WARNING_REASONS.map((r) => `<option value="${r}">${r}</option>`).join("")}
+          </select>
+        </div>
+        <div class="modal-field" id="warnNoteField" style="display: none;">
+          <label>메모</label>
+          <textarea id="warnNoteInput" placeholder="간단히 적어주세요"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary btn-sm" data-action="cancel">취소</button>
+          <button type="button" class="btn btn-primary btn-sm" data-action="confirm">경고 등록</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const reasonSelect = overlay.querySelector("#warnReasonSelect");
+    const noteField = overlay.querySelector("#warnNoteField");
+    const noteInput = overlay.querySelector("#warnNoteInput");
+
+    reasonSelect.addEventListener("change", () => {
+      noteField.style.display = reasonSelect.value === "기타" ? "block" : "none";
+    });
+
+    const close = () => overlay.remove();
+    overlay.querySelector('[data-action="cancel"]').addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    overlay.querySelector('[data-action="confirm"]').addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      try {
+        const session = await window.LabBotAuth.getSession();
+        await window.LabBotUserAdmin.addUserWarning(user.id, {
+          reason: reasonSelect.value,
+          note: noteInput.value.trim(),
+          createdBy: session && session.id,
+        });
+        window.LabBotToast.success(`"${user.name}"에게 경고를 추가했습니다.`);
+        close();
+        await renderUserTable();
+      } catch (err) {
+        window.LabBotToast.error("경고 추가에 실패했습니다: " + (err.message || err));
+        btn.disabled = false;
+      }
+    });
+  }
+
+  // 경고 이력 모달 — 재고 조정 이력 모달(showStockHistory)과 같은 패턴. 잘못 남긴 경고는
+  // 여기서 바로 삭제할 수 있다(관리자 내부 메모라 되돌릴 방법이 있어야 한다).
+  async function showUserWarningHistory(user) {
+    const { escapeHtml } = window.LabBotItems;
+
+    let warnings;
+    try {
+      warnings = await window.LabBotUserAdmin.fetchUserWarnings(user.id);
+    } catch (err) {
+      window.LabBotToast.error("경고 이력을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <h3 class="modal-title">경고 이력 — ${escapeHtml(user.name)}</h3>
+        <ul class="safety-log-list" id="warnHistoryList">
+          ${
+            warnings.length === 0
+              ? "<li>아직 경고 이력이 없습니다.</li>"
+              : warnings
+                  .map(
+                    (w) => `
+                <li data-warning-id="${w.id}">
+                  [${new Date(w.created_at).toLocaleString("ko-KR")}] ${escapeHtml((w.creator && w.creator.name) || "관리자")} — ${escapeHtml(w.reason)}
+                  ${w.note ? `(${escapeHtml(w.note)})` : ""}
+                  <button type="button" class="link-btn" data-action="delete-warning" data-warning-id="${w.id}">삭제</button>
+                </li>
+              `
+                  )
+                  .join("")
+          }
+        </ul>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary btn-sm" data-action="close">닫기</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('[data-action="close"]').addEventListener("click", close);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) close();
+    });
+    overlay.querySelectorAll('[data-action="delete-warning"]').forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("이 경고를 삭제할까요?")) return;
+        try {
+          await window.LabBotUserAdmin.deleteUserWarning(Number(btn.dataset.warningId));
+          close();
+          await renderUserTable();
+        } catch (err) {
+          window.LabBotToast.error("경고 삭제에 실패했습니다: " + (err.message || err));
+        }
+      });
+    });
+  }
+
   addForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -1085,6 +1305,12 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.LabBotInquiry.fetchAllInquiries(),
       ]);
 
+      // 사용자별로 하나라도 연체중인 대여가 있으면 그 사용자를 "연체중"으로 센다
+      // (건수가 아니라 사람 수 — 요약 카드는 "지금 챙겨야 할 사람이 몇 명인지"가 중요하다).
+      const overdueUserIds = new Set(
+        loans.filter((l) => window.LabBotRentals.isOverdue(l)).map((l) => l.user_id)
+      );
+
       const { computeStockStatus } = window.LabBotItems;
       const lowStockCount = items.filter((it) => {
         const status = computeStockStatus(it);
@@ -1103,6 +1329,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById("summaryPendingInquiry").textContent = inquiries.filter(
         (q) => q.status === "open"
       ).length;
+      document.getElementById("summaryOverdueUsers").textContent = overdueUserIds.size;
     } catch (err) {
       console.warn("LabBot: 관리자 요약 카드를 불러오지 못했습니다", err);
     }
@@ -1120,6 +1347,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await renderAuditChecklist();
     await renderAuditSessions();
     await renderInquiryCards();
+    await renderUserTable();
     await renderSummaryCards();
     // startRobotConsolePolling() 호출이 빠져 있어서 로봇 카메라/모드 배지가 아예 갱신되지
     // 않고 있었다(이미지 태그가 항상 빈 채로 남는 문제 — GPT 리뷰 지적의 실제 원인).
