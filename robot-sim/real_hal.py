@@ -133,9 +133,11 @@ class RealHAL:
                 with self._frame_lock:
                     self._latest_frame = frame
                 if self._cv2 is not None and self._stream_server is not None:
-                    # 품질 45 (~5KB) — 초고속 인코딩 및 Wi-Fi 지연 0
+                    # picamera2의 RGB 출력을 OpenCV가 기대하는 BGR로 변환 (손이 파란색/초록색으로 보이는 스머프 색상 왜곡 해결)
+                    bgr_frame = self._cv2.cvtColor(frame, self._cv2.COLOR_RGB2BGR)
+                    # 품질 50 — 초고속 인코딩 및 자연스러운 색상 송출
                     _, jpeg = self._cv2.imencode(
-                        ".jpg", frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 45, int(self._cv2.IMWRITE_JPEG_OPTIMIZE), 0]
+                        ".jpg", bgr_frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 50, int(self._cv2.IMWRITE_JPEG_OPTIMIZE), 0]
                     )
                     self._stream_server.set_camera_frame(jpeg.tobytes())
             except Exception as e:
