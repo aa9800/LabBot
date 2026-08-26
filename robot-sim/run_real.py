@@ -16,7 +16,9 @@ HAL만 RealHAL로 바꿔 끼운다.
 """
 import datetime
 import os
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from controller import PatrolController, OBSTACLE_STOP_DISTANCE
 from notify_supabase import (
@@ -56,6 +58,10 @@ def main():
     run_log = JsonlRunLogger(log_dir, source="real")
     print(f"[labkeeper] 주행 로그: {run_log.path}")
 
+    # 비동기 I/O 및 스레드 락 초기화
+    db_executor = ThreadPoolExecutor(max_workers=3)
+    command_lock = threading.Lock()
+
     items = fetch_items()
     items_by_location = {}
     for it in items:
@@ -68,13 +74,17 @@ def main():
     hal = RealHAL(enable_camera=True)
     stream_server.set_camera_angle_callback(hal.set_camera_angle)
     scanned_ids = set()
-    last_pan = 90
-    last_tilt = 90
+
+    command = {"mode": "manual", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
+    was_manual = True
+    last_command_time = time.time()
 
     def get_telemetry():
+        with command_lock:
+            cur_mode = command.get("mode", "manual")
         return {
             "distance_cm": round(hal.read_ultrasonic(), 1),
-            "mode": command.get("mode", "auto"),
+            "mode": cur_mode,
             "speed": hal.last_speed,
             "turn": hal.last_turn,
             "cam_pan": getattr(hal, "cam_pan", 90),
@@ -90,16 +100,17 @@ def main():
         run_log.write("checkpoint_scanned", checkpoint=location)
         for it in items_here:
             scanned_ids.add(it["id"])
-        # 이벤트 영속성: 실사 데이터 DB 기록
+        # 이벤트 영속성: 비동기 스레드 풀에서 DB 저장
         from notify_supabase import record_audit_scan
-        record_audit_scan(location, [it["id"] for it in items_here])
+        db_executor.submit(record_audit_scan, location, [it["id"] for it in items_here])
 
     def on_obstacle(distance):
         print(f"[labkeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 전송")
         run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
-        # 이벤트 영속성: 현장 스냅샷 사진 첨부하여 DB 등록
+        # 이벤트 영속성: 비동기 스레드 풀에서 증거 스냅샷 첨부하여 DB 등록
         snap = stream_server.get_latest_frame()
-        report_safety_event(
+        db_executor.submit(
+            report_safety_event,
             "SR-01",
             severity="HIGH",
             note=f"실물 Raspbot 순찰 중 초음파 장애물 감지 ({distance:.1f}cm)",
@@ -116,17 +127,14 @@ def main():
     )
 
     tick = 0
-    command = {"mode": "auto", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
-    was_manual = False
-
-    last_command_time = time.time()
 
     def on_direct_drive(mode, speed, turn):
-        nonlocal command, was_manual, last_command_time
-        command["mode"] = mode
-        command["speed"] = speed
-        command["turn"] = turn
-        last_command_time = time.time()
+        nonlocal was_manual, last_command_time
+        with command_lock:
+            command["mode"] = mode
+            command["speed"] = speed
+            command["turn"] = turn
+            last_command_time = time.time()
         is_manual = mode == "manual"
         if is_manual != was_manual:
             print(f"[labkeeper] 🎮 모드 전환: {'수동조작' if is_manual else '자동순찰'}")
@@ -149,28 +157,34 @@ def main():
             loop_start = time.time()
             tick += 1
 
+            with command_lock:
+                cur_mode = command.get("mode", "manual")
+                cur_speed = command.get("speed", 0.0)
+                cur_turn = command.get("turn", 0.0)
+                cmd_time = last_command_time
+
             # 수동 조작 시 3초 데드맨 스위치 감시
-            if command.get("mode") == "manual":
+            if cur_mode == "manual":
                 distance = hal.read_ultrasonic()
-                stale = (time.time() - last_command_time) > MANUAL_COMMAND_MAX_AGE_SECONDS
+                stale = (time.time() - cmd_time) > MANUAL_COMMAND_MAX_AGE_SECONDS
                 if stale:
                     hal.stop()  # 3초 동안 웹에서 조이스틱 신호가 없으면 자동 정지
                 elif distance < OBSTACLE_STOP_DISTANCE:
                     hal.stop()
                 else:
-                    hal.set_motion(command.get("speed", 0.0), command.get("turn", 0.0))
+                    hal.set_motion(cur_speed, cur_turn)
             else:
                 patrol.tick(TICK_SECONDS)
 
             if tick % CAMERA_UPLOAD_EVERY == 0:
                 jpeg_bytes = stream_server.get_latest_frame()
                 if jpeg_bytes:
-                    upload_camera_snapshot_bytes(jpeg_bytes)
+                    db_executor.submit(upload_camera_snapshot_bytes, jpeg_bytes)
 
             if tick % TELEMETRY_LOG_EVERY == 0:
                 run_log.write(
                     "telemetry",
-                    mode=command.get("mode", "auto"),
+                    mode=cur_mode,
                     command_speed=hal.last_speed,
                     command_turn=hal.last_turn,
                 )
@@ -182,6 +196,7 @@ def main():
     finally:
         hal.cleanup()
         run_log.close()
+        db_executor.shutdown(wait=False)
 
 
 if __name__ == "__main__":

@@ -91,6 +91,8 @@ class RealHAL:
         self._frame_lock = threading.Lock()
         self._camera_thread = None
         self._camera_stop = threading.Event()
+        self._last_qr_time = 0.0
+        self._last_qr_result = None
         if enable_camera:
             from picamera2 import Picamera2
             import libcamera
@@ -181,9 +183,15 @@ class RealHAL:
 
     def try_read_qr(self):
         """백그라운드 카메라 스레드가 잡아둔 가장 최근 프레임에서 QR/바코드를 디코드한다.
-        카메라가 꺼져있거나 프레임 안에 코드가 없으면 None."""
+        0.2초(5Hz) 캐싱을 적용하여 불필요한 pyzbar CPU 연산 및 발열을 원천 방지한다."""
+        now = time.time()
+        if now - self._last_qr_time < 0.2:
+            return self._last_qr_result
+        self._last_qr_time = now
+
         frame = self.capture_frame()
         if frame is None or self._pyzbar is None:
+            self._last_qr_result = None
             return None
         try:
             # Grayscale 변환으로 pyzbar 디코딩 속도 5배 향상 및 인식률 극대화
@@ -193,9 +201,12 @@ class RealHAL:
                 gray = frame
             codes = self._pyzbar.decode(gray)
             if not codes:
+                self._last_qr_result = None
                 return None
-            return codes[0].data.decode("utf-8")
+            self._last_qr_result = codes[0].data.decode("utf-8")
+            return self._last_qr_result
         except Exception:
+            self._last_qr_result = None
             return None
 
     def set_motion(self, speed, turn):
