@@ -69,11 +69,14 @@ class StreamingHandler(BaseHTTPRequestHandler):
         except OSError:
             pass
 
+    def do_HEAD(self):
+        self.do_GET()
+
     def do_OPTIONS(self):
         # CORS 프리플라이트 요청 허용 (Private Network Access 포함)
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS, HEAD")
         self.send_header("Access-Control-Allow-Headers", "*")
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
