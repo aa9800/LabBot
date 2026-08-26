@@ -17,6 +17,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   let activeCategory = "all";
   let activeLocation = "all";
 
+  // 품절 물품에 신청해둔 재입고 알림 상태(item_id 집합) — 매번 물품마다 따로 조회하면
+  // N+1이 되니 한 번만 불러와서 renderRow에서 함께 쓰고, 신청/취소할 때 그 자리에서
+  // 갱신한다(다시 통째로 불러오지 않음). 실제 알림 전송/소비는 nav.js가 담당.
+  let subscribedItemIds = new Set();
+
   // 물품이 60개가 넘어가면 페이지 전체가 한없이 길어져서, 화면 단위로 나눠 보여준다.
   // 검색/필터가 바뀌면 결과가 달라지니 1페이지로 되돌린다(renderList에서 처리).
   const PAGE_SIZE = 12;
@@ -40,9 +45,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     row.className = "item-row";
     row.dataset.category = item.category;
 
-    const actionHtml = rentable
-      ? `<button type="button" class="btn btn-primary btn-sm">${actionLabel}</button>`
-      : `<button type="button" class="btn btn-secondary btn-sm" disabled>${consumable ? "재고없음" : "대여불가"}</button>`;
+    // 품절(OUT_OF_STOCK)일 때만 재입고 알림 신청 버튼을 보여준다 — 점검중/유효기간
+    // 만료는 재고가 다시 들어온다고 해결되는 문제가 아니라서 대상에서 뺀다.
+    const isSubscribed = subscribedItemIds.has(item.id);
+    let actionHtml;
+    if (rentable) {
+      actionHtml = `<button type="button" class="btn btn-primary btn-sm">${actionLabel}</button>`;
+    } else if (statusKey === "OUT_OF_STOCK") {
+      actionHtml = `<button type="button" class="btn btn-secondary btn-sm${isSubscribed ? " is-subscribed" : ""}" data-action="restock" data-subscribed="${isSubscribed}">${isSubscribed ? "알림 신청됨" : "재입고 알림 신청"}</button>`;
+    } else {
+      actionHtml = `<button type="button" class="btn btn-secondary btn-sm" disabled>${consumable ? "재고없음" : "대여불가"}</button>`;
+    }
 
     const expiresHtml = item.expires_at
       ? `<span class="item-row-location">유효기간 ${escapeHtml(item.expires_at)}</span>`
@@ -79,6 +92,34 @@ document.addEventListener("DOMContentLoaded", async () => {
           window.location.href = "mypage.html";
         } catch (err) {
           window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
+          target.disabled = false;
+        }
+      });
+    } else if (statusKey === "OUT_OF_STOCK") {
+      button.addEventListener("click", async (e) => {
+        const target = e.currentTarget;
+        const subscribed = target.dataset.subscribed === "true";
+        target.disabled = true;
+
+        try {
+          if (subscribed) {
+            await window.LabBotRestock.unsubscribeRestock(item.id, session.id);
+            subscribedItemIds.delete(item.id);
+            target.dataset.subscribed = "false";
+            target.textContent = "재입고 알림 신청";
+            target.classList.remove("is-subscribed");
+            window.LabBotToast.info("알림 신청을 취소했습니다.");
+          } else {
+            await window.LabBotRestock.subscribeRestock(item.id, session.id);
+            subscribedItemIds.add(item.id);
+            target.dataset.subscribed = "true";
+            target.textContent = "알림 신청됨";
+            target.classList.add("is-subscribed");
+            window.LabBotToast.success("재입고되면 알려드릴게요.");
+          }
+        } catch (err) {
+          window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
+        } finally {
           target.disabled = false;
         }
       });
@@ -196,6 +237,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     activeLocation = locationSelect.value;
     renderListFromStart();
   });
+
+  try {
+    subscribedItemIds = await window.LabBotRestock.fetchMySubscribedItemIds(session.id);
+  } catch (err) {
+    console.warn("LabBot: 재입고 알림 신청 목록을 불러오지 못했습니다", err);
+  }
 
   await populateLocationOptions();
   await renderList();

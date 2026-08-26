@@ -39,6 +39,18 @@ async function reserveItem(item, session, source = "manual") {
     }
     throw error;
   }
+
+  // 재입고 대기열에 있었다면(우선권을 써서 예약한 것이든, 그냥 신청만 해뒀다가 마침
+  // 직접 예약한 것이든) 빠져나가고, 남은 재고가 있으면 다음 순위에게 우선권을 넘긴다.
+  // 예약 자체는 이미 끝났으니 여기서 실패해도 예약 결과에 영향 주지 않는다.
+  if (window.LabBotRestock) {
+    try {
+      await window.LabBotRestock.leaveRestockQueue(item.id, session.id);
+    } catch (err) {
+      console.warn("LabBot: 재입고 대기열 정리 실패", err);
+    }
+  }
+
   return data;
 }
 

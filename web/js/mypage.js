@@ -23,6 +23,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const INQUIRY_PAGE_SIZE = 10;
   let inquiryPage = 1;
 
+  const restockListEl = document.getElementById("restockList");
+  const restockEmptyEl = document.getElementById("restockEmpty");
+
   profileAvatar.textContent = session.name.trim().charAt(0).toUpperCase() || "?";
   profileName.textContent = session.name;
   profileEmail.textContent = session.email;
@@ -549,6 +552,99 @@ document.addEventListener("DOMContentLoaded", async () => {
     inquiryPaginationEl.querySelector('[data-page-action="next"]').addEventListener("click", () => goTo(inquiryPage + 1));
   }
 
+  // 남은 시간을 "N시간 M분" 형태로 — 우선권(hold_expires_at) 마감까지 얼마나 남았는지 보여준다.
+  function formatRemaining(isoString) {
+    const diffMs = new Date(isoString) - new Date();
+    if (diffMs <= 0) return "0분";
+    const hours = Math.floor(diffMs / 3600000);
+    const minutes = Math.floor((diffMs % 3600000) / 60000);
+    return hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
+  }
+
+  // 품절 물품에 신청해둔 재입고 알림 목록 — items.html의 "재입고 알림 신청" 버튼으로
+  // 만든 신청을 여기서도 보고 취소할 수 있게 한다(items.html까지 다시 찾아가지 않아도 됨).
+  async function renderRestockSubscriptions() {
+    if (!restockListEl || !window.LabBotRestock) return;
+
+    let subs;
+    try {
+      subs = await window.LabBotRestock.fetchMySubscriptions(session.id);
+    } catch (err) {
+      window.LabBotToast.error("재입고 알림 신청 목록을 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    const { escapeHtml } = window.LabBotItems;
+
+    restockEmptyEl.style.display = subs.length === 0 ? "block" : "none";
+
+    restockListEl.innerHTML = subs
+      .map((s) => {
+        const isHolding = s.hold_expires_at && new Date(s.hold_expires_at) > new Date();
+        const statusHtml = isHolding
+          ? `<span class="badge badge-st-needs_review"><span class="badge-dot"></span>지금 예약 가능 · ${formatRemaining(s.hold_expires_at)} 남음</span>`
+          : `<span class="badge badge-pending"><span class="badge-dot"></span>대기 중</span>`;
+        // 우선권을 쥔 동안(isHolding)에만 여기서 바로 예약할 수 있게 한다 — items.html까지
+        // 다시 찾아가지 않아도 되도록. 아직 대기 중이면 재고가 없으니 예약 버튼 자체가
+        // 의미없지만, 그렇다고 버튼을 아예 빼면 "신청 취소" 위치가 카드마다 들쭉날쭉해진다
+        // (대기 중 카드는 버튼이 1개라 맨 왼쪽, 예약 가능 카드는 2번째 자리) — 그래서
+        // 자리는 그대로 두고 안 보이게만 처리해서 취소 버튼이 항상 같은 위치에 오게 한다.
+        const reserveBtnHtml = isHolding
+          ? `<button type="button" class="btn btn-primary btn-sm" data-action="reserve-restock">${window.LabBotRentals.isConsumable(s.items) ? "사용하기" : "예약하기"}</button>`
+          : `<button type="button" class="btn btn-primary btn-sm" style="visibility:hidden" tabindex="-1" aria-hidden="true" disabled>예약하기</button>`;
+        return `
+          <article class="inquiry-card" data-item-id="${s.item_id}">
+            <div class="inquiry-card-header">
+              ${statusHtml}
+              <h3 class="inquiry-card-subject">${escapeHtml(s.items.name)}</h3>
+            </div>
+            <div class="safety-actions">
+              ${reserveBtnHtml}
+              <button type="button" class="btn btn-secondary btn-sm" data-action="cancel-restock">신청 취소</button>
+            </div>
+          </article>
+        `;
+      })
+      .join("");
+
+    restockListEl.querySelectorAll('[data-action="cancel-restock"]').forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const itemId = Number(e.currentTarget.closest("[data-item-id]").dataset.itemId);
+        const target = e.currentTarget;
+        target.disabled = true;
+        try {
+          await window.LabBotRestock.unsubscribeRestock(itemId, session.id);
+          window.LabBotToast.info("알림 신청을 취소했습니다.");
+          await renderRestockSubscriptions();
+        } catch (err) {
+          window.LabBotToast.error("취소에 실패했습니다: " + (err.message || err));
+          target.disabled = false;
+        }
+      });
+    });
+
+    restockListEl.querySelectorAll('[data-action="reserve-restock"]').forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const sub = subs.find((s) => s.item_id === Number(e.currentTarget.closest("[data-item-id]").dataset.itemId));
+        const target = e.currentTarget;
+        target.disabled = true;
+        try {
+          const consumable = window.LabBotRentals.isConsumable(sub.items);
+          await window.LabBotRentals.reserveItem(sub.items, session);
+          window.LabBotToast.success(
+            `"${sub.items.name}" 예약되었습니다. 마이페이지에서 로봇 안내를 받아 ${consumable ? "사용" : "수령"}하세요.`
+          );
+          await renderAll();
+          await renderRestockSubscriptions();
+        } catch (err) {
+          window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
+          target.disabled = false;
+        }
+      });
+    });
+  }
+
   await renderAll();
   await renderInquiries();
+  await renderRestockSubscriptions();
 });

@@ -648,6 +648,14 @@ h2 {
   color: var(--text);
 }
 
+/* 재입고 알림을 이미 신청해둔 상태 — "신청됨"이 글자만 바뀌고 색은 그대로면 신청
+   여부를 스캔하기 어려워서, 다른 토글(.category-filter-btn.active)과 같은 강조색을 쓴다. */
+.btn-secondary.is-subscribed {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-color: var(--accent-border);
+}
+
 .category-filter-btn.active {
   background: var(--accent-soft);
   color: var(--accent-text);

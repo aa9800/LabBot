@@ -1485,3 +1485,92 @@ begin
   return v_inquiry;
 end;
 $$ language plpgsql set search_path = public;
+
+-- =============================================================
+-- 29. 재입고 알림 신청 (사용자 요청) — 품절된 물품에 알림을 신청해두면, 재고가 다시
+--     들어왔을 때 다음 로그인/페이지 방문 시 토스트로 알려준다. inquiries와 달리 RPC가
+--     필요 없다 — 신청·취소·알림 후 소비까지 전부 "본인 행만 건드리는" 단순 CRUD라서
+--     여러 단계를 원자적으로 묶을 이유가 없다(reply_inquiry처럼 여러 컬럼을 한 번에
+--     바꾸는 경우와 다름). 알림을 띄운 뒤 해당 행을 지우는 방식으로 처리하므로,
+--     inquiries 답변 알림이 localStorage에 의존해 다른 브라우저/기기에서 또 뜨던
+--     문제(자체 디자인 점검 지적)가 여기서는 애초에 생기지 않는다.
+-- =============================================================
+
+create table if not exists restock_subscriptions (
+  id bigint generated always as identity primary key,
+  item_id bigint not null references items(id) on delete cascade,
+  user_id uuid not null references profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (item_id, user_id)
+);
+
+create index if not exists idx_restock_subscriptions_user on restock_subscriptions(user_id);
+create index if not exists idx_restock_subscriptions_item on restock_subscriptions(item_id);
+
+alter table restock_subscriptions enable row level security;
+
+-- 본인 신청만 보고/걸고/지울 수 있다 — 개인 알림 설정일 뿐이라 관리자도 예외를 둘 이유가 없다.
+drop policy if exists "restock_subscriptions_select_own" on restock_subscriptions;
+create policy "restock_subscriptions_select_own" on restock_subscriptions
+  for select using (user_id = auth.uid());
+
+drop policy if exists "restock_subscriptions_insert_own" on restock_subscriptions;
+create policy "restock_subscriptions_insert_own" on restock_subscriptions
+  for insert with check (user_id = auth.uid());
+
+drop policy if exists "restock_subscriptions_delete_own" on restock_subscriptions;
+create policy "restock_subscriptions_delete_own" on restock_subscriptions
+  for delete using (user_id = auth.uid());
+
+-- =============================================================
+-- 30. 재입고 알림 → 우선순위 자동예약 대기열로 확장 (사용자 요청 — "신청 순서대로
+--     우선권을 주고, 재입고 후 8시간 안에 직접 예약하지 않으면 다음 순위로 넘긴다.
+--     알림취소를 누르면 그 즉시 다음 순위로 넘긴다") — 29번 섹션은 "알림만" 줬는데,
+--     여기서부터는 누가 지금 예약할 차례인지(우선권)까지 관리한다. 실제 loans 예약은
+--     여전히 사용자가 직접 눌러야 생긴다 — 클릭 한 번 없이 로봇 수령 흐름을 강제로
+--     시작시키는 건 위험 부담이 커서, "우선권 자동 부여"까지만 자동화하고 예약 자체는
+--     기존 reserveItem() 그대로 사용자가 누르게 둔다.
+--
+--     hold_expires_at: 지금 이 신청자가 우선적으로 예약할 수 있는 마감 시각(null이면
+--     아직 대기 중, 아무도 우선권을 안 쓴 상태). notified_at: 우선권을 얻었다는 토스트를
+--     이미 보여줬는지(중복 알림 방지 — 신청 시점의 답변 알림과 달리 이 행은 한동안
+--     남아있어야 해서 알려준 뒤 지우지 않고 이 컬럼으로만 표시한다).
+--
+--     이 프로젝트엔 정해진 시각마다 자동 실행되는 배치(cron)가 없다. 그래서 "8시간
+--     경과"는 실시간 타이머가 아니라, refresh_restock_queue()를 "누군가 페이지를 열
+--     때/신청·취소·예약할 때"마다 호출해서 그 시점 기준으로 지연 판정한다(다른
+--     알림들과 같은 원칙). 만료 삭제·다음 순위 승격 둘 다 신청자 본인이 아닌 다른
+--     사용자의 행까지 건드려야 해서, 본인 행만 허용하는 RLS로는 안 되고
+--     security definer가 필요하다.
+-- =============================================================
+
+alter table restock_subscriptions add column if not exists hold_expires_at timestamptz;
+alter table restock_subscriptions add column if not exists notified_at timestamptz;
+
+create or replace function public.refresh_restock_queue()
+returns void as $$
+begin
+  -- 우선권을 얻고도 8시간 안에 예약하지 않은 신청은 대기열에서 제거한다
+  -- ("다음 우선순위에게 넘어감" — 이 신청자는 다시 줄을 서려면 새로 신청해야 한다).
+  delete from restock_subscriptions
+  where hold_expires_at is not null and hold_expires_at < now();
+
+  -- 재고가 있는 물품 중 지금 우선권을 쥔 사람이 없으면(위에서 만료분을 이미 지웠으므로
+  -- hold_expires_at이 남아있는 행이 없다는 뜻), 가장 오래 기다린 신청자에게 8시간
+  -- 우선권을 새로 준다. 물품 하나당 한 명만 승격시킨다(distinct on).
+  with promotable as (
+    select distinct on (rs.item_id) rs.id
+    from restock_subscriptions rs
+    join items i on i.id = rs.item_id
+    where i.available_qty > 0
+      and not exists (
+        select 1 from restock_subscriptions h
+        where h.item_id = rs.item_id and h.hold_expires_at is not null
+      )
+    order by rs.item_id, rs.created_at asc
+  )
+  update restock_subscriptions
+  set hold_expires_at = now() + interval '8 hours'
+  where id in (select id from promotable);
+end;
+$$ language plpgsql security definer set search_path = public;

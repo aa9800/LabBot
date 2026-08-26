@@ -28,6 +28,28 @@ async function notifyAnsweredInquiries(session) {
   }
 }
 
+// 재입고 알림을 신청해둔 물품 중 재고가 다시 생긴 게 있으면 토스트로 알려주고,
+// 알려준 신청 건은 서버에서 바로 지운다(consumeRestockNotification) — 그래서
+// 위 답변 알림과 달리 localStorage로 "이미 봤는지"를 따로 추적할 필요가 없다.
+async function notifyRestockedItems(session) {
+  if (!window.LabBotRestock || !window.LabBotToast) return;
+
+  try {
+    const ready = await window.LabBotRestock.fetchReadyRestockNotifications(session.id);
+    if (ready.length === 0) return;
+
+    window.LabBotToast.success(
+      ready.length === 1
+        ? `"${ready[0].items.name}" 물품이 재입고되었습니다.`
+        : `재입고 알림 ${ready.length}건 — 신청하신 물품이 다시 들어왔습니다.`
+    );
+
+    await Promise.all(ready.map((row) => window.LabBotRestock.consumeRestockNotification(row.id)));
+  } catch (err) {
+    console.warn("LabBot: 재입고 알림 확인 실패", err);
+  }
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   const currentPage = document.body.dataset.page;
 
@@ -69,5 +91,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (session) {
     notifyAnsweredInquiries(session);
+    notifyRestockedItems(session);
   }
 });
