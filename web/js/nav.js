@@ -68,11 +68,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     mypageLink.style.display = session ? "inline" : "none";
   }
 
-  // 일반 사용자로 로그인하면 관리자 링크를 숨긴다(비로그인 상태는 그대로 노출 — 관리자가
-  // 로그인 전 화면에서도 admin.html로 들어갈 수 있어야 하므로). UI 노출용 편의 기능일 뿐,
-  // 실제 접근 차단은 DB의 is_admin() RLS가 담당한다.
+  // 관리자로 로그인했을 때만 관리자 링크를 보여준다(사용자 요청). admin.html이
+  // requireLogin()으로 바뀐 뒤로는 비로그인 상태에서 이 링크가 없어도 주소를 직접
+  // 입력하면 로그인 페이지로 안내되고, 로그인하면 자동으로 admin.html로 돌아오므로
+  // 여기서 미리 노출해 둘 필요가 없다. UI 노출용 편의 기능일 뿐, 실제 접근 차단은
+  // DB의 is_admin() RLS가 담당한다.
   if (adminLink) {
-    adminLink.style.display = session && session.role !== "admin" ? "none" : "inline";
+    adminLink.style.display = session && session.role === "admin" ? "inline" : "none";
   }
 
   if (loginLink && session) {

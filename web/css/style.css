@@ -340,11 +340,14 @@ h2 {
   word-break: keep-all;
 }
 
+/* 안내 문구는 지웠지만(사용자 요청), 제목과 버튼 사이 간격이 갑자기 좁아지지
+   않도록 원래 두 줄 문구가 차지하던 만큼의 빈 공간은 그대로 남겨둔다. */
 .hero-desc {
   color: var(--text-muted);
   font-size: 0.98rem;
   max-width: 440px;
   margin: 0 0 28px;
+  min-height: 2.7em;
 }
 
 .hero-actions {

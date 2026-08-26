@@ -1,10 +1,8 @@
 // LabBot - 관리자 화면 스크립트 (Supabase items 테이블 연동)
 
 document.addEventListener("DOMContentLoaded", async () => {
-  const gate = document.getElementById("adminGate");
+  const forbidden = document.getElementById("adminForbidden");
   const panel = document.getElementById("adminPanel");
-  const loginForm = document.getElementById("adminLoginForm");
-  const loginError = document.getElementById("adminLoginError");
 
   const tabButtons = document.querySelectorAll(".tab-btn");
   const tabPanels = document.querySelectorAll(".tab-panel");
@@ -1111,7 +1109,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   async function showPanel() {
-    gate.style.display = "none";
+    forbidden.style.display = "none";
     panel.style.display = "block";
     renderCategoryOptions();
     renderLocationOptions();
@@ -1128,44 +1126,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     startRobotConsolePolling();
   }
 
-  function showGate() {
-    gate.style.display = "block";
+  function showForbidden() {
+    forbidden.style.display = "block";
     panel.style.display = "none";
   }
-
-  loginForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    loginError.style.display = "none";
-
-    const email = document.getElementById("adminEmail").value.trim();
-    const password = document.getElementById("adminPassword").value;
-
-    try {
-      await window.LabBotAuth.signIn({ email, password });
-    } catch (err) {
-      loginError.textContent = "관리자 계정 정보가 올바르지 않습니다.";
-      loginError.style.display = "block";
-      return;
-    }
-
-    const session = await window.LabBotAuth.getSession();
-    if (!session || session.role !== "admin") {
-      await window.LabBotAuth.signOut();
-      loginError.textContent = "관리자 계정 정보가 올바르지 않습니다.";
-      loginError.style.display = "block";
-      return;
-    }
-
-    await showPanel();
-  });
 
   // 로그아웃 버튼은 상단 네비게이션(nav.js)에 있는 것 하나만 쓴다 — 예전엔 이 페이지 안에도
   // 똑같은 기능의 버튼이 따로 있어서 중복으로 보였다(GPT 리뷰 지적).
 
-  const session = await window.LabBotAuth.getSession();
-  if (session && session.role === "admin") {
-    await showPanel();
-  } else {
-    showGate();
+  // 로그인은 login.html 한 곳에서만 한다 — 비로그인 상태면 requireLogin이
+  // login.html?redirect=admin.html로 보내고, 로그인에 성공하면 다시 이 페이지로
+  // 돌아온다(auth.js REDIRECT_ALLOWLIST에 admin.html이 이미 등록되어 있음).
+  const session = await window.LabBotAuth.requireLogin("admin.html");
+  if (!session) return;
+
+  if (session.role !== "admin") {
+    showForbidden();
+    return;
   }
+
+  await showPanel();
 });

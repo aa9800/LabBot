@@ -52,7 +52,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (rentable) {
       actionHtml = `<button type="button" class="btn btn-primary btn-sm">${actionLabel}</button>`;
     } else if (statusKey === "OUT_OF_STOCK") {
-      actionHtml = `<button type="button" class="btn btn-secondary btn-sm${isSubscribed ? " is-subscribed" : ""}" data-action="restock" data-subscribed="${isSubscribed}">${isSubscribed ? "알림 신청됨" : "재입고 알림 신청"}</button>`;
+      actionHtml = `<button type="button" class="btn btn-secondary btn-sm${isSubscribed ? " is-subscribed" : ""}" data-action="restock" data-subscribed="${isSubscribed}">${isSubscribed ? "알림 신청됨" : "재입고 알림"}</button>`;
     } else {
       actionHtml = `<button type="button" class="btn btn-secondary btn-sm" disabled>${consumable ? "재고없음" : "대여불가"}</button>`;
     }
@@ -106,7 +106,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             await window.LabBotRestock.unsubscribeRestock(item.id, session.id);
             subscribedItemIds.delete(item.id);
             target.dataset.subscribed = "false";
-            target.textContent = "재입고 알림 신청";
+            target.textContent = "재입고 알림";
             target.classList.remove("is-subscribed");
             window.LabBotToast.info("알림 신청을 취소했습니다.");
           } else {

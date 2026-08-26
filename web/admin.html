@@ -36,26 +36,20 @@
     </div>
   </header>
 
-  <!-- 관리자 로그인 게이트 -->
-  <main class="page" id="adminGate">
+  <!-- 로그인은 login.html 한 곳에서만 한다(requireLogin이 비로그인 시 이리로 보내기 전에
+       ?redirect=admin.html로 이동시켜서, 로그인 뒤 다시 이 페이지로 돌아온다). 여기서는
+       "로그인은 했지만 관리자가 아닌" 경우만 안내한다 — 로그인 폼을 여기 따로 두면
+       login.html과 코드가 중복되고, 관리자가 아닌 계정으로 시도하면 조용히 로그아웃까지
+       시켜버려서 혼란스러웠다(자체 디자인 점검 지적). -->
+  <main class="page" id="adminForbidden" style="display: none;">
     <div class="auth-page auth-page-inline">
       <div class="auth-card">
         <h1 class="logo-large">관리자</h1>
-        <p class="auth-subtitle">관리자 계정으로 로그인하세요</p>
+        <p class="auth-subtitle">이 페이지는 관리자 계정만 볼 수 있습니다.</p>
 
-        <p class="auth-error" id="adminLoginError" style="display: none;"></p>
-
-        <form id="adminLoginForm">
-          <label for="adminEmail">이메일</label>
-          <input type="email" id="adminEmail" name="adminEmail" placeholder="you@example.com" required />
-
-          <label for="adminPassword">비밀번호</label>
-          <input type="password" id="adminPassword" name="adminPassword" placeholder="••••••••" required />
-
-          <div class="auth-actions">
-            <button type="submit" class="btn btn-primary">관리자 로그인</button>
-          </div>
-        </form>
+        <div class="auth-actions">
+          <a href="index.html" class="btn btn-primary">홈으로</a>
+        </div>
       </div>
     </div>
   </main>
