@@ -930,6 +930,95 @@ document.addEventListener("DOMContentLoaded", async () => {
     camSend();
   });
 
+  // 카메라 각도 원터치 프리셋 버튼 (정면 / 바닥라인 / 상단선반)
+  document.querySelectorAll(".cam-preset-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      camPan = parseInt(btn.dataset.pan, 10) || 90;
+      camTilt = parseInt(btn.dataset.tilt, 10) || 90;
+      camRender();
+      camSend();
+    });
+  });
+
+  // FPV 실시간 HUD 텔레메트리 오버레이 (초음파 거리, 서보 각도, 실시간 안전 경고)
+  const robotHudOverlay = document.getElementById("robotHudOverlay");
+  const hudDistanceBadge = document.getElementById("hudDistanceBadge");
+  const hudSafetyBadge = document.getElementById("hudSafetyBadge");
+  const hudFpsBadge = document.getElementById("hudFpsBadge");
+  const hudAngleBadge = document.getElementById("hudAngleBadge");
+  const hudSpeedBadge = document.getElementById("hudSpeedBadge");
+
+  async function updateHudTelemetry() {
+    if (robotCameraMode !== "stream") {
+      if (robotHudOverlay) robotHudOverlay.style.display = "none";
+      return;
+    }
+    if (robotHudOverlay) robotHudOverlay.style.display = "flex";
+
+    try {
+      const telemetry = await window.LabBotRobotConsole.fetchTelemetry(600);
+      if (telemetry) {
+        const dist = telemetry.distance_cm;
+        if (hudDistanceBadge) {
+          hudDistanceBadge.innerHTML = `📏 <strong>${dist !== undefined && dist < 900 ? dist.toFixed(1) + " cm" : "측정 중"}</strong>`;
+        }
+        if (hudSafetyBadge) {
+          if (dist !== undefined && dist < 40.0) {
+            hudSafetyBadge.className = "hud-tag hud-status-danger";
+            hudSafetyBadge.innerHTML = "🛑 전방 장애물 위험!";
+            robotCameraImg.style.borderColor = "#ef4444";
+            robotCameraImg.style.boxShadow = "0 0 16px rgba(239, 68, 68, 0.7)";
+          } else {
+            hudSafetyBadge.className = "hud-tag hud-status-ok";
+            hudSafetyBadge.innerHTML = "🟢 정상 주행";
+            robotCameraImg.style.borderColor = "var(--border)";
+            robotCameraImg.style.boxShadow = "none";
+          }
+        }
+        if (hudAngleBadge) {
+          hudAngleBadge.textContent = `📐 P: ${telemetry.cam_pan || 90}° · T: ${telemetry.cam_tilt || 90}°`;
+        }
+        if (hudSpeedBadge) {
+          hudSpeedBadge.textContent = `🚗 SPD: ${telemetry.speed || 0} · TRN: ${telemetry.turn || 0}`;
+        }
+      }
+    } catch {}
+  }
+  setInterval(updateHudTelemetry, 250);
+
+  // 키보드 원격 운전 단축키 (WASD / 방향키 / Space 긴급정지)
+  let activeKeyboardKey = null;
+  window.addEventListener("keydown", (e) => {
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    const key = e.key.toLowerCase();
+    if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
+      e.preventDefault();
+      if (activeKeyboardKey === key) return;
+      activeKeyboardKey = key;
+
+      let speed = 0;
+      let turn = 0;
+      if (key === "w" || key === "arrowup") speed = 70;
+      else if (key === "s" || key === "arrowdown") speed = -70;
+      else if (key === "a" || key === "arrowleft") turn = -90;
+      else if (key === "d" || key === "arrowright") turn = 90;
+      else if (key === " ") { speed = 0; turn = 0; }
+
+      joySendCommand(speed, turn);
+    }
+  });
+
+  window.addEventListener("keyup", (e) => {
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    const key = e.key.toLowerCase();
+    if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+      if (activeKeyboardKey === key) {
+        activeKeyboardKey = null;
+        joySendCommand(0, 0);
+      }
+    }
+  });
+
   robotAutoBtn.addEventListener("click", async () => {
     try {
       await window.LabBotRobotConsole.setRobotCommand({ mode: "auto", speed: 0, turn: 0 });

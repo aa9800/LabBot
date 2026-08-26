@@ -245,9 +245,21 @@
           <div class="robot-camera-wrap">
             <img
               id="robotCameraImg"
-              alt="로봇 카메라 스냅샷"
-              style="width: 100%; border-radius: 8px; border: 1px solid var(--border); display: none; background: var(--bg);"
+              alt="로봇 카메라 실시간 스트림"
+              style="width: 100%; border-radius: 8px; border: 2px solid var(--border); display: none; background: #000; transition: border-color 0.2s ease, box-shadow 0.2s ease;"
             />
+            <div id="robotHudOverlay" class="robot-hud-overlay" style="display: none;">
+              <div class="hud-top-bar">
+                <span class="hud-tag" id="hudDistanceBadge">📏 <strong>-- cm</strong></span>
+                <span class="hud-tag hud-status-ok" id="hudSafetyBadge">🟢 정상 주행</span>
+                <span class="hud-tag" id="hudFpsBadge">⚡ 30 FPS</span>
+              </div>
+              <div class="hud-crosshair"></div>
+              <div class="hud-bottom-bar">
+                <span class="hud-tag" id="hudAngleBadge">📐 P: 90° · T: 90°</span>
+                <span class="hud-tag" id="hudSpeedBadge">🚗 SPD: 0 · TRN: 0</span>
+              </div>
+            </div>
             <div class="robot-camera-status" id="robotCameraStatus"></div>
           </div>
 
@@ -259,6 +271,11 @@
               <button type="button" class="robot-dpad-btn robot-dpad-right" data-cam="right" aria-label="카메라 오른쪽">▶</button>
               <button type="button" class="robot-dpad-btn robot-dpad-down" data-cam="down" aria-label="카메라 아래로">▼</button>
             </div>
+            <div class="camera-presets">
+              <button type="button" class="cam-preset-btn" data-pan="90" data-tilt="90">정면</button>
+              <button type="button" class="cam-preset-btn" data-pan="90" data-tilt="45">바닥/라인</button>
+              <button type="button" class="cam-preset-btn" data-pan="90" data-tilt="135">상단선반</button>
+            </div>
             <div class="robot-joystick-readout">
               <span>팬 <span class="mono" id="robotCamPanVal">90</span>°</span>
               <span>틸트 <span class="mono" id="robotCamTiltVal">90</span>°</span>
@@ -266,7 +283,7 @@
           </div>
         </div>
         <div class="safety-actions" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-          <button type="button" class="btn btn-danger btn-sm" data-drive="stop">■ 정지</button>
+          <button type="button" class="btn btn-danger btn-sm" data-drive="stop">■ 정지 (Space)</button>
           <button type="button" class="btn btn-primary btn-sm" id="robotAutoBtn">자동 순찰로 복귀</button>
           <button type="button" class="btn btn-secondary btn-sm" id="robotScanQrBtn" style="background: #2563eb; color: #fff; border-color: #2563eb; font-weight: 600; display: inline-flex; align-items: center; gap: 6px;">
             📸 현재 위치 QR 체크하기

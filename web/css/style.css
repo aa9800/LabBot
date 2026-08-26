@@ -2628,3 +2628,98 @@ tbody tr:hover td {
     background: none;
   }
 }
+
+/* ---------- Robot Console FPV 실시간 HUD 오버레이 ---------- */
+
+.robot-camera-wrap {
+  position: relative;
+}
+
+.robot-hud-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.hud-top-bar,
+.hud-bottom-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 6px;
+}
+
+.hud-tag {
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(4px);
+  color: #f8fafc;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.hud-status-ok {
+  border-color: #22c55e;
+  color: #4ade80;
+}
+
+.hud-status-danger {
+  border-color: #ef4444;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.35);
+  font-weight: 700;
+  animation: pulse-hud-danger 0.8s infinite alternate;
+}
+
+@keyframes pulse-hud-danger {
+  from { opacity: 0.8; }
+  to { opacity: 1.0; transform: scale(1.03); }
+}
+
+.hud-crosshair {
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  border: 1px dashed rgba(255, 255, 255, 0.45);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.camera-presets {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  width: 100%;
+  justify-content: center;
+}
+
+.cam-preset-btn {
+  padding: 3px 7px;
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cam-preset-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-color: var(--accent-border);
+}
