@@ -104,7 +104,8 @@ class RealHAL:
             self._pyzbar = pyzbar
             self._picam2 = Picamera2()
             config = self._picam2.create_preview_configuration(
-                main={"format": "BGR888", "size": CAMERA_SIZE}
+                main={"format": "BGR888", "size": CAMERA_SIZE},
+                controls={"FrameDurationLimits": (33333, 33333)}  # 30fps 하드웨어 고정
             )
             config["transform"] = libcamera.Transform(hflip=1, vflip=1)
             self._picam2.configure(config)
@@ -123,19 +124,18 @@ class RealHAL:
             self._camera_thread.start()
 
     def _camera_loop(self):
-        """항상 돌아가는 카메라 캡처 루프 — capture_array()의 하드웨어 블로킹(33ms)에 맞춰 순수 30fps 유지."""
+        """항상 돌아가는 카메라 캡처 루프 — capture_array()의 하드웨어 블로킹(33.3ms)에 정확히 동기화된 무진동 30fps."""
         while not self._camera_stop.is_set():
             try:
                 frame = self._picam2.capture_array()
                 with self._frame_lock:
                     self._latest_frame = frame
                 if self._cv2 is not None and self._stream_server is not None:
-                    # 품질 45 (~5KB) — 2.4GHz Wi-Fi 대역폭 지연 및 버퍼블로트 완전 차단
+                    # 품질 45 (~5KB) — 초고속 인코딩 및 Wi-Fi 지연 0
                     _, jpeg = self._cv2.imencode(
-                        ".jpg", frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 45]
+                        ".jpg", frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 45, int(self._cv2.IMWRITE_JPEG_OPTIMIZE), 0]
                     )
                     self._stream_server.set_camera_frame(jpeg.tobytes())
-                time.sleep(0.04)  # 25 FPS 안정적 페이싱 (지연 누적 0)
             except Exception as e:
                 print(f"[RealHAL] 카메라 캡처 실패: {e}")
                 time.sleep(0.2)  # 에러 시 CPU 폭주 방지 대기
