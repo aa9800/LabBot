@@ -44,7 +44,7 @@ class FrameBuffer:
         with self.condition:
             return self.frame
 
-    def wait_for_new_frame(self, last_version: int, timeout: float = 1.0):
+    def wait_for_new_frame(self, last_version: int, timeout: float = 0.5):
         """새 프레임이 들어올 때까지 대기(0ms 지연)하다가 최신 프레임과 버전을 반환."""
         with self.condition:
             if self.version == last_version:
@@ -102,11 +102,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
             client_version = 0
             try:
                 while True:
-                    # 새 프레임 알림 대기
-                    _buffer.wait_for_new_frame(client_version, timeout=0.5)
-                    # 중간에 밀린 과거 프레임은 버리고 메모리의 '가장 최신 프레임'만 즉시 획득
-                    frame = _buffer.get_latest()
-                    client_version = _buffer.version
+                    frame, client_version = _buffer.wait_for_new_frame(client_version, timeout=0.5)
                     if frame:
                         chunk = (
                             b"--FRAME\r\n"
@@ -115,7 +111,8 @@ class StreamingHandler(BaseHTTPRequestHandler):
                             + frame + b"\r\n"
                         )
                         self.wfile.write(chunk)
-            except (BrokenPipeError, ConnectionResetError):
+                        self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
         elif self.path.startswith("/snapshot"):
             frame = _buffer.get_latest()

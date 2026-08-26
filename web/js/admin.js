@@ -1110,7 +1110,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     } catch {}
   }
-  setInterval(updateHudTelemetry, 250);
+  setInterval(updateHudTelemetry, 1000);
 
   // 키보드 원격 운전 단축키 (WASD / 방향키 / Space 긴급정지)
   let activeKeyboardKey = null;
