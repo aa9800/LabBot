@@ -474,8 +474,13 @@ h2 {
 
 .step-icon {
   display: block;
-  font-size: 1.8rem;
+  color: var(--accent);
   margin-bottom: 12px;
+}
+
+.step-icon svg {
+  width: 28px;
+  height: 28px;
 }
 
 .step-title {
@@ -559,6 +564,68 @@ h2 {
   .usage-steps.active {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------- 홈 화면 푸터 ---------- */
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 56px;
+}
+
+.site-footer-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.site-footer-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.site-footer-brand .logo-text {
+  font-size: 1rem;
+}
+
+.site-footer-tag {
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+.site-footer-links {
+  display: flex;
+  gap: 18px;
+}
+
+.site-footer-links a {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.site-footer-links a:hover {
+  color: var(--accent-text);
+}
+
+.site-footer-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+
+.site-footer-dot {
+  background: var(--accent);
+  animation: pulse-dot 1.6s ease-in-out infinite;
 }
 
 /* ---------- 물품목록 페이지 ---------- */

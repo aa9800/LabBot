@@ -24,4 +24,20 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     });
   });
+
+  // 푸터의 실시간 시계 — 순수 장식이지만, 고정 문구보다 실제로 시계가 돌아가는
+  // 편이 이 페이지가 살아있다는 인상을 준다. 서버 시각이 아니라 접속한 브라우저의
+  // 로컬 시각이다(별도 API 호출 없이 그냥 눈으로 보는 용도라 충분함).
+  const footerClock = document.getElementById("footerClock");
+  if (footerClock) {
+    const pad = (n) => String(n).padStart(2, "0");
+    const tick = () => {
+      const now = new Date();
+      footerClock.textContent = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(
+        now.getDate()
+      )} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    };
+    tick();
+    setInterval(tick, 1000);
+  }
 });
