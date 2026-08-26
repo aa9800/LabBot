@@ -688,40 +688,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     robotCurrentIp = localIp;
     const streamUrl = `http://${localIp}:8080/stream`;
 
-    if (robotCameraMode === "stream" && robotCameraImg.src.includes(":8080/stream")) {
-      return;
+    if (robotCameraImg.src !== streamUrl) {
+      robotCameraImg.src = streamUrl;
     }
+    robotCameraImg.style.display = "block";
+    robotCameraMode = "stream";
+    robotCameraStatus.innerHTML = `
+      <div style="margin-top: 6px;">
+        <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 직결 스트림 (${localIp}:8080 · 30 FPS)</span>
+      </div>
+    `;
 
-    const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(localIp, 8080, 1000);
-    if (isHealthy) {
-      robotCameraMode = "stream";
-      robotCameraLastOkAt = new Date();
-      robotCameraImg.style.display = "block";
-      robotCameraStatus.innerHTML = `
-        <div style="margin-top: 6px;">
-          <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 직결 스트림 (${localIp}:8080 · 25 FPS)</span>
-        </div>
-      `;
-      robotCameraImg.onerror = () => {
-        robotCameraMode = "offline";
-        robotCameraStatus.innerHTML = `
-          <div style="margin-top: 6px;">
-            <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
-          </div>
-        `;
-        setTimeout(refreshRobotCamera, 1500);
-      };
-      if (robotCameraImg.src !== streamUrl) {
-        robotCameraImg.src = streamUrl;
-      }
-    } else {
+    robotCameraImg.onerror = () => {
       robotCameraMode = "offline";
       robotCameraStatus.innerHTML = `
         <div style="margin-top: 6px;">
           <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
         </div>
       `;
-    }
+      setTimeout(refreshRobotCamera, 2000);
+    };
   }
 
 
