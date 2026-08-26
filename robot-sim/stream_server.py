@@ -92,13 +92,13 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 while True:
                     frame, client_version = _buffer.wait_for_new_frame(client_version, timeout=0.5)
                     if frame:
-                        self.wfile.write(b"--FRAME\r\n")
-                        self.send_header("Content-Type", "image/jpeg")
-                        self.send_header("Content-Length", str(len(frame)))
-                        self.end_headers()
-                        self.wfile.write(frame)
-                        self.wfile.write(b"\r\n")
-                        self.wfile.flush()
+                        chunk = (
+                            b"--FRAME\r\n"
+                            b"Content-Type: image/jpeg\r\n"
+                            b"Content-Length: " + str(len(frame)).encode("ascii") + b"\r\n\r\n"
+                            + frame + b"\r\n"
+                        )
+                        self.wfile.write(chunk)
             except (BrokenPipeError, ConnectionResetError):
                 pass
             except Exception as e:

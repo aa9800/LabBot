@@ -123,7 +123,7 @@ class RealHAL:
             self._camera_thread.start()
 
     def _camera_loop(self):
-        """항상 돌아가는 카메라 캡처 루프 — 순찰/장애물 로직과 무관하게 약 30fps로 스트림 갱신."""
+        """항상 돌아가는 카메라 캡처 루프 — capture_array()의 하드웨어 블로킹(33ms)에 맞춰 순수 30fps 유지."""
         while not self._camera_stop.is_set():
             try:
                 frame = self._picam2.capture_array()
@@ -135,9 +135,10 @@ class RealHAL:
                         ".jpg", frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 55]
                     )
                     self._stream_server.set_camera_frame(jpeg.tobytes())
+                time.sleep(0.001)  # 초경량 yield
             except Exception as e:
                 print(f"[RealHAL] 카메라 캡처 실패: {e}")
-            time.sleep(0.033)
+                time.sleep(0.2)  # 에러 시 CPU 폭주 방지 대기
 
     # ── PatrolController가 실제로 호출하는 5개 메서드 ──────────────────
 
