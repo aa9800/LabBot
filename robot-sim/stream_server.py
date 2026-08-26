@@ -82,6 +82,14 @@ class StreamingHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        try:
+            self._handle_get()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        except Exception as e:
+            logger.debug(f"HTTP GET handler exception: {e}")
+
+    def _handle_get(self):
         if self.path == "/stream":
             self.send_response(200)
             self.send_header("Age", "0")
@@ -109,8 +117,6 @@ class StreamingHandler(BaseHTTPRequestHandler):
                         self.wfile.write(chunk)
             except (BrokenPipeError, ConnectionResetError):
                 pass
-            except Exception as e:
-                logger.debug(f"Stream client disconnected: {e}")
         elif self.path.startswith("/snapshot"):
             frame = _buffer.get_latest()
             if frame:
@@ -126,9 +132,8 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 self.send_error(404, "No frame available")
         elif self.path.startswith("/camera"):
             # 초저지연 로컬 카메라 서보 각도 조절 직결 엔드포인트
-            import urllib.parse
-            parsed = urllib.parse.urlparse(self.path)
-            qs = urllib.parse.parse_qs(parsed.query)
+            parsed = urlparse(self.path)
+            qs = parse_qs(parsed.query)
             pan = int(qs["pan"][0]) if "pan" in qs else None
             tilt = int(qs["tilt"][0]) if "tilt" in qs else None
             if _camera_angle_callback is not None:
@@ -144,9 +149,8 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.wfile.write(b'{"status":"ok"}')
         elif self.path.startswith("/drive"):
             # 초저지연 로컬 조이스틱 주행 직결 엔드포인트 (0ms 반응)
-            import urllib.parse
-            parsed = urllib.parse.urlparse(self.path)
-            qs = urllib.parse.parse_qs(parsed.query)
+            parsed = urlparse(self.path)
+            qs = parse_qs(parsed.query)
             mode = qs.get("mode", ["manual"])[0]
             speed = float(qs["speed"][0]) if "speed" in qs else 0.0
             turn = float(qs["turn"][0]) if "turn" in qs else 0.0
