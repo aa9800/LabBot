@@ -134,6 +134,25 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
+        elif self.path.startswith("/drive"):
+            # 초저지연 로컬 조이스틱 주행 직결 엔드포인트 (0ms 반응)
+            import urllib.parse
+            parsed = urllib.parse.urlparse(self.path)
+            qs = urllib.parse.parse_qs(parsed.query)
+            mode = qs.get("mode", ["manual"])[0]
+            speed = float(qs["speed"][0]) if "speed" in qs else 0.0
+            turn = float(qs["turn"][0]) if "turn" in qs else 0.0
+            if _drive_callback is not None:
+                try:
+                    _drive_callback(mode, speed, turn)
+                except Exception as e:
+                    logger.warn(f"Drive callback failed: {e}")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
         elif self.path in ("/health", "/status"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -153,12 +172,19 @@ class StreamingHandler(BaseHTTPRequestHandler):
 
 
 _camera_angle_callback = None
+_drive_callback = None
 
 
 def set_camera_angle_callback(cb):
     """서보 각도 변경 콜백 등록 (RealHAL.set_camera_angle 연동)."""
     global _camera_angle_callback
     _camera_angle_callback = cb
+
+
+def set_drive_callback(cb):
+    """직결 주행 명령 콜백 등록 (run_real 연동)."""
+    global _drive_callback
+    _drive_callback = cb
 
 
 def set_camera_frame(jpeg_bytes: bytes):

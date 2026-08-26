@@ -98,6 +98,23 @@ def main():
     command = {"mode": "auto", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
     was_manual = False
 
+    def on_direct_drive(mode, speed, turn):
+        nonlocal command, was_manual
+        command["mode"] = mode
+        command["speed"] = speed
+        command["turn"] = turn
+        command["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        if mode == "manual":
+            distance = hal.read_ultrasonic()
+            if distance < OBSTACLE_STOP_DISTANCE:
+                hal.stop()
+            else:
+                hal.set_motion(speed, turn)
+        else:
+            hal.stop()
+
+    stream_server.set_drive_callback(on_direct_drive)
+
     try:
         while True:
             loop_start = time.time()

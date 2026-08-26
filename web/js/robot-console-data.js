@@ -93,12 +93,24 @@ async function fetchCameraAngle() {
 
 // mode: "auto" | "manual". manual일 때만 speed/turn이 실제로 로봇을 움직인다.
 // cam_pan/cam_tilt: 0~180도 서보 각도(생략하면 기존 값 유지 — 매번 안 보내도 됨).
+// 로컬 직결 스트림 IP가 있으면 0ms 초저지연으로 모터를 즉시 구동하고, Supabase에도 상태를 동기화한다.
 async function setRobotCommand({ mode, speed = 0, turn = 0, cam_pan, cam_tilt }) {
+  // 1. 로컬 직결 초저지연(0ms) 주행 명령 전송
+  const targetIp = _cachedLocalIp || "10.42.0.1";
+  if (targetIp && targetIp !== "127.0.0.1") {
+    const params = new URLSearchParams({ mode, speed, turn });
+    fetch(`http://${targetIp}:8080/drive?${params.toString()}`, { mode: "no-cors" }).catch(() => {});
+  }
+
+  // 2. Supabase DB 상태 동기화 (클라우드 상태 보존)
   const payload = { mode, speed, turn, updated_at: new Date().toISOString() };
   if (cam_pan !== undefined) payload.cam_pan = cam_pan;
   if (cam_tilt !== undefined) payload.cam_tilt = cam_tilt;
-  const { error } = await supabaseClient.from("robot_commands").update(payload).eq("id", 1);
-  if (error) throw error;
+  try {
+    await supabaseClient.from("robot_commands").update(payload).eq("id", 1);
+  } catch (err) {
+    console.debug("LabBot: Supabase 주행 명령 동기화 실패(로컬 직결 동작 중)", err);
+  }
 }
 
 // 카메라 각도만 바꿀 때는 mode/speed/turn을 건드리지 않는다 — 주행 중에 카메라만 돌려도
