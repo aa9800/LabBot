@@ -38,6 +38,10 @@ async function fetchRobotCommand() {
 
 let _currentMode = localStorage.getItem("labbot_target_mode") || "sim";
 let _cachedLocalIp = null;  // 첫 fetchRobotIp()에서 채운다
+let _activeDriveController = null;
+let _driveCommandSequence = 0;
+let _activeGuideTaskId = null;
+let _lastPersistedGuideStatus = null;
 
 // 모드별 기본 로봇 주소. 시뮬은 웹서버와 같은 PC에서 돌므로 페이지를 서빙한
 // 호스트를 쓴다(휴대폰/다른 PC에서 열어도 올바른 대상을 가리키도록).
@@ -46,10 +50,16 @@ function _defaultIpForMode() {
   return "10.42.0.1";
 }
 
-async function sendDirectCommand(ip, path, params = {}, timeoutMs = 1200) {
+async function sendDirectCommand(ip, path, params = {}, timeoutMs = 1200, externalSignal = null) {
   const query = new URLSearchParams(params);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  if (externalSignal) externalSignal.addEventListener("abort", abortFromCaller, { once: true });
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   try {
     const response = await fetch(`http://${ip}:8080${path}?${query.toString()}`, {
       method: "GET",
@@ -59,8 +69,16 @@ async function sendDirectCommand(ip, path, params = {}, timeoutMs = 1200) {
     });
     if (!response.ok) throw new Error(`로봇 서버 HTTP ${response.status}`);
     return await response.json();
+  } catch (error) {
+    if (error?.name === "AbortError" && timedOut) {
+      const timeoutError = new Error(`로봇 서버 응답 시간 초과 (${timeoutMs}ms)`);
+      timeoutError.name = "TimeoutError";
+      throw timeoutError;
+    }
+    throw error;
   } finally {
     clearTimeout(timeoutId);
+    if (externalSignal) externalSignal.removeEventListener("abort", abortFromCaller);
   }
 }
 
@@ -74,6 +92,34 @@ function syncRobotState(payload) {
     .then(({ error }) => {
       if (error) console.debug("LabBot: 로봇 상태 동기화 실패", error);
     });
+}
+
+// 조이스틱은 초당 수십 번 명령을 보낸다. 매 프레임 Supabase까지 쓰면 브라우저의
+// 요청 큐와 DB 갱신이 쌓여 정작 로컬 주행 명령이 늦어진다. 로봇에는 매 명령을 즉시
+// 보내되, 클라우드 상태 기록은 최신 값만 4Hz로 합쳐 저장한다.
+let _pendingDriveState = null;
+let _driveSyncTimer = null;
+let _lastDriveSyncAt = 0;
+
+function syncDriveStateThrottled(payload, immediate = false) {
+  _pendingDriveState = payload;
+  const flush = () => {
+    _driveSyncTimer = null;
+    if (!_pendingDriveState) return;
+    const latest = _pendingDriveState;
+    _pendingDriveState = null;
+    _lastDriveSyncAt = Date.now();
+    syncRobotState(latest);
+  };
+
+  if (immediate) {
+    if (_driveSyncTimer) clearTimeout(_driveSyncTimer);
+    flush();
+    return;
+  }
+  if (_driveSyncTimer) return;
+  const delay = Math.max(0, 250 - (Date.now() - _lastDriveSyncAt));
+  _driveSyncTimer = setTimeout(flush, delay);
 }
 
 async function setTargetMode(mode) {
@@ -160,13 +206,27 @@ async function fetchCameraAngle() {
 // 로컬 직결 스트림 IP(127.0.0.1 또는 10.42.0.1)로 초저지연 직접 전송하고, Supabase에도 상태를 동기화한다.
 async function setRobotCommand({ mode, speed = 0, turn = 0, cam_pan, cam_tilt }) {
   const targetIp = _cachedLocalIp || _defaultIpForMode();
-  const applied = await sendDirectCommand(targetIp, "/drive", { mode, speed, turn });
+  const sequence = ++_driveCommandSequence;
+  // 직전 요청이 느리게 남아 있으면 취소한다. 항상 가장 최근 입력, 특히 정지가 우선한다.
+  if (_activeDriveController) _activeDriveController.abort();
+  const driveController = new AbortController();
+  _activeDriveController = driveController;
+  let applied;
+  try {
+    applied = await sendDirectCommand(targetIp, "/drive", { mode, speed, turn }, 1200, driveController.signal);
+  } finally {
+    if (_activeDriveController === driveController) _activeDriveController = null;
+  }
+
+  // 취소 직전에 응답이 끝난 오래된 명령은 DB 상태를 다시 덮어쓰지 못하게 한다.
+  if (sequence !== _driveCommandSequence) return applied;
 
   // 2. Supabase DB 상태 동기화
   const payload = { mode, speed, turn, updated_at: new Date().toISOString() };
   if (cam_pan !== undefined) payload.cam_pan = cam_pan;
   if (cam_tilt !== undefined) payload.cam_tilt = cam_tilt;
-  syncRobotState(payload);
+  const isStopOrModeChange = mode !== "manual" || (speed === 0 && turn === 0);
+  syncDriveStateThrottled(payload, isStopOrModeChange);
   return applied;
 }
 
@@ -217,6 +277,85 @@ async function triggerQrScan(localIp) {
   }
 }
 
+async function fetchVirtualBinding(itemId) {
+  try {
+    const { data, error } = await supabaseClient
+      .from("virtual_lab_objects")
+      .select("scene_object_id, room, display_mode")
+      .eq("item_id", itemId)
+      .eq("enabled", true)
+      .limit(1)
+      .maybeSingle();
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function startRobotGuide({ loanId, item, mode = "pickup" }) {
+  const targetIp = _cachedLocalIp || _defaultIpForMode();
+  const binding = item?.id ? await fetchVirtualBinding(item.id) : null;
+  const result = await sendDirectCommand(targetIp, "/guide/start", {
+    loan_id: loanId,
+    item_id: item?.id || "",
+    item_name: item?.name || "",
+    location: item?.location || "",
+    category: item?.item_type || item?.category || "",
+    scene_object_id: binding?.scene_object_id || "",
+    mode,
+  }, 3000);
+
+  // 안내 명령 자체는 로컬 직결로 지연 없이 보내고, 작업 이력은 Supabase에 남긴다.
+  try {
+    const { data, error } = await supabaseClient.from("robot_guide_tasks").insert({
+      loan_id: loanId,
+      item_id: item.id,
+      scene_object_id: binding?.scene_object_id || result.scene_object_id || null,
+      task_type: mode,
+      status: result.status === "arrived" ? "arrived" : "navigating",
+      shelf_code: result.shelf_code || null,
+      target_x: result.target_x ?? null,
+      target_y: result.target_y ?? null,
+      updated_at: new Date().toISOString(),
+    }).select("id").single();
+    if (!error && data) _activeGuideTaskId = data.id;
+  } catch (error) {
+    console.debug("LabBot: 안내 작업 이력 저장 생략", error);
+  }
+  _lastPersistedGuideStatus = result.status;
+  return result;
+}
+
+async function fetchRobotGuideStatus() {
+  const targetIp = _cachedLocalIp || _defaultIpForMode();
+  const result = await sendDirectCommand(targetIp, "/guide/status", {}, 1200);
+  if (_activeGuideTaskId && result.status && result.status !== _lastPersistedGuideStatus) {
+    _lastPersistedGuideStatus = result.status;
+    supabaseClient.from("robot_guide_tasks").update({
+      status: result.status,
+      updated_at: new Date().toISOString(),
+    }).eq("id", _activeGuideTaskId).then(() => null);
+  }
+  return result;
+}
+
+async function finishRobotGuide(status = "completed") {
+  const targetIp = _cachedLocalIp || _defaultIpForMode();
+  const action = status === "cancelled" ? "cancel" : "complete";
+  const result = await sendDirectCommand(targetIp, `/guide/${action}`, {}, 1200);
+  if (_activeGuideTaskId) {
+    const taskId = _activeGuideTaskId;
+    _activeGuideTaskId = null;
+    _lastPersistedGuideStatus = status;
+    supabaseClient.from("robot_guide_tasks").update({
+      status,
+      updated_at: new Date().toISOString(),
+    }).eq("id", taskId).then(() => null);
+  }
+  return result;
+}
+
 async function fetchAiStatus() {
   const host = window.location.hostname || "127.0.0.1";
   const url = `http://${host}:8081/ai_status`;
@@ -229,6 +368,34 @@ async function fetchAiStatus() {
     return await resp.json();
   } catch {
     return null;
+  }
+}
+
+async function verifyCheckoutItem(item) {
+  const host = window.location.hostname || "127.0.0.1";
+  const query = new URLSearchParams({
+    expected_name: item?.name || "",
+    expected_category: item?.item_type || item?.category || "",
+  });
+  try {
+    const verifyOnce = async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1800);
+      const resp = await fetch(`http://${host}:8081/checkout/verify?${query}`, {
+        method: "GET", mode: "cors", signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!resp.ok) return null;
+      return await resp.json();
+    };
+    const first = await verifyOnce();
+    if (first?.verdict !== "blocked") return first;
+    await new Promise((resolve) => setTimeout(resolve, 320));
+    const second = await verifyOnce();
+    return second?.verdict === "blocked" ? second : { verdict: "inconclusive", reason: "재검사에서 이상 미확인" };
+  } catch {
+    // AI 서버 장애가 대여 시스템 전체를 막지는 않는다. QR/RPC 검증은 계속 적용된다.
+    return { verdict: "unavailable", reason: "AI 서버 연결 실패" };
   }
 }
 
@@ -288,7 +455,11 @@ window.LabBotRobotConsole = {
   fetchCameraAngle,
   fetchTelemetry,
   triggerQrScan,
+  startRobotGuide,
+  fetchRobotGuideStatus,
+  finishRobotGuide,
   fetchAiStatus,
+  verifyCheckoutItem,
   toggleIntruderGuard,
   triggerRemoteBuzzer,
   setRobotCommand,

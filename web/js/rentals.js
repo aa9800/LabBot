@@ -90,6 +90,36 @@ async function confirmUsage(loanId, qrCode, qty) {
   return data;
 }
 
+// Isaac Sim에서는 QR 비밀값을 장면에 복제하지 않는다. 로봇 카메라 스캔 결과로 받은
+// scene_object_id를 서버 RPC가 실제 예약 item_id와 대조한다.
+async function confirmVirtualPickup(loanId, sceneObjectId) {
+  const { data, error } = await supabaseClient.rpc("confirm_virtual_loan_pickup", {
+    p_loan_id: loanId,
+    p_scene_object_id: sceneObjectId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function confirmVirtualReturn(loanId, sceneObjectId) {
+  const { data, error } = await supabaseClient.rpc("confirm_virtual_loan_return", {
+    p_loan_id: loanId,
+    p_scene_object_id: sceneObjectId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function confirmVirtualUsage(loanId, sceneObjectId, qty) {
+  const { data, error } = await supabaseClient.rpc("confirm_virtual_item_usage", {
+    p_loan_id: loanId,
+    p_scene_object_id: sceneObjectId,
+    p_qty: qty,
+  });
+  if (error) throw error;
+  return data;
+}
+
 // 예약 취소: 아직 로봇 안내/QR 확인 전(예약중)인 건만 취소할 수 있다. 예약 시점에 임시로
 // -1 된 재고를 여기서 다시 +1로 되돌린다(cancel_loan_reservation RPC). 행을 지우지 않고
 // status만 '취소됨'으로 남긴다 — Safety 이벤트와 같은 원칙(삭제 대신 상태 전이 + 이력 보존).
@@ -135,6 +165,9 @@ window.LabBotRentals = {
   confirmPickup,
   confirmReturn,
   confirmUsage,
+  confirmVirtualPickup,
+  confirmVirtualReturn,
+  confirmVirtualUsage,
   cancelReservation,
   isConsumable,
   fetchMyLoans,

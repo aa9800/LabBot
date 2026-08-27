@@ -2296,15 +2296,46 @@ tbody tr:hover td {
   height: 160px;
   border-radius: 50%;
   background: var(--surface-2);
-  border: 1px solid var(--border);
+  background:
+    radial-gradient(circle at center, transparent 0 24%, color-mix(in srgb, var(--accent) 10%, transparent) 25% 27%, transparent 28% 58%, color-mix(in srgb, var(--accent) 12%, transparent) 59% 60%, transparent 61%),
+    radial-gradient(circle at 42% 36%, color-mix(in srgb, var(--surface) 92%, white), var(--surface-2));
+  border: 2px solid var(--border);
   touch-action: none; /* 드래그 중 모바일 스크롤/줌 방지 */
+  overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
   cursor: grab;
   flex-shrink: 0;
+  box-shadow: inset 0 2px 14px rgba(15, 23, 42, 0.12), 0 8px 22px rgba(15, 23, 42, 0.12);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.robot-joystick-base::before,
+.robot-joystick-base::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: color-mix(in srgb, var(--text-faint) 28%, transparent);
+  pointer-events: none;
+}
+
+.robot-joystick-base::before {
+  width: 72%;
+  height: 1px;
+  transform: translate(-50%, -50%);
+}
+
+.robot-joystick-base::after {
+  width: 1px;
+  height: 72%;
+  transform: translate(-50%, -50%);
 }
 
 .robot-joystick-base.is-dragging {
   cursor: grabbing;
   border-color: var(--accent-border);
+  box-shadow: inset 0 2px 14px rgba(15, 23, 42, 0.12), 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent), 0 10px 26px rgba(15, 23, 42, 0.18);
 }
 
 .robot-joystick-knob {
@@ -2318,6 +2349,13 @@ tbody tr:hover td {
   transform: translate(-50%, -50%);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   pointer-events: none; /* 드래그 이벤트는 base가 받는다 — knob 위에서 놓쳐도 안 끊기게 */
+  will-change: transform;
+  z-index: 1;
+  transition: box-shadow 0.14s ease;
+}
+
+.robot-joystick-base.is-dragging .robot-joystick-knob {
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 48%, rgba(0, 0, 0, 0.2));
 }
 
 .robot-joystick-readout {
@@ -2326,11 +2364,125 @@ tbody tr:hover td {
   gap: 6px;
   font-size: 0.85rem;
   color: var(--text-faint);
-  min-width: 140px;
+  min-width: 176px;
 }
 
 .robot-joystick-readout .mono {
   color: var(--text);
+}
+
+.robot-joystick-hint {
+  margin-top: 3px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.robot-keyboard-feedback {
+  margin-top: 7px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.robot-keyboard-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--text-faint);
+  font-size: 0.76rem;
+}
+
+.robot-keyboard-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12);
+}
+
+.robot-keyboard-keys {
+  display: grid;
+  grid-template-columns: repeat(3, 30px);
+  grid-template-rows: repeat(2, 30px);
+  gap: 4px;
+  justify-content: start;
+  margin-bottom: 6px;
+}
+
+.robot-keyboard-keys kbd {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-faint);
+  font: 700 0.72rem/1 var(--font-mono, monospace);
+  transition: transform 0.08s ease, color 0.08s ease, background 0.08s ease, border-color 0.08s ease;
+}
+
+.robot-keyboard-keys [data-control-key="w"] { grid-column: 2; grid-row: 1; }
+.robot-keyboard-keys [data-control-key="a"] { grid-column: 1; grid-row: 2; }
+.robot-keyboard-keys [data-control-key="s"] { grid-column: 2; grid-row: 2; }
+.robot-keyboard-keys [data-control-key="d"] { grid-column: 3; grid-row: 2; }
+
+.robot-keyboard-keys kbd.is-active {
+  transform: translateY(2px);
+  border-color: var(--accent);
+  border-bottom-width: 1px;
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.robot-keyboard-feedback.is-active {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+}
+
+.robot-keyboard-feedback.is-active .robot-keyboard-status-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+  animation: keyboard-input-pulse 0.9s ease-in-out infinite alternate;
+}
+
+.robot-keyboard-feedback.is-stop {
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.robot-keyboard-feedback.is-stop .robot-keyboard-status-dot {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.14);
+}
+
+.robot-keyboard-feedback.is-blocked .robot-keyboard-status-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.14);
+}
+
+.robot-keyboard-feedback > small {
+  font-size: 0.67rem;
+  color: var(--text-faint);
+}
+
+@keyframes keyboard-input-pulse {
+  to { transform: scale(1.18); }
+}
+
+@media (pointer: coarse) {
+  .robot-joystick-base {
+    width: 184px;
+    height: 184px;
+  }
+
+  .robot-joystick-knob {
+    width: 64px;
+    height: 64px;
+  }
 }
 
 /* 카메라 각도 전용 십자패드 — 주행 조이스틱과 분리(운전 중 실수로 카메라가 같이

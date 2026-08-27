@@ -648,6 +648,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const joystickKnob = document.getElementById("robotJoystickKnob");
   const joystickSpeedEl = document.getElementById("robotJoystickSpeed");
   const joystickTurnEl = document.getElementById("robotJoystickTurn");
+  const keyboardFeedbackEl = document.getElementById("robotKeyboardFeedback");
+  const keyboardStatusEl = document.getElementById("robotKeyboardStatus");
+  const keyboardKeyEls = document.querySelectorAll("[data-control-key]");
   const camDpadButtons = document.querySelectorAll("[data-cam]");
   const camResetBtn = document.getElementById("robotCamResetBtn");
   const camPanValEl = document.getElementById("robotCamPanVal");
@@ -791,7 +794,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     btn.addEventListener("click", async () => {
       const values = DRIVE_VALUES[btn.dataset.drive];
       try {
-        await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", ...values });
+        if (btn.dataset.drive === "stop") {
+          activeKeyboardKeys.clear();
+          joyDragging = false;
+          joystickBase.classList.remove("is-dragging");
+          joySetKnob(0, 0);
+          joyEmergencyStop();
+          showTemporaryKeyboardFeedback("정지 버튼 입력됨", "stop");
+        } else {
+          await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", ...values });
+        }
         await refreshRobotModeBadge();
       } catch (err) {
         window.LabBotToast.error("원격조작 명령을 보내지 못했습니다: " + (err.message || err));
@@ -1054,28 +1066,91 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 조이스틱: 원 안에서 드래그한 만큼 실시간으로 speed/turn을 보낸다(자동차 게임 방식).
   // 방향 버튼(한 번 클릭 -> 그 방향으로 계속 이동)이 답답하다는 피드백(2026-08-26)으로 교체.
-  const JOY_SPEED_MAX = 70; // controller.py의 SPEED(70)와 동일 스케일
-  const JOY_TURN_MAX = 90; // controller.py의 TURN_GAIN(90)과 동일 스케일
-  const JOY_SEND_INTERVAL_MS = 50; // 로컬 직결 20Hz 초고속 반응 (0ms 지연)
-  const JOY_KEEPALIVE_MS = 500; // 손을 안 움직여도 3초 dead-man switch보다 훨씬 짧게 계속 갱신
+  const JOY_FORWARD_MAX = 85; // 실물 라즈봇 PWM 상한(100) 안에서 체감 속도 상향
+  const JOY_REVERSE_MAX = 62; // 후진은 카메라 사각지대 때문에 조금 느리게
+  const JOY_TURN_MAX = 90;
+  const JOY_DEADZONE = 0.10;
+  const JOY_SEND_INTERVAL_MS = 40; // 25Hz. 브라우저/라즈봇 모두 안정적인 제어 주기
+  const JOY_ACCEL_RATE = 380; // 약 0.22초 만에 최고속도 도달
+  const JOY_BRAKE_RATE = 650;
+  const JOY_TURN_RATE = 520;
 
   let joyDragging = false;
+  let joyPointerId = null;
   let joyRadius = 0;
-  let joyLastSpeed = 0;
-  let joyLastTurn = 0;
+  let joyTargetSpeed = 0;
+  let joyTargetTurn = 0;
+  let joyOutputSpeed = 0;
+  let joyOutputTurn = 0;
   let joyLastSentAt = 0;
-  let joyKeepaliveTimer = null;
+  let joyLastFrameAt = performance.now();
+  let joyCommandInFlight = false;
+  let joyQueuedCommand = null;
+  let joyLastErrorAt = 0;
+  let joyControlActive = false;
 
   function joySetKnob(dx, dy) {
     joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
   }
 
-  async function joySendCommand(speed, turn) {
-    try {
-      await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", speed, turn });
-    } catch (err) {
-      window.LabBotToast.error("원격조작 명령을 보내지 못했습니다: " + (err.message || err));
+  function joyRenderReadout(speed, turn) {
+    joystickSpeedEl.textContent = Math.round(speed);
+    joystickTurnEl.textContent = Math.round(turn);
+  }
+
+  async function joyFlushCommand(command) {
+    if (joyCommandInFlight) {
+      joyQueuedCommand = command;
+      return;
     }
+    joyCommandInFlight = true;
+    try {
+      await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", ...command });
+    } catch (err) {
+      // 더 최신 입력(주로 정지)이 이전 요청을 취소한 것은 정상 제어 흐름이다.
+      if (err?.name === "AbortError") return;
+      // 연결이 끊긴 동안 25Hz로 같은 토스트가 쌓이지 않도록 제한한다.
+      if (Date.now() - joyLastErrorAt > 3000) {
+        joyLastErrorAt = Date.now();
+        window.LabBotToast.error("원격조작 연결을 확인해주세요: " + (err.message || err));
+      }
+    } finally {
+      joyCommandInFlight = false;
+      if (joyQueuedCommand) {
+        const latest = joyQueuedCommand;
+        joyQueuedCommand = null;
+        joyFlushCommand(latest);
+      }
+    }
+  }
+
+  function joySendCommand(speed, turn, force = false) {
+    const command = { speed: Math.round(speed), turn: Math.round(turn) };
+    const now = performance.now();
+    if (!force && now - joyLastSentAt < JOY_SEND_INTERVAL_MS) {
+      joyQueuedCommand = command;
+      return;
+    }
+    joyLastSentAt = now;
+
+    // 정지는 이동 명령 대기열을 추월해 즉시 보낸다.
+    if (force && command.speed === 0 && command.turn === 0 && joyCommandInFlight) {
+      joyQueuedCommand = null;
+      window.LabBotRobotConsole.setRobotCommand({ speed: 0, turn: 0, mode: "manual" })
+        .catch((error) => console.warn("긴급 정지 전송 실패:", error));
+      return;
+    }
+
+    joyFlushCommand(command);
+  }
+
+  function joyApplyRadialCurve(nx, ny) {
+    const magnitude = Math.min(1, Math.hypot(nx, ny));
+    if (magnitude <= JOY_DEADZONE) return { x: 0, y: 0 };
+    const remapped = (magnitude - JOY_DEADZONE) / (1 - JOY_DEADZONE);
+    // 저속 구간은 정밀하고 끝부분은 빠르게 최대 출력에 도달하는 게임패드 곡선.
+    const curved = remapped * 0.62 + remapped * remapped * remapped * 0.38;
+    return { x: (nx / magnitude) * curved, y: (ny / magnitude) * curved };
   }
 
   function joyUpdateFromPointer(clientX, clientY) {
@@ -1091,55 +1166,92 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     joySetKnob(dx, dy);
 
-    const speed = Math.round((-dy / joyRadius) * JOY_SPEED_MAX);
-    const turn = Math.round((dx / joyRadius) * JOY_TURN_MAX);
-    joyLastSpeed = speed;
-    joyLastTurn = turn;
-    joystickSpeedEl.textContent = speed;
-    joystickTurnEl.textContent = turn;
-
-    const now = Date.now();
-    if (now - joyLastSentAt >= JOY_SEND_INTERVAL_MS) {
-      joyLastSentAt = now;
-      joySendCommand(speed, turn);
-    }
+    const axes = joyApplyRadialCurve(dx / joyRadius, dy / joyRadius);
+    const throttle = -axes.y;
+    const speedLimit = throttle >= 0 ? JOY_FORWARD_MAX : JOY_REVERSE_MAX;
+    joyTargetSpeed = throttle * speedLimit;
+    // 고속에서는 과도한 급회전을 자동 억제하고, 정지 상태에서는 제자리 회전 출력을 유지.
+    const steeringLimit = JOY_TURN_MAX * (1 - 0.34 * Math.abs(throttle));
+    joyTargetTurn = axes.x * steeringLimit;
+    joyControlActive = true;
   }
 
-  function joyEnd() {
+  function joyEmergencyStop() {
+    joyTargetSpeed = 0;
+    joyTargetTurn = 0;
+    joyOutputSpeed = 0;
+    joyOutputTurn = 0;
+    joyControlActive = false;
+    joyQueuedCommand = null;
+    joyRenderReadout(0, 0);
+    joySendCommand(0, 0, true);
+  }
+
+  function joyEnd(e) {
     if (!joyDragging) return;
+    if (e && joyPointerId !== null && e.pointerId !== undefined && e.pointerId !== joyPointerId) return;
     joyDragging = false;
+    joyPointerId = null;
     joystickBase.classList.remove("is-dragging");
     joySetKnob(0, 0);
-    joyLastSpeed = 0;
-    joyLastTurn = 0;
-    joystickSpeedEl.textContent = "0";
-    joystickTurnEl.textContent = "0";
-    if (joyKeepaliveTimer) {
-      clearInterval(joyKeepaliveTimer);
-      joyKeepaliveTimer = null;
-    }
-    joySendCommand(0, 0); // 손을 떼면 그 자리에서 즉시 정지
-    window.removeEventListener("pointermove", joyOnMove);
-    window.removeEventListener("pointerup", joyEnd);
+    joyEmergencyStop(); // 손을 떼면 가속 곡선을 건너뛰고 즉시 정지
   }
 
   function joyOnMove(e) {
-    if (!joyDragging) return;
+    if (!joyDragging || e.pointerId !== joyPointerId) return;
+    e.preventDefault();
     joyUpdateFromPointer(e.clientX, e.clientY);
   }
 
+  function joyApproach(current, target, maxDelta) {
+    if (current < target) return Math.min(target, current + maxDelta);
+    if (current > target) return Math.max(target, current - maxDelta);
+    return target;
+  }
+
+  function joyControlFrame(now) {
+    if (joyControlActive && !robotControlAllowed()) {
+      joyEmergencyStop();
+    }
+
+    const dt = Math.min(0.05, Math.max(0.001, (now - joyLastFrameAt) / 1000));
+    joyLastFrameAt = now;
+    if (joyControlActive) {
+      const speedRate = Math.abs(joyTargetSpeed) < Math.abs(joyOutputSpeed) ? JOY_BRAKE_RATE : JOY_ACCEL_RATE;
+      joyOutputSpeed = joyApproach(joyOutputSpeed, joyTargetSpeed, speedRate * dt);
+      joyOutputTurn = joyApproach(joyOutputTurn, joyTargetTurn, JOY_TURN_RATE * dt);
+      joyRenderReadout(joyOutputSpeed, joyOutputTurn);
+      if (now - joyLastSentAt >= JOY_SEND_INTERVAL_MS) {
+        joySendCommand(joyOutputSpeed, joyOutputTurn, true);
+      }
+    }
+    requestAnimationFrame(joyControlFrame);
+  }
+  requestAnimationFrame(joyControlFrame);
+
   joystickBase.addEventListener("pointerdown", (e) => {
+    if (!robotControlAllowed() || joyDragging) return;
+    e.preventDefault();
     joyDragging = true;
+    joyPointerId = e.pointerId;
+    joystickBase.setPointerCapture(e.pointerId);
     joystickBase.classList.add("is-dragging");
     const rect = joystickBase.getBoundingClientRect();
     joyRadius = rect.width / 2 - joystickKnob.offsetWidth / 2;
     joyUpdateFromPointer(e.clientX, e.clientY);
-    joyKeepaliveTimer = setInterval(() => {
-      // 드래그한 채로 손을 안 움직여도 dead-man switch(3초)에 안 걸리도록 주기적으로 재전송
-      joySendCommand(joyLastSpeed, joyLastTurn);
-    }, JOY_KEEPALIVE_MS);
-    window.addEventListener("pointermove", joyOnMove);
-    window.addEventListener("pointerup", joyEnd);
+    joyLastSentAt = 0;
+  });
+  joystickBase.addEventListener("pointermove", joyOnMove);
+  joystickBase.addEventListener("pointerup", joyEnd);
+  joystickBase.addEventListener("pointercancel", joyEnd);
+  joystickBase.addEventListener("lostpointercapture", joyEnd);
+  window.addEventListener("blur", () => joyDragging && joyEnd());
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden || (!joyDragging && !joyControlActive)) return;
+    activeKeyboardKeys.clear();
+    if (joyDragging) joyEnd();
+    else joyEmergencyStop();
+    renderKeyboardFeedback("화면 비활성 · 주행 정지", "blocked");
   });
 
   // 카메라 각도 십자패드: 누르고 있는 동안 그 방향으로 서보가 계속 움직이고, 손을 떼면
@@ -1280,7 +1392,63 @@ document.addEventListener("DOMContentLoaded", async () => {
   setInterval(updateHudTelemetry, 1000);
 
   // 키보드 원격 운전 단축키 (WASD / 방향키 / Space 긴급정지)
-  let activeKeyboardKey = null;
+  const activeKeyboardKeys = new Set();
+  let keyboardFeedbackTimer = null;
+
+  function canonicalDriveKey(key) {
+    if (key === "arrowup") return "w";
+    if (key === "arrowleft") return "a";
+    if (key === "arrowdown") return "s";
+    if (key === "arrowright") return "d";
+    return key;
+  }
+
+  function renderKeyboardFeedback(message = "입력 대기", tone = "idle") {
+    const pressedKeys = new Set(Array.from(activeKeyboardKeys, canonicalDriveKey));
+    keyboardKeyEls.forEach((keyEl) => {
+      keyEl.classList.toggle("is-active", pressedKeys.has(keyEl.dataset.controlKey));
+    });
+    keyboardStatusEl.textContent = message;
+    keyboardFeedbackEl.classList.toggle("is-active", tone === "active");
+    keyboardFeedbackEl.classList.toggle("is-stop", tone === "stop");
+    keyboardFeedbackEl.classList.toggle("is-blocked", tone === "blocked");
+  }
+
+  function showTemporaryKeyboardFeedback(message, tone, duration = 900) {
+    if (keyboardFeedbackTimer) clearTimeout(keyboardFeedbackTimer);
+    renderKeyboardFeedback(message, tone);
+    keyboardFeedbackTimer = setTimeout(() => {
+      keyboardFeedbackTimer = null;
+      if (activeKeyboardKeys.size === 0) renderKeyboardFeedback();
+    }, duration);
+  }
+
+  function updateKeyboardDrive() {
+    const forward = activeKeyboardKeys.has("w") || activeKeyboardKeys.has("arrowup");
+    const reverse = activeKeyboardKeys.has("s") || activeKeyboardKeys.has("arrowdown");
+    const left = activeKeyboardKeys.has("a") || activeKeyboardKeys.has("arrowleft");
+    const right = activeKeyboardKeys.has("d") || activeKeyboardKeys.has("arrowright");
+
+    const throttle = Number(forward) - Number(reverse);
+    const steering = Number(right) - Number(left);
+    joyTargetSpeed = throttle >= 0 ? throttle * JOY_FORWARD_MAX : throttle * JOY_REVERSE_MAX;
+    joyTargetTurn = steering * JOY_TURN_MAX * (throttle === 0 ? 1 : 0.68);
+    joyControlActive = throttle !== 0 || steering !== 0;
+
+    if (!joyControlActive) {
+      joyEmergencyStop();
+      if (activeKeyboardKeys.size > 0) renderKeyboardFeedback("상반된 키 입력 · 정지", "blocked");
+      else renderKeyboardFeedback();
+    } else {
+      joyLastSentAt = 0;
+      const actions = [];
+      if (throttle > 0) actions.push("전진");
+      if (throttle < 0) actions.push("후진");
+      if (steering < 0) actions.push("좌회전");
+      if (steering > 0) actions.push("우회전");
+      renderKeyboardFeedback(`입력 중 · ${actions.join(" + ")}`, "active");
+    }
+  }
 
   // 이 리스너는 DOMContentLoaded 시점에 window에 붙는데, 관리자 권한 확인은 훨씬
   // 뒤에서 끝난다. 그 사이(그리고 권한이 없는 사용자에게도) 키 입력이 그대로 로봇의
@@ -1293,48 +1461,63 @@ document.addEventListener("DOMContentLoaded", async () => {
     return !!(safetyPanel && safetyPanel.classList.contains("active"));
   }
 
+  renderKeyboardFeedback();
+
   window.addEventListener("keydown", (e) => {
-    if (!robotControlAllowed()) return;
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     const key = e.key.toLowerCase();
-    if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
-      e.preventDefault();
-      // 비상정지(Space)는 중복 방지 가드보다 먼저 처리한다. 가드에 걸리면 두 번째
-      // Space부터 아무 명령도 안 나가서 비상정지가 페이지당 1회만 먹는다.
-      if (key === " ") {
-        activeKeyboardKey = null;
-        joySendCommand(0, 0);
-        return;
-      }
-      if (activeKeyboardKey === key) return;
-      activeKeyboardKey = key;
-
-      let speed = 0;
-      let turn = 0;
-      if (key === "w" || key === "arrowup") speed = 70;
-      else if (key === "s" || key === "arrowdown") speed = -70;
-      else if (key === "a" || key === "arrowleft") turn = -90;
-      else if (key === "d" || key === "arrowright") turn = 90;
-      else if (key === " ") { speed = 0; turn = 0; }
-
-      joySendCommand(speed, turn);
+    const isDriveKey = ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key);
+    if (!isDriveKey) return;
+    if (!robotControlAllowed()) {
+      renderKeyboardFeedback("입력 비활성 · 로봇 콘솔 탭을 여세요", "blocked");
+      return;
     }
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
+      renderKeyboardFeedback("입력창 선택됨 · 주행키 비활성", "blocked");
+      return;
+    }
+
+    e.preventDefault();
+    // 비상정지(Space)는 중복 방지 가드보다 먼저 처리한다. 가드에 걸리면 두 번째
+    // Space부터 아무 명령도 안 나가서 비상정지가 페이지당 1회만 먹는다.
+    if (key === " ") {
+      if (e.repeat) return;
+      activeKeyboardKeys.clear();
+      joyEmergencyStop();
+      showTemporaryKeyboardFeedback("긴급 정지 입력됨", "stop");
+      return;
+    }
+    if (activeKeyboardKeys.has(key)) return;
+    activeKeyboardKeys.add(key);
+    updateKeyboardDrive();
   });
 
   window.addEventListener("keyup", (e) => {
-    if (!robotControlAllowed()) return;
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     const key = e.key.toLowerCase();
     if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
-      if (activeKeyboardKey === key) {
-        activeKeyboardKey = null;
-        joySendCommand(0, 0);
-      }
+      if (activeKeyboardKeys.delete(key)) updateKeyboardDrive();
     }
+  });
+
+  window.addEventListener("blur", () => {
+    if (activeKeyboardKeys.size > 0) {
+      activeKeyboardKeys.clear();
+      joyEmergencyStop();
+    }
+    renderKeyboardFeedback("창 포커스 없음 · 주행 정지", "blocked");
+  });
+
+  window.addEventListener("focus", () => {
+    if (activeKeyboardKeys.size === 0) renderKeyboardFeedback();
   });
 
   robotAutoBtn.addEventListener("click", async () => {
     try {
+      activeKeyboardKeys.clear();
+      joyDragging = false;
+      joystickBase.classList.remove("is-dragging");
+      joySetKnob(0, 0);
+      joyEmergencyStop();
+      renderKeyboardFeedback("자동순찰 중 · 키 입력 시 수동 전환");
       await window.LabBotRobotConsole.setRobotCommand({ mode: "auto", speed: 0, turn: 0 });
       await refreshRobotModeBadge();
     } catch (err) {

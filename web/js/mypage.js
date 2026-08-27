@@ -185,32 +185,34 @@ document.addEventListener("DOMContentLoaded", async () => {
       <div class="modal-card guide-modal-card">
         <div class="guide-step" data-step="nav">
           <div class="guide-scanline-box">
-            <p class="guide-eyebrow">${copy.eyebrow} · 로봇 안내</p>
+            <p class="guide-eyebrow">${copy.eyebrow} · 로봇 자동 안내</p>
             <h3 class="guide-message">${copy.message}</h3>
-            <p class="guide-caption">표시된 위치로 이동한 뒤 물품 QR로 확인하세요</p>
+            <p class="guide-caption" id="guideNavStatus">물품 좌표를 확인하고 있습니다...</p>
           </div>
           <p class="guide-item-name">${escapeHtml(item.name)} · ${escapeHtml(item.location)}${
             mode === "use" ? ` · ${qty}${escapeHtml(item.unit || "개")}` : ""
           }</p>
-          <!-- 실제 로봇 내비게이션은 아직 연결 전이라(발표 자료에서 시뮬레이션 검증 단계로 표시),
-               여기서도 실시간 추적처럼 보이지 않도록 안내 화면임을 명시한다(GPT 리뷰 지적). -->
-          <p class="guide-sim-note mono">안내 화면 · 실제 위치는 QR로 최종 확인됩니다</p>
+          <p class="guide-sim-note mono">안내와 QR 확인은 독립적입니다 · 어디서든 물품을 로봇 카메라에 보여주세요</p>
           <div class="modal-actions">
-            <button type="button" class="btn btn-secondary btn-sm" data-action="cancel">취소</button>
-            <button type="button" class="btn btn-primary btn-sm" data-action="to-scan">도착했어요 · QR 스캔하기</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-action="cancel">안내 취소</button>
+            <button type="button" class="btn btn-primary btn-sm" data-action="to-scan">물품을 들었어요 · 로봇 QR 스캔</button>
           </div>
         </div>
 
         <div class="guide-step" data-step="scan" hidden>
-          <p class="guide-eyebrow">QR 스캔</p>
-          <p class="guide-caption">${escapeHtml(item.name)}에 붙은 QR 코드를 카메라에 비춰주세요</p>
+          <p class="guide-eyebrow">로봇 카메라 QR 확인</p>
+          <p class="guide-caption">${escapeHtml(item.name)}을 들고 QR 라벨을 로봇 카메라 정면에 보여주세요</p>
           <div class="qr-scan-frame">
-            <video class="qr-scan-video" id="guideVideo" playsinline muted></video>
+            <img class="qr-scan-video" id="guideRobotCamera" alt="로봇 카메라 화면" />
             <div class="qr-scan-reticle"></div>
           </div>
-          <p class="guide-scan-status" id="guideScanStatus"></p>
+          <p class="guide-scan-status" id="guideScanStatus">QR이 프레임 안에 들어오면 아래 버튼을 누르세요.</p>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="back-to-guide">안내 상태 보기</button>
+            <button type="button" class="btn btn-primary btn-sm" data-action="robot-scan">로봇으로 QR 읽기</button>
+          </div>
           <div class="guide-manual-fallback">
-            <label for="guideManualInput">카메라가 안 되면 QR 코드를 직접 입력하세요</label>
+            <label for="guideManualInput">로봇 카메라가 안 되면 QR 코드를 직접 입력하세요</label>
             <div class="guide-manual-row">
               <input type="text" id="guideManualInput" placeholder="예: LB-XXXXXXXX" autocomplete="off" />
               <button type="button" class="btn btn-secondary btn-sm" data-action="manual-confirm">확인</button>
@@ -229,13 +231,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     `;
     document.body.appendChild(overlay);
 
-    let stream = null;
-    let rafId = null;
     let submitting = false;
-    // 한 번 거절된 QR 코드 — 같은 코드를 카메라가 계속 읽어서 RPC를 무한 재시도하고
-    // 에러 토스트가 쌓이는 걸 막는다. 다른 코드가 보이면 자연히 해제된다.
-    let lastRejectedCode = null;
     let closed = false;
+    let guideCompleted = false;
+    let guidePollTimer = null;
 
     function showStep(name) {
       overlay.querySelectorAll("[data-step]").forEach((el) => {
@@ -243,19 +242,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     }
 
-    function stopCamera() {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = null;
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-        stream = null;
-      }
-    }
-
     function close() {
       if (closed) return;
       closed = true;
-      stopCamera();
+      if (guidePollTimer) clearInterval(guidePollTimer);
+      if (!guideCompleted) window.LabBotRobotConsole.finishRobotGuide("cancelled").catch(() => null);
       overlay.remove();
     }
 
@@ -266,18 +257,59 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     const scanStatus = overlay.querySelector("#guideScanStatus");
     const manualInput = overlay.querySelector("#guideManualInput");
+    const navStatus = overlay.querySelector("#guideNavStatus");
+    const robotCamera = overlay.querySelector("#guideRobotCamera");
 
-    async function submitCode(code) {
-      scanStatus.textContent = "확인 중...";
+    function renderGuideStatus(status) {
+      if (!status) return;
+      const exactLocation = status.location_detail || `${status.shelf_code || "물품 위치"} 선반`;
+      if (status.status === "arrived") {
+        navStatus.textContent = `도착했습니다 · ${exactLocation}에 물품이 있습니다. 물품을 꺼낸 뒤 로봇 카메라에 QR을 보여주세요.`;
+      } else if (status.status === "navigating") {
+        navStatus.textContent = `로봇을 따라가세요 · 목적지: ${exactLocation} · 이동 ${status.waypoint_index + 1}/${status.waypoint_count}`;
+      } else if (status.status === "idle") {
+        navStatus.textContent = "안내 대기 중";
+      }
+    }
+
+    async function beginRobotGuide() {
       try {
-        if (mode === "pickup") {
-          await window.LabBotRentals.confirmPickup(loan.id, code);
-        } else if (mode === "return") {
-          await window.LabBotRentals.confirmReturn(loan.id, code);
-        } else {
-          await window.LabBotRentals.confirmUsage(loan.id, code, qty);
+        const ip = await window.LabBotRobotConsole.fetchRobotIp();
+        robotCamera.src = window.LabBotRobotConsole.getDirectStreamUrl(ip);
+        const result = await window.LabBotRobotConsole.startRobotGuide({ loanId: loan.id, item, mode });
+        renderGuideStatus(result);
+        guidePollTimer = setInterval(async () => {
+          try {
+            renderGuideStatus(await window.LabBotRobotConsole.fetchRobotGuideStatus());
+          } catch {}
+        }, 750);
+      } catch (err) {
+        navStatus.textContent = `자동 안내 연결 실패 · ${err.message || err}`;
+      }
+    }
+
+    async function submitCode(code, codeType = "qr") {
+      scanStatus.textContent = "QR과 AI 카메라 물품을 함께 확인 중...";
+      try {
+        const visionCheck = await window.LabBotRobotConsole.verifyCheckoutItem(item);
+        if (visionCheck?.verdict === "blocked") {
+          const found = (visionCheck.detected_items || []).join(", ") || "다른 물품";
+          throw new Error(`AI 확인 보류: ${found}이(가) 함께 보이거나 예약 물품과 다릅니다. 예약 물품 하나만 카메라 중앙에 보여주세요.`);
         }
-        stopCamera();
+        const isVirtual = codeType === "scene_object_id";
+        if (mode === "pickup") {
+          if (isVirtual) await window.LabBotRentals.confirmVirtualPickup(loan.id, code);
+          else await window.LabBotRentals.confirmPickup(loan.id, code);
+        } else if (mode === "return") {
+          if (isVirtual) await window.LabBotRentals.confirmVirtualReturn(loan.id, code);
+          else await window.LabBotRentals.confirmReturn(loan.id, code);
+        } else {
+          if (isVirtual) await window.LabBotRentals.confirmVirtualUsage(loan.id, code, qty);
+          else await window.LabBotRentals.confirmUsage(loan.id, code, qty);
+        }
+        guideCompleted = true;
+        if (guidePollTimer) clearInterval(guidePollTimer);
+        await window.LabBotRobotConsole.finishRobotGuide("completed").catch(() => null);
 
         const successCaption =
           mode === "pickup"
@@ -302,7 +334,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       } catch (err) {
         const message = err.message || "확인에 실패했습니다. 다시 스캔해주세요.";
         scanStatus.textContent = message;
-        lastRejectedCode = code;  // 같은 코드로는 다시 안 쏜다
         // QR 코드가 이 대여 건의 물품이 아닐 때(서버 RPC의 qr_code 불일치 예외) —
         // 화면 하단 문구만으로는 놓치기 쉬워서 토스트로도 눈에 띄게 알려준다.
         if (message.includes("일치하지 않습니다")) {
@@ -322,48 +353,26 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     overlay.querySelector('[data-action="to-scan"]').addEventListener("click", async () => {
       showStep("scan");
-      const video = overlay.querySelector("#guideVideo");
-
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        scanStatus.textContent = "이 브라우저는 카메라를 지원하지 않습니다 — 아래에 QR 코드를 직접 입력해주세요.";
-        return;
-      }
-
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      } catch (err) {
-        scanStatus.textContent = "카메라를 사용할 수 없습니다 — 아래에 QR 코드를 직접 입력해주세요.";
-        return;
-      }
-
-      video.srcObject = stream;
-      await video.play();
-
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-
-      function tick() {
-        if (closed) return;
-        if (!submitting && video.readyState === video.HAVE_ENOUGH_DATA) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const code = window.jsQR(imageData.data, imageData.width, imageData.height);
-          // 한 번 거절된 코드는 다시 시도하지 않는다. 안 그러면 다른 물품의 QR을
-          // 비추고 있는 동안 카메라가 같은 코드를 계속 읽어서, 왕복이 끝나는 족족
-          // RPC를 다시 쏘고 에러 토스트가 끝없이 쌓인다.
-          if (code && code.data && code.data !== lastRejectedCode) {
-            submitting = true;
-            submitCode(code.data).finally(() => {
-              submitting = false;
-            });
-          }
-        }
-        rafId = requestAnimationFrame(tick);
-      }
-      rafId = requestAnimationFrame(tick);
     });
+
+    overlay.querySelector('[data-action="back-to-guide"]').addEventListener("click", () => showStep("nav"));
+    overlay.querySelector('[data-action="robot-scan"]').addEventListener("click", async () => {
+      if (submitting) return;
+      submitting = true;
+      scanStatus.textContent = "로봇 카메라에서 QR을 읽는 중...";
+      try {
+        const result = await window.LabBotRobotConsole.triggerQrScan();
+        if (!result.found) throw new Error(result.message || "QR을 찾지 못했습니다.");
+        if (result.code_type === "zone") throw new Error("구역 표식이 아니라 물품 QR을 카메라에 보여주세요.");
+        await submitCode(result.code, result.code_type || "qr");
+      } catch (err) {
+        scanStatus.textContent = err.message || "QR을 읽지 못했습니다. 위치를 조정해 다시 시도해주세요.";
+      } finally {
+        submitting = false;
+      }
+    });
+
+    beginRobotGuide();
   }
 
   // ---------- 파손 신고 모달 ----------

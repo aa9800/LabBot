@@ -245,12 +245,26 @@
         </div>
         <div class="robot-console-layout">
           <div class="robot-joystick-col">
-            <div class="robot-joystick-base" id="robotJoystickBase">
+            <div class="robot-joystick-base" id="robotJoystickBase" role="application" aria-label="로봇 주행 조이스틱">
               <div class="robot-joystick-knob" id="robotJoystickKnob"></div>
             </div>
             <div class="robot-joystick-readout">
               <span>속도 <span class="mono" id="robotJoystickSpeed">0</span></span>
               <span>회전 <span class="mono" id="robotJoystickTurn">0</span></span>
+              <small class="robot-joystick-hint">끌어서 운전 · 놓으면 즉시 정지<br>WASD 동시 입력 지원</small>
+              <div class="robot-keyboard-feedback" id="robotKeyboardFeedback" aria-live="polite">
+                <div class="robot-keyboard-status">
+                  <span class="robot-keyboard-status-dot"></span>
+                  <strong id="robotKeyboardStatus">입력 대기</strong>
+                </div>
+                <div class="robot-keyboard-keys" aria-label="키보드 주행 입력 상태">
+                  <kbd data-control-key="w">W</kbd>
+                  <kbd data-control-key="a">A</kbd>
+                  <kbd data-control-key="s">S</kbd>
+                  <kbd data-control-key="d">D</kbd>
+                </div>
+                <small>Space 긴급정지</small>
+              </div>
             </div>
           </div>
 
@@ -477,7 +491,7 @@
   <script src="js/items-data.js"></script>
   <script src="js/rentals.js"></script>
   <script src="js/safety-data.js"></script>
-  <script src="js/robot-console-data.js?v=20260826"></script>
+  <script src="js/robot-console-data.js?v=20260827-joystick2"></script>
   <script src="js/audit-data.js"></script>
   <script src="js/damage-data.js"></script>
   <script src="js/stock-adjustments-data.js"></script>
@@ -485,6 +499,6 @@
   <script src="js/restock-data.js"></script>
   <script src="js/chat-data.js"></script>
   <script src="js/user-admin-data.js"></script>
-  <script src="js/admin.js"></script>
+  <script src="js/admin.js?v=20260827-drive-speed"></script>
 </body>
 </html>
