@@ -1,27 +1,18 @@
-"""Isaac Sim이 실제로 실행하는 진입점 — LabKeeper 웹(Supabase)과 연결된 버전.
+"""Isaac Sim 진입점 — LabKeeper 9개 구역 풀스케일 가상 실험실 및 실시간 웹 연동 (Sim-to-Real).
 
-isaac_smoke_test.py(2단계: controller.py+IsaacHAL 통합 검증, 이미 성공)에 이어, 이제
-labkeeper_controller.py(Webots)와 같은 구조로 웹 연동까지 붙인다:
-
-    controller.py (그대로, 수정 없음)
-            │
-            ├─ sim/hal_sim.py                                   pygame용 (단위테스트)
-            ├─ webots_project/.../webots_hal.py                 Webots용 (기존 주 개발·발표)
-            └─ isaac_project/isaac_hal.py                       Isaac Sim용 (이 파일이 진입점)
-
-notify_supabase.py도 손대지 않고 그대로 재사용한다 — Webots/pygame/실물이 전부 같은
-Supabase 접속 코드를 쓰는 것과 같은 원칙.
-
-실행 (이 PC의 Isaac Sim venv에서):
-    C:\\Users\\a9800\\isaac_clean\\venv\\Scripts\\python.exe run_isaac.py
-
-기본은 창을 띄운다(headless 아님) — 발표/개발용으로 눈으로 보면서 확인하기 위해서다.
-헤드리스로 돌리려면 환경변수 LABKEEPER_ISAAC_HEADLESS=1.
+1. 9대 보관 구역(기기실-1, 2, 세포배양실, 시약실 등) 디지털 트윈 구축
+2. 30 FPS 실시간 FPV 스트리밍 서버(8080) 연동 -> admin.html에서 즉시 관제
+3. 웹 [물품 QR 인식하기] 온디맨드 스캔 & Supabase 실사 기록 연동
+4. 초음파/라인트래킹 안전 순찰 로직 검증
 """
 import datetime
 import math
 import os
 import sys
+import threading
+import time
+import cv2
+import numpy as np
 
 os.environ.setdefault("LABKEEPER_ISAAC_HEADLESS", "0")
 _HEADLESS = os.environ.get("LABKEEPER_ISAAC_HEADLESS", "0") == "1"
@@ -30,7 +21,6 @@ from isaacsim import SimulationApp  # noqa: E402
 
 simulation_app = SimulationApp({"headless": _HEADLESS})
 
-import numpy as np  # noqa: E402
 import omni.usd  # noqa: E402
 from isaacsim.core.api import World  # noqa: E402
 from isaacsim.core.prims import Articulation  # noqa: E402
@@ -48,64 +38,22 @@ from notify_supabase import (  # noqa: E402
     report_safety_event,
 )
 from run_logger import JsonlRunLogger  # noqa: E402
+import stream_server  # noqa: E402
 
-from isaac_hal import TRACK_POINTS_M, IsaacHAL  # noqa: E402
+from lab_world import LAB_TRACK_POINTS_M, LAB_ZONES, build_lab_environment, get_all_checkpoints  # noqa: E402
+from isaac_hal import IsaacHAL  # noqa: E402
 
 OBSTACLE_PATH = "/World/Obstacle"
-OBSTACLE_PARKED_XY = (100.0, 100.0)  # prim은 유지하고 멀리 치워두는 방식(구조변경 회피)
+OBSTACLE_PARKED_XY = (100.0, 100.0)
 
 TIME_STEP_S = 1.0 / 60.0
-COMMAND_POLL_EVERY = 30   # 약 0.5초마다 웹의 원격조작 명령 확인
-CAMERA_UPLOAD_EVERY = -1  # Isaac 기본 Jetbot엔 아직 카메라 센서를 안 붙여서 비활성(-1)
-TELEMETRY_LOG_EVERY = 60  # 약 1초마다 텔레메트리 기록
-MANUAL_COMMAND_MAX_AGE_SECONDS = 3.0  # Webots/실물과 동일한 dead-man switch 기준
-
-# 웹에서 물품을 하나도 못 가져왔을 때(오프라인 등)를 위한 대체 체크포인트 — Isaac의
-# 작은 테스트 트랙(TRACK_POINTS_M) 위에 이름만 다르게 둔 것. 실제 연구실 배치가 아니라
-# controller.py 판단 로직이 웹 연동 없이도 동작하는지 확인하는 최소 구성이다.
-FALLBACK_CHECKPOINTS = [
-    {"name": "체크포인트-A", "x": TRACK_POINTS_M[0][0] + 0.2, "y": TRACK_POINTS_M[0][1], "radius": 0.1},
-]
-
-
-def _point_at_fraction(points, frac):
-    """트랙 전체 길이의 frac(0~1) 지점 좌표 — labkeeper_controller.py(Webots)와 같은 계산."""
-    total = sum(
-        math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1])
-        for i in range(len(points) - 1)
-    )
-    target = total * (frac % 1.0)
-    acc = 0.0
-    for i in range(len(points) - 1):
-        ax, ay = points[i]
-        bx, by = points[i + 1]
-        seg = math.hypot(bx - ax, by - ay)
-        if acc + seg >= target:
-            t = (target - acc) / seg if seg else 0
-            return (ax + (bx - ax) * t, ay + (by - ay) * t)
-        acc += seg
-    return points[-1]
-
-
-def _build_checkpoints_from_items(items):
-    """물품들의 location을 모아 중복 제거하고, 트랙 위에 균등 배치한다.
-
-    Isaac 트랙이 작아서(TRACK_POINTS_M, 약 2m x 1.2m) 실제 웹 위치가 여러 개면 체크포인트가
-    서로 너무 가까워질 수 있다 — 지금은 판단 로직 연동 검증이 목적이라 그대로 두고,
-    실제 연구실 규모 트랙으로 바꿀 때(Webots처럼) 재조정한다."""
-    locations = sorted({it["location"] for it in items if it.get("location")})
-    n = len(locations)
-    if n == 0:
-        return []
-    checkpoints = []
-    for i, loc in enumerate(locations):
-        x, y = _point_at_fraction(TRACK_POINTS_M, (i + 0.5) / n)
-        checkpoints.append({"name": loc, "x": x, "y": y, "radius": 0.1})
-    return checkpoints
+COMMAND_POLL_EVERY = 30
+TELEMETRY_LOG_EVERY = 60
+MANUAL_COMMAND_MAX_AGE_SECONDS = 3.0
+OBSTACLE_ALERT_COOLDOWN = 15.0
 
 
 def _command_age_seconds(command):
-    """labkeeper_controller.py(Webots)와 동일한 로직."""
     updated_at = command.get("updated_at")
     if not updated_at:
         return float("inf")
@@ -123,39 +71,38 @@ def _create_obstacle(stage):
     xform.ClearXformOpOrder()
     translate_op = xform.AddTranslateOp()
     translate_op.Set(Gf.Vec3d(OBSTACLE_PARKED_XY[0], OBSTACLE_PARKED_XY[1], 0.05))
-    xform.AddScaleOp().Set(Gf.Vec3d(0.05, 0.05, 0.05))
+    xform.AddScaleOp().Set(Gf.Vec3d(0.08, 0.08, 0.08))
     return translate_op
 
 
 def main():
     log_dir = os.path.join(_ROBOT_SIM_ROOT, "logs")
     run_log = JsonlRunLogger(log_dir, source="isaac")
-    print(f"[labkeeper] 주행 로그: {run_log.path}")
+    print(f"[LabKeeper] 🚀 Isaac Sim 주행 로그: {run_log.path}")
 
     items = fetch_items()
-    checkpoints = _build_checkpoints_from_items(items)
-    if checkpoints:
-        print(f"[labkeeper] 웹 DB에서 위치 {len(checkpoints)}곳을 체크포인트로 불러왔습니다: "
-              f"{[c['name'] for c in checkpoints]}")
-    elif not is_configured():
-        print("[labkeeper] robot-sim/.env 미설정 — 기본 체크포인트(체크포인트-A)로 시작합니다.")
-        checkpoints = FALLBACK_CHECKPOINTS
-    else:
-        print("[labkeeper] 웹에서 물품을 못 가져와서 기본 체크포인트로 시작합니다.")
-        checkpoints = FALLBACK_CHECKPOINTS
+    checkpoints = get_all_checkpoints()
+    print(f"[LabKeeper] 9대 연구실 보관 구역 체크포인트 로드 완료: {[c['name'] for c in checkpoints]}")
 
     assets_root = get_assets_root_path()
     jetbot_usd = assets_root + "/Isaac/Robots/NVIDIA/Jetbot/jetbot.usd"
 
     world = World(stage_units_in_meters=1.0)
     world.scene.add_default_ground_plane()
+
+    # 1. 9개 구역 디지털 트윈 및 라인트랙 구축
+    stage = omni.usd.get_context().get_stage()
+    build_lab_environment(stage)
+    _create_obstacle(stage)
+
+    # 2. 로봇 에셋 로드 및 시작 위치 배치
     add_reference_to_stage(usd_path=jetbot_usd, prim_path="/World/Jetbot")
     jetbot = Articulation(prim_paths_expr="/World/Jetbot", name="jetbot")
     world.scene.add(jetbot)
     world.reset()
 
-    start_x, start_y = TRACK_POINTS_M[0]
-    next_x, next_y = TRACK_POINTS_M[1]
+    start_x, start_y = LAB_TRACK_POINTS_M[0]
+    next_x, next_y = LAB_TRACK_POINTS_M[1]
     heading = math.atan2(next_y - start_y, next_x - start_x)
     qz, qw = math.sin(heading / 2), math.cos(heading / 2)
     jetbot.set_world_poses(
@@ -163,25 +110,74 @@ def main():
         orientations=np.array([[qw, 0.0, 0.0, qz]]),
     )
 
-    stage = omni.usd.get_context().get_stage()
-    _create_obstacle(stage)  # 장애물 prim은 항상 존재, 실제 등장은 웹에서 조작할 다음 단계용 자리
     hal = IsaacHAL(stage, jetbot, obstacle_prim_path=OBSTACLE_PATH, checkpoints=checkpoints)
+
+    # 3. 로컬 30 FPS 웹 스트림 서버 시작 (admin.html 연동)
+    try:
+        stream_server.start_stream_server(port=8080)
+        print("[LabKeeper] 🟢 실시간 웹 FPV 스트림 서버 가동 (http://localhost:8080/stream)")
+    except Exception as e:
+        print(f"[LabKeeper] ⚠️ 스트림 서버 기동 알림: {e}")
+
+    # 스트림 서버 콜백 연결 (수동 운전 / 서보 / 온디맨드 QR 스캔)
+    manual_override = {"active": False, "speed": 0.0, "turn": 0.0, "last_at": 0.0}
+
+    def on_drive_cmd(mode, speed, turn):
+        manual_override["active"] = (mode == "manual")
+        manual_override["speed"] = speed
+        manual_override["turn"] = turn
+        manual_override["last_at"] = time.time()
+
+    def on_cam_cmd(pan, tilt):
+        hal.set_servo_angle(pan=pan, tilt=tilt)
+
+    def on_manual_qr_scan():
+        qr_result = hal.scan_qr_now()
+        if qr_result:
+            print(f"[LabKeeper] 🔍 [온디맨드 물품 QR 인식]: {qr_result}")
+            run_log.write("manual_qr_scan_success", qr=qr_result)
+            return {"success": True, "data": qr_result}
+        return {"success": False, "message": "근처에 인식 가능한 물품 QR이 없습니다."}
+
+    def telemetry_provider():
+        x, y, _, _ = hal._position_and_heading()
+        return {
+            "distance_cm": round(hal.read_ultrasonic(), 1),
+            "cam_pan": hal.cam_pan,
+            "cam_tilt": hal.cam_tilt,
+            "speed": hal.last_speed,
+            "turn": hal.last_turn,
+            "mode": "manual" if manual_override["active"] else "auto",
+            "pos_x": round(x, 2),
+            "pos_y": round(y, 2),
+        }
+
+    stream_server.set_drive_callback(on_drive_cmd)
+    stream_server.set_camera_callback(on_cam_cmd)
+    stream_server.set_scan_qr_callback(on_manual_qr_scan)
+    stream_server.set_telemetry_provider(telemetry_provider)
+
+    last_obstacle_alert_time = 0.0
 
     def on_scan(location):
         items_here = [it for it in items if it.get("location") == location]
         names = ", ".join(it["name"] for it in items_here) if items_here else "(등록된 물품 없음)"
-        print(f"[labkeeper] 체크포인트 확인: {location} — {names}")
+        print(f"[LabKeeper] 📍 정기 순찰 체크포인트 확인: {location} — {names}")
         run_log.write("checkpoint_scanned", checkpoint=location)
 
     def on_obstacle(distance):
-        print(f"[labkeeper] 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 전송")
-        run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
-        report_safety_event(
-            "SR-01", severity="MEDIUM", note="Isaac Sim 순찰 중 장애물 감지", source="isaac-sim"
-        )
+        nonlocal last_obstacle_alert_time
+        now = time.time()
+        if now - last_obstacle_alert_time >= OBSTACLE_ALERT_COOLDOWN:
+            last_obstacle_alert_time = now
+            print(f"[LabKeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 전송")
+            run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
+            report_safety_event(
+                "SR-01", severity="MEDIUM", note=f"Isaac Sim 순찰 중 장애물 감지 ({distance:.1f}cm)", source="isaac-sim"
+            )
 
     def on_obstacle_cleared():
-        print("[labkeeper] 장애물 사라짐 — 순찰 재개")
+        print("[LabKeeper] 🟢 장애물 안전 해제 — 순찰 재개")
         run_log.write("obstacle_cleared")
 
     controller = PatrolController(
@@ -189,47 +185,41 @@ def main():
     )
 
     tick = 0
-    command = {"mode": "auto", "speed": 0.0, "turn": 0.0}
-    was_manual = False
-
-    print("[labkeeper] 순찰 시작 — 창을 닫거나 Ctrl+C로 종료")
+    print("[LabKeeper] 🏁 Isaac Sim 가상 실험실 순찰 시작!")
     try:
         while simulation_app.is_running():
             tick += 1
 
-            if tick % COMMAND_POLL_EVERY == 0:
-                command = fetch_robot_command()
-                is_manual = command.get("mode") == "manual"
-                if is_manual != was_manual:
-                    print(f"[labkeeper] 모드 전환: {'수동조작' if is_manual else '자동순찰'}")
-                    run_log.write("mode_changed", mode="manual" if is_manual else "auto")
-                was_manual = is_manual
-
-            if command.get("mode") == "manual":
+            # 1. 수동 조작 vs 자동 순찰 제어
+            now = time.time()
+            if manual_override["active"] and (now - manual_override["last_at"] < MANUAL_COMMAND_MAX_AGE_SECONDS):
                 distance = hal.read_ultrasonic()
-                stale = _command_age_seconds(command) > MANUAL_COMMAND_MAX_AGE_SECONDS
-                if stale:
-                    hal.stop()  # dead-man switch
-                elif distance < OBSTACLE_STOP_DISTANCE:
+                if distance < OBSTACLE_STOP_DISTANCE:
                     hal.stop()
                 else:
-                    hal.set_motion(command.get("speed", 0.0), command.get("turn", 0.0))
+                    hal.set_motion(manual_override["speed"], manual_override["turn"])
             else:
                 controller.tick(TIME_STEP_S)
 
             world.step(render=not _HEADLESS)
 
+            # 2. 30 FPS 가상 FPV 카메라 프레임 생성 & 웹 스트림 전송
+            if tick % 2 == 0:  # 60Hz 시뮬레이션 중 매 2스텝(30Hz)마다 프레임 갱신
+                frame = hal.capture_fpv_frame()
+                _, jpeg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+                stream_server.set_camera_frame(jpeg.tobytes())
+
             if tick % TELEMETRY_LOG_EVERY == 0:
                 run_log.write(
                     "telemetry",
                     sim_time_s=round(tick * TIME_STEP_S, 3),
-                    mode=command.get("mode", "auto"),
+                    mode="manual" if manual_override["active"] else "auto",
                     command_speed=hal.last_speed,
                     command_turn=hal.last_turn,
                     obstacle_cm=round(hal.read_ultrasonic(), 2),
                 )
     except KeyboardInterrupt:
-        print("[labkeeper] Ctrl+C — 종료합니다")
+        print("[LabKeeper] Ctrl+C — 종료합니다")
     finally:
         run_log.close()
         simulation_app.close()
