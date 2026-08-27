@@ -72,11 +72,28 @@ def main():
     was_manual = True
     last_command_time = time.time()
 
+    # 초음파는 TRIG 핀을 쏘고 ECHO를 재는 방식이라 동시에 두 곳에서 호출하면
+    # A가 쏜 펄스를 B가 재는 사고가 난다(30cm 장애물이 900cm로 읽힘 -> 그대로 충돌).
+    # HTTP 요청은 각각 별도 스레드에서 오므로, 실제 측정은 제어 루프 한 곳에서만 하고
+    # 나머지는 이 캐시를 읽는다. 20Hz로 갱신되니 신선도는 충분하다.
+    distance_cache = {"cm": 999.0, "at": 0.0}
+
+    def measure_distance():
+        """제어 루프 전용 — 실제로 센서를 쏘고 캐시를 갱신한다."""
+        d = hal.read_ultrasonic()
+        distance_cache["cm"] = d
+        distance_cache["at"] = time.time()
+        return d
+
+    def cached_distance():
+        """HTTP 스레드용 — 센서를 건드리지 않고 마지막 측정값을 읽는다."""
+        return distance_cache["cm"]
+
     def get_telemetry():
         with command_lock:
             cur_mode = command.get("mode", "manual")
         return {
-            "distance_cm": round(hal.read_ultrasonic(), 1),
+            "distance_cm": round(cached_distance(), 1),
             "mode": cur_mode,
             "speed": hal.last_speed,
             "turn": hal.last_turn,
@@ -178,8 +195,9 @@ def main():
             was_manual = is_manual
 
         if is_manual:
-            distance = hal.read_ultrasonic()
-            if distance < OBSTACLE_STOP_DISTANCE:
+            # 후진(speed < 0)은 장애물이 가까워도 허용한다 — 안 그러면 벽 앞에서
+            # 빠져나올 방법이 없어서 로봇을 손으로 들어 옮겨야 한다.
+            if speed > 0 and cached_distance() < OBSTACLE_STOP_DISTANCE:
                 hal.stop()
             else:
                 hal.set_motion(speed, turn)
@@ -206,16 +224,19 @@ def main():
 
             # 수동 조작 시 3초 데드맨 스위치 감시
             if cur_mode == "manual":
-                distance = hal.read_ultrasonic()
+                distance = measure_distance()  # 센서를 실제로 쏘는 유일한 지점
                 stale = (time.time() - cmd_time) > MANUAL_COMMAND_MAX_AGE_SECONDS
                 if stale:
                     hal.stop()  # 3초 동안 웹에서 조이스틱 신호가 없으면 자동 정지
-                elif distance < OBSTACLE_STOP_DISTANCE:
-                    hal.stop()
+                elif cur_speed > 0 and distance < OBSTACLE_STOP_DISTANCE:
+                    hal.stop()  # 전진할 때만 막는다 — 후진 탈출은 허용
                 else:
                     hal.set_motion(cur_speed, cur_turn)
             else:
+                # 자동 순찰은 PatrolController가 자체적으로 hal.read_ultrasonic()을
+                # 호출하므로, 그 결과를 캐시에 반영해 텔레메트리도 최신값을 보게 한다.
                 patrol.tick(TICK_SECONDS)
+                measure_distance()
 
             # 주기 스냅샷은 큐에 넣지 않는다 — 중계기가 /snapshot을 직접 긁어가는 게
             # 훨씬 싸다(항상 최신 한 장만 필요한데 큐에 넣으면 메모리만 잡아먹는다).

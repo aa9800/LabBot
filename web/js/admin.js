@@ -705,16 +705,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     const initialMode = window.LabBotRobotConsole.getTargetMode ? window.LabBotRobotConsole.getTargetMode() : "real";
     updateTargetSwitcherUI(initialMode);
 
-    targetRealBtn.addEventListener("click", () => {
-      window.LabBotRobotConsole.setTargetMode("real");
+    targetRealBtn.addEventListener("click", async () => {
+      await window.LabBotRobotConsole.setTargetMode("real");
       updateTargetSwitcherUI("real");
       robotCameraMode = "init";
       refreshRobotCamera();
       window.LabBotToast.success("🤖 관제 대상: 실물 로봇 (Raspbot · 10.42.0.1) 전환");
     });
 
-    targetSimBtn.addEventListener("click", () => {
-      window.LabBotRobotConsole.setTargetMode("sim");
+    targetSimBtn.addEventListener("click", async () => {
+      await window.LabBotRobotConsole.setTargetMode("sim");
       updateTargetSwitcherUI("sim");
       robotCameraMode = "init";
       refreshRobotCamera();
@@ -757,6 +757,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   async function refreshRobotModeBadge() {
     try {
+      // 1. 로컬 실시간 텔레메트리 최우선 반영
+      const telemetry = await window.LabBotRobotConsole.fetchTelemetry(600);
+      if (telemetry && telemetry.mode) {
+        const isManual = telemetry.mode === "manual";
+        robotModeBadge.className = `badge ${isManual ? "badge-st-in_progress" : "badge-st-resolved"}`;
+        robotModeBadge.innerHTML = `<span class="badge-dot"></span>${isManual ? "수동조작 중" : "자동순찰 중"}`;
+        return;
+      }
       const cmd = await window.LabBotRobotConsole.fetchRobotCommand();
       const isManual = cmd.mode === "manual";
       robotModeBadge.className = `badge ${isManual ? "badge-st-in_progress" : "badge-st-resolved"}`;
@@ -918,6 +926,125 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     });
   }
+
+  // AI 비전 가드 모드 토글 (YOLOv11 실시간 탐지 스트림)
+  let aiVisionActive = false;
+  const robotAiVisionBtn = document.getElementById("robotAiVisionBtn");
+  if (robotAiVisionBtn) {
+    robotAiVisionBtn.addEventListener("click", () => {
+      aiVisionActive = !aiVisionActive;
+      const localIp = robotCurrentIp || "127.0.0.1";
+      if (aiVisionActive) {
+        robotAiVisionBtn.classList.add("btn-toggle-active");
+        robotAiVisionBtn.textContent = "AI 비전 감지 중";
+        robotCameraImg.src = window.LabBotRobotConsole.getAiVisionStreamUrl(localIp, 8081);
+        window.LabBotToast.success("AI 실시간 비전 감지 모드가 켜졌습니다.");
+      } else {
+        robotAiVisionBtn.classList.remove("btn-toggle-active");
+        robotAiVisionBtn.textContent = "AI 비전 감지";
+        robotCameraImg.src = window.LabBotRobotConsole.getDirectStreamUrl(localIp, 8080);
+        window.LabBotToast.info("기본 카메라 모드로 전환되었습니다.");
+      }
+    });
+  }
+
+  // 야간 방범 순찰 & 침입자 자동 추적 토글
+  let intruderGuardActive = false;
+  const robotIntruderGuardBtn = document.getElementById("robotIntruderGuardBtn");
+  const aiGuardStatusBadge = document.getElementById("aiGuardStatusBadge");
+  const aiLiveDetectionsList = document.getElementById("aiLiveDetectionsList");
+  const aiGuardActionText = document.getElementById("aiGuardActionText");
+
+  if (robotIntruderGuardBtn) {
+    robotIntruderGuardBtn.addEventListener("click", async () => {
+      const localIp = robotCurrentIp || "127.0.0.1";
+      try {
+        const res = await window.LabBotRobotConsole.toggleIntruderGuard(localIp);
+        intruderGuardActive = !!(res && res.intruder_guard_mode);
+        if (intruderGuardActive) {
+          robotIntruderGuardBtn.classList.add("btn-toggle-danger-active");
+          robotIntruderGuardBtn.textContent = "방범 순찰 가동 중";
+          if (aiGuardStatusBadge) {
+            aiGuardStatusBadge.className = "badge badge-st-resolved";
+            aiGuardStatusBadge.innerHTML = `<span class="badge-dot"></span>방범 가동 중`;
+          }
+          window.LabBotToast.success("야간 방범 모드가 활성화되었습니다. 침입자 감지 시 부저 및 자동 추적이 실행됩니다.");
+        } else {
+          robotIntruderGuardBtn.classList.remove("btn-toggle-danger-active");
+          robotIntruderGuardBtn.textContent = "방범 순찰 모드";
+          if (aiGuardStatusBadge) {
+            aiGuardStatusBadge.className = "badge badge-st-open";
+            aiGuardStatusBadge.innerHTML = `<span class="badge-dot"></span>방범 대기`;
+          }
+          window.LabBotToast.info("방범 순찰 모드가 해제되었습니다.");
+        }
+      } catch (err) {
+        window.LabBotToast.error("방범 모드 전환 실패: " + (err.message || err));
+      }
+    });
+  }
+
+  // 원격 부저 경보 트리거 버튼
+  const btnTriggerBuzzer = document.getElementById("btnTriggerBuzzer");
+  if (btnTriggerBuzzer) {
+    btnTriggerBuzzer.addEventListener("click", async () => {
+      const localIp = robotCurrentIp || "127.0.0.1";
+      try {
+        const res = await window.LabBotRobotConsole.triggerRemoteBuzzer(localIp);
+        window.LabBotToast.success(res.message || "로봇 부저 경보가 울렸습니다.");
+      } catch (err) {
+        window.LabBotToast.error("부저 호출 실패: " + (err.message || err));
+      }
+    });
+  }
+
+  // RGB 사이렌 경광등 트리거 버튼
+  const btnTriggerSiren = document.getElementById("btnTriggerSiren");
+  if (btnTriggerSiren) {
+    btnTriggerSiren.addEventListener("click", async () => {
+      const localIp = robotCurrentIp || "127.0.0.1";
+      try {
+        const res = await window.LabBotRobotConsole.triggerRemoteSiren(localIp);
+        window.LabBotToast.success(res.message || "경광등이 점멸합니다.");
+      } catch (err) {
+        window.LabBotToast.error("경광등 호출 실패: " + (err.message || err));
+      }
+    });
+  }
+
+  // 실시간 AI 탐지 현황 & 방범 텔레메트리 업데이트 루프 (1.5초 주기)
+  async function updateAiGuardTelemetry() {
+    try {
+      const localIp = robotCurrentIp || "127.0.0.1";
+      const status = await window.LabBotRobotConsole.fetchAiStatus(localIp);
+      if (status && status.status === "ok") {
+        if (aiGuardActionText) {
+          aiGuardActionText.textContent = status.guard_action || "대기 중";
+          if (status.guard_action && status.guard_action.includes("TRACKING")) {
+            aiGuardActionText.style.color = "var(--danger)";
+          } else {
+            aiGuardActionText.style.color = "var(--text-muted)";
+          }
+        }
+
+        if (aiLiveDetectionsList) {
+          if (status.detections && status.detections.length > 0) {
+            aiLiveDetectionsList.innerHTML = status.detections
+              .map((d) => {
+                const isSafety = d.type === "SAFETY";
+                return `<span class="badge ${isSafety ? "badge-st-closed" : "badge-st-resolved"}">
+                  <span class="badge-dot"></span>${d.name_kr} (${d.confidence}%)
+                </span>`;
+              })
+              .join("");
+          } else {
+            aiLiveDetectionsList.innerHTML = `<span class="mono" style="font-size: 11px; color: var(--text-faint);">감지된 객체 없음</span>`;
+          }
+        }
+      }
+    } catch {}
+  }
+  setInterval(updateAiGuardTelemetry, 1500);
 
   // 조이스틱: 원 안에서 드래그한 만큼 실시간으로 speed/turn을 보낸다(자동차 게임 방식).
   // 방향 버튼(한 번 클릭 -> 그 방향으로 계속 이동)이 답답하다는 피드백(2026-08-26)으로 교체.
@@ -1132,11 +1259,31 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // 키보드 원격 운전 단축키 (WASD / 방향키 / Space 긴급정지)
   let activeKeyboardKey = null;
+
+  // 이 리스너는 DOMContentLoaded 시점에 window에 붙는데, 관리자 권한 확인은 훨씬
+  // 뒤에서 끝난다. 그 사이(그리고 권한이 없는 사용자에게도) 키 입력이 그대로 로봇의
+  // /drive로 나가는 걸 막아야 한다. 로봇 콘솔 탭을 보고 있을 때만 조작을 허용한다.
+  function robotControlAllowed() {
+    const panel = document.getElementById("adminPanel");
+    if (!panel || panel.style.display === "none") return false;   // 권한 없음 화면
+    // Robot Console은 안전 탭(admin.html #tab-safety) 안에 있다.
+    const safetyPanel = document.getElementById("tab-safety");
+    return !!(safetyPanel && safetyPanel.classList.contains("active"));
+  }
+
   window.addEventListener("keydown", (e) => {
+    if (!robotControlAllowed()) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     const key = e.key.toLowerCase();
     if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key)) {
       e.preventDefault();
+      // 비상정지(Space)는 중복 방지 가드보다 먼저 처리한다. 가드에 걸리면 두 번째
+      // Space부터 아무 명령도 안 나가서 비상정지가 페이지당 1회만 먹는다.
+      if (key === " ") {
+        activeKeyboardKey = null;
+        joySendCommand(0, 0);
+        return;
+      }
       if (activeKeyboardKey === key) return;
       activeKeyboardKey = key;
 
@@ -1153,6 +1300,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   window.addEventListener("keyup", (e) => {
+    if (!robotControlAllowed()) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     const key = e.key.toLowerCase();
     if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
