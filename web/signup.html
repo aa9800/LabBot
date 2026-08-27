@@ -6,7 +6,7 @@
   <title>LabBot – 연구실 물품 대여관리 시스템</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
-<body data-page="login">
+<body data-page="signup">
 
   <header class="navbar">
     <div class="navbar-inner">
@@ -24,6 +24,7 @@
       <nav class="nav-links">
         <a href="index.html" data-nav="home">홈</a>
         <a href="items.html" data-nav="items">물품목록</a>
+        <a href="lab-twin.html" data-nav="lab-twin">가상실험실</a>
         <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
         <a href="login.html" data-nav="login">로그인</a>
         <a href="admin.html" data-nav="admin" class="nav-admin-link">
@@ -46,16 +47,16 @@
 
       <form id="signupForm">
         <label for="name">이름</label>
-        <input type="text" id="name" name="name" placeholder="홍길동" required />
+        <input type="text" id="name" name="name" placeholder="홍길동" required / aria-label="홍길동">
 
         <label for="email">이메일</label>
-        <input type="email" id="email" name="email" placeholder="you@example.com" required />
+        <input type="email" id="email" name="email" placeholder="you@example.com" required / aria-label="you@example.com">
 
         <label for="password">비밀번호</label>
-        <input type="password" id="password" name="password" placeholder="8자 이상" minlength="8" required />
+        <input type="password" id="password" name="password" placeholder="8자 이상" minlength="8" required / aria-label="8자 이상">
 
         <label for="passwordConfirm">비밀번호 확인</label>
-        <input type="password" id="passwordConfirm" name="passwordConfirm" placeholder="••••••••" required />
+        <input type="password" id="passwordConfirm" name="passwordConfirm" placeholder="••••••••" required / aria-label="••••••••">
 
         <div class="auth-actions">
           <button type="submit" class="btn btn-primary">회원가입</button>

@@ -201,31 +201,30 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 res = {"status": "ok", "found": False, "message": "QR 코드가 감지되지 않았습니다. 카메라 각도를 맞춰주세요."}
             self.wfile.write(json.dumps(res).encode("utf-8"))
         elif req_path.startswith("/buzzer"):
-            # 웹 버튼 클릭 시 로봇 능동 부저 즉각 작동
-            if _buzzer_callback is not None:
-                try:
-                    _buzzer_callback()
-                except Exception as e:
-                    logger.warn(f"Buzzer callback failed: {e}")
+            # 웹 버튼 클릭 시 경보 부저 작동.
+            # 콜백이 없거나 실패하면 정직하게 실패를 돌려준다 — 예전에는 무조건
+            # "부저 경보가 작동했습니다"를 반환해서, Ctrl_Buzzer가 존재하지도 않던
+            # 시절에도 웹에 초록 성공 토스트가 떴다.
+            if _buzzer_callback is None:
+                self._send_json_error(501, "이 로봇에는 부저가 연결되어 있지 않습니다.")
+                return
+            try:
+                result = _buzzer_callback()
+            except Exception as e:
+                self._send_json_error(500, f"부저 작동 실패: {e}")
+                return
+            if isinstance(result, dict) and result.get("status") == "error":
+                self._send_json_error(500, result.get("message", "부저 작동 실패"))
+                return
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "message": "부저 경보가 작동했습니다."}).encode("utf-8"))
-        elif req_path.startswith("/siren"):
-            # 웹 버튼 클릭 시 로봇 RGB LED 경광등 즉각 점멸
-            if _siren_callback is not None:
-                try:
-                    _siren_callback()
-                except Exception as e:
-                    logger.warn(f"Siren callback failed: {e}")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Private-Network", "true")
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "message": "경광등이 점멸합니다."}).encode("utf-8"))
+            body = {"status": "ok", "message": "부저 경보가 울렸습니다."}
+            if isinstance(result, dict):
+                body.update(result)
+            self.wfile.write(json.dumps(body).encode("utf-8"))
         elif req_path == "/events":
             # PC의 relay.py가 주기적으로 긁어가는 이벤트 큐 — 로봇은 인터넷이 없어서
             # Supabase를 직접 못 부르므로, 여기 쌓아두면 인터넷 되는 PC가 대신 써준다.
@@ -287,7 +286,6 @@ _drive_callback = None
 _telemetry_provider = None
 _qr_scan_callback = None
 _buzzer_callback = None
-_siren_callback = None
 
 
 def set_buzzer_callback(cb):
@@ -296,10 +294,8 @@ def set_buzzer_callback(cb):
     _buzzer_callback = cb
 
 
-def set_siren_callback(cb):
-    """경광등 작동 콜백 등록."""
-    global _siren_callback
-    _siren_callback = cb
+# 경광등(set_siren_callback)은 제거했다 — 이 보드의 LED는 표시등 수준이라
+# 실내 경보로 인식이 안 된다는 실기기 확인 결과(2026-08-27). 경보는 부저로만 한다.
 
 
 def set_camera_angle_callback(cb):

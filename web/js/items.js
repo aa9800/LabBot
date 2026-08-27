@@ -72,7 +72,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       <div class="item-row-meta">
         <span class="stock-count">재고 ${item.available_qty}/${item.total_qty} ${escapeHtml(item.unit || "")}</span>
         <span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span>
-        ${actionHtml}
+        <div style="display:flex; gap:0.35rem; align-items:center;">
+          ${actionHtml}
+          <a href="lab-twin.html?findItem=${item.id}" class="btn btn-secondary btn-sm" title="가상 실험실 2.5D 위치 찾기">위치</a>
+        </div>
       </div>
     `;
 
@@ -157,7 +160,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     locationSelect.innerHTML =
       `<option value="all">전체 위치</option>` +
-      locations.map((loc) => `<option value="${loc}">${loc}</option>`).join("");
+      locations.map((loc) => `<option value="${escapeHtml(loc)}">${escapeHtml(loc)}</option>`).join("");
 
     if ([...locationSelect.options].some((o) => o.value === current)) {
       locationSelect.value = current;

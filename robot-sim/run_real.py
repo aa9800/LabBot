@@ -63,10 +63,11 @@ def main():
 
     hal = RealHAL(enable_camera=True)
     stream_server.set_camera_angle_callback(hal.set_camera_angle)
-    stream_server.set_drive_callback(hal.set_motion)
     stream_server.set_buzzer_callback(hal.trigger_buzzer)
-    stream_server.set_siren_callback(hal.trigger_siren)
-    stream_server.set_qr_scan_callback(hal.scan_qr_now)
+    # 주의: set_drive_callback / set_qr_scan_callback은 여기서 등록하지 않는다.
+    # 아래에서 on_direct_drive(인자 3개) / on_manual_qr_scan으로 다시 등록하는데,
+    # 여기서 hal.set_motion(인자 2개)을 먼저 걸어두면 서버가 이미 요청을 받는
+    # 그 사이 구간에 인자 개수가 안 맞아 TypeError로 500이 난다.
 
     command = {"mode": "manual", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
     was_manual = True

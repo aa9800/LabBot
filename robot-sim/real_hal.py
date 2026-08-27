@@ -29,8 +29,8 @@ Yahboom 공식 데모 노트북에서 직접 읽어와 그대로 옮긴 것이�
 
 controller.py는 SPEED=70, TURN_GAIN=90 같은 값을 그대로 내려보낸다 — 이 값들은 이미
 Yahboom 데모들이 Car_Run(70, 70)처럼 직접 쓰는 0~100 PWM 스케일과 같은 자릿수라서,
-Webots/Isaac처럼 m/s로 변환하지 않고 표준 아케이드 믹싱(left = speed - turn,
-right = speed + turn)만 적용한 뒤 [-100, 100]으로 클램프한다. 이건 하드웨어 사양이 아니라
+Webots/Isaac처럼 m/s로 변환하지 않고 UI 계약(음수=좌회전, 양수=우회전)에 맞춰
+left = speed + turn, right = speed - turn으로 섞은 뒤 [-100, 100]으로 클램프한다. 이건 하드웨어 사양이 아니라
 이 프로젝트에서 고른 변환 공식이라는 점을 분명히 해둔다.
 """
 import math
@@ -56,6 +56,13 @@ TRACKING_RIGHT_OUTER = 7   # Tracking_Right2 — 오른쪽 바깥쪽
 # ── 모터 믹싱 ────────────────────────────────────────────────────────
 MOTOR_SPEED_LIMIT = 100  # YB_Pcb_Car 데모들이 쓰는 PWM 스케일(0~100)의 상한
 
+# ── 경보 부저 (BOARD 모드) ───────────────────────────────────────────
+# Yahboom 공식 데모 `2.Hardware Control course/01.Drive buzzer/Buzzer_test.ipynb` 기준.
+# 패시브 부저라서 단순 HIGH/LOW로는 소리가 안 나고 PWM으로 음을 만들어야 한다.
+BUZZER_PIN = 32
+BUZZER_FREQ_HZ = 440
+BUZZER_DUTY = 50  # 듀티비가 곧 음량 — 0이면 무음
+
 # ── 카메라/QR ────────────────────────────────────────────────────────
 CAMERA_SIZE = (320, 240)
 # 색감 튜닝용 — 화면이 창백/청록빛으로 보이면 이 값들을 조정한다.
@@ -77,6 +84,16 @@ class RealHAL:
         GPIO.setup(TRIG_PIN, GPIO.OUT)
         for pin in (TRACKING_LEFT_OUTER, TRACKING_LEFT_INNER, TRACKING_RIGHT_INNER, TRACKING_RIGHT_OUTER):
             GPIO.setup(pin, GPIO.IN)
+
+        # 경보 부저 — PWM 객체를 한 번만 만들어두고 듀티비만 0/50으로 여닫는다.
+        # (울릴 때마다 PWM을 새로 start/stop하면 첫 음이 씹히는 경우가 있다)
+        self._buzzer_pwm = None
+        try:
+            GPIO.setup(BUZZER_PIN, GPIO.OUT)
+            self._buzzer_pwm = GPIO.PWM(BUZZER_PIN, BUZZER_FREQ_HZ)
+            self._buzzer_pwm.start(0)  # 듀티 0 = 무음 대기
+        except Exception as e:
+            print(f"[RealHAL] 부저 초기화 실패: {e}")
 
         self.car = YB_Pcb_Car.YB_Pcb_Car()
         self.last_speed = 0.0
@@ -243,8 +260,8 @@ class RealHAL:
         """아케이드 믹싱(모듈 docstring 참고) 후 클램프해서 Control_Car로 보낸다."""
         self.last_speed = float(speed)
         self.last_turn = float(turn)
-        left = speed - turn
-        right = speed + turn
+        left = speed + turn
+        right = speed - turn
         left = max(-MOTOR_SPEED_LIMIT, min(MOTOR_SPEED_LIMIT, left))
         right = max(-MOTOR_SPEED_LIMIT, min(MOTOR_SPEED_LIMIT, right))
         self.car.Control_Car(int(left), int(right))
@@ -273,6 +290,40 @@ class RealHAL:
             except Exception as e:
                 print(f"[RealHAL] Tilt 서보 제어 실패: {e}")
             self.cam_tilt = tilt
+        return {"pan": self.cam_pan, "tilt": self.cam_tilt}
+
+    def trigger_buzzer(self, duration_sec: float = 1.5):
+        """사람 감지(SR-03) 등에서 울리는 경보 부저. 실제 성공 여부를 돌려준다.
+
+        Raspbot의 부저는 BOARD 32번 핀에 물린 패시브 부저라 PWM으로 음을 만들어야
+        소리가 난다(Yahboom 공식 데모 `01.Drive buzzer/Buzzer_test.ipynb` 기준, 440Hz).
+        YB_Pcb_Car에는 Ctrl_Buzzer가 아예 없다 — 예전 구현이 그걸 부르고 있어서
+        AttributeError가 나고, except가 삼킨 뒤에도 웹에는 성공이라고 응답했다.
+        """
+        if self._buzzer_pwm is None:
+            return {"status": "error", "message": "부저를 초기화하지 못했습니다."}
+
+        def _buzz():
+            try:
+                # 삑-삑-삑 패턴 (0.25초 울리고 0.25초 쉼)
+                for _ in range(max(1, int(duration_sec / 0.5))):
+                    self._buzzer_pwm.ChangeDutyCycle(BUZZER_DUTY)
+                    time.sleep(0.25)
+                    self._buzzer_pwm.ChangeDutyCycle(0)
+                    time.sleep(0.25)
+            except Exception as e:
+                print(f"[RealHAL] 부저 제어 실패: {e}")
+            finally:
+                try:
+                    self._buzzer_pwm.ChangeDutyCycle(0)
+                except Exception:
+                    pass
+
+        threading.Thread(target=_buzz, daemon=True).start()
+        return {"status": "ok", "buzzer": True, "duration_sec": duration_sec}
+
+    # 경광등(RGB LED)은 만들지 않는다 — 이 보드의 LED(BOARD 38/40)는 표시등 수준이라
+    # 실내에서 경보로 인식이 안 된다는 판단(2026-08-27 실기기 확인). 경보는 부저로만 한다.
 
     def cleanup(self):
         """프로그램 종료 시 호출 — 카메라 스레드 정지 + GPIO 핀 정리. controller.py의
@@ -283,4 +334,9 @@ class RealHAL:
         self.stop()
         if self._picam2 is not None:
             self._picam2.stop()
+        if self._buzzer_pwm is not None:
+            try:
+                self._buzzer_pwm.stop()  # 안 멈추면 종료 후에도 부저가 계속 울린다
+            except Exception:
+                pass
         GPIO.cleanup()

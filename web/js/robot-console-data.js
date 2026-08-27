@@ -36,13 +36,56 @@ async function fetchRobotCommand() {
   return data;
 }
 
-let _currentMode = localStorage.getItem("labbot_target_mode") || "real";
-let _cachedLocalIp = _currentMode === "sim" ? "127.0.0.1" : "10.42.0.1";
+let _currentMode = localStorage.getItem("labbot_target_mode") || "sim";
+let _cachedLocalIp = null;  // 첫 fetchRobotIp()에서 채운다
 
-function setTargetMode(mode) {
+// 모드별 기본 로봇 주소. 시뮬은 웹서버와 같은 PC에서 돌므로 페이지를 서빙한
+// 호스트를 쓴다(휴대폰/다른 PC에서 열어도 올바른 대상을 가리키도록).
+function _defaultIpForMode() {
+  if (_currentMode === "sim") return window.location.hostname || "127.0.0.1";
+  return "10.42.0.1";
+}
+
+async function sendDirectCommand(ip, path, params = {}, timeoutMs = 1200) {
+  const query = new URLSearchParams(params);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`http://${ip}:8080${path}?${query.toString()}`, {
+      method: "GET",
+      mode: "cors",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`로봇 서버 HTTP ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function syncRobotState(payload) {
+  // 조작 반응성을 위해 DB 기록은 로컬 명령 성공 뒤 백그라운드로 보낸다.
+  // 로봇 구동 성공 여부와 클라우드 기록 성공 여부는 서로 다른 상태다.
+  supabaseClient
+    .from("robot_commands")
+    .update(payload)
+    .eq("id", 1)
+    .then(({ error }) => {
+      if (error) console.debug("LabBot: 로봇 상태 동기화 실패", error);
+    });
+}
+
+async function setTargetMode(mode) {
+  const prevIp = _cachedLocalIp;
+  // 타깃 전환 시 이전 로봇에 즉시 정지 명령 전송 (동시 주행 방지)
+  if (prevIp) {
+    await sendDirectCommand(prevIp, "/drive", { mode: "manual", speed: 0, turn: 0 }, 700).catch(() => null);
+  }
+
   _currentMode = mode === "sim" ? "sim" : "real";
-  _cachedLocalIp = _currentMode === "sim" ? "127.0.0.1" : "10.42.0.1";
   localStorage.setItem("labbot_target_mode", _currentMode);
+  await fetchRobotIp();
   return _currentMode;
 }
 
@@ -50,19 +93,43 @@ function getTargetMode() {
   return _currentMode;
 }
 
-// local_ip는 현재 타겟 모드에 맞는 IP를 즉시 반환
+// local_ip는 현재 타겟 모드에 맞는 IP를 반환 (실물 로봇은 Supabase에 등록된 실제 로컬 IP 우선 조회)
 async function fetchRobotIp() {
-  return _cachedLocalIp;
+  if (_currentMode === "sim") {
+    // Isaac Sim은 웹서버와 같은 PC에서 돈다. 127.0.0.1로 고정하면 휴대폰이나
+    // 다른 PC에서 관리자 화면을 열었을 때 "그 기기의" 8080을 찾게 된다.
+    // 페이지를 서빙한 호스트를 우선 쓰고, file:// 등으로 호스트가 없을 때만 루프백.
+    _cachedLocalIp = window.location.hostname || "127.0.0.1";
+    return _cachedLocalIp;
+  }
+  try {
+    const { data } = await supabaseClient
+      .from("robot_commands")
+      .select("local_ip")
+      .eq("id", 1)
+      .single();
+    if (data && data.local_ip && data.local_ip.trim()) {
+      _cachedLocalIp = data.local_ip.trim();
+      return _cachedLocalIp;
+    }
+  } catch {}
+  return _cachedLocalIp || "10.42.0.1";
 }
 
 function getDirectStreamUrl(localIp, port = 8080) {
-  const ip = localIp || _cachedLocalIp;
+  const ip = localIp || _cachedLocalIp || "127.0.0.1";
   return `http://${ip}:${port}/stream`;
+}
+
+function getAiVisionStreamUrl() {
+  // AI 관제 서버는 현재 사용자 PC(로컬호스트)에서 실행 중이므로 항상 PC IP를 참조합니다.
+  const host = window.location.hostname || "127.0.0.1";
+  return `http://${host}:8081/ai_stream`;
 }
 
 // 스트림 서버의 /health 엔드포인트를 빠르게 찔러보아 직결 가능 여부를 판별한다.
 async function checkStreamHealth(localIp, port = 8080, timeoutMs = 1200) {
-  const ip = localIp || _cachedLocalIp;
+  const ip = localIp || _cachedLocalIp || "127.0.0.1";
   const url = `http://${ip}:${port}/health`;
   try {
     const controller = new AbortController();
@@ -77,10 +144,7 @@ async function checkStreamHealth(localIp, port = 8080, timeoutMs = 1200) {
   }
 }
 
-// cam_pan/cam_tilt는 fetchRobotCommand와 일부러 분리했다 — 이 두 컬럼은
-// docs/labbot_schema.sql의 마이그레이션을 실행해야 생기는데, 아직 안 돌렸으면 이 조회만
-// 실패하고(cam 초기값은 화면 기본값 90/90으로 대체) 모드 배지 등 나머지 폴링은 계속
-// 정상 동작해야 하기 때문이다.
+// cam_pan/cam_tilt는 fetchRobotCommand와 분리하여 처리
 async function fetchCameraAngle() {
   const { data, error } = await supabaseClient
     .from("robot_commands")
@@ -92,55 +156,39 @@ async function fetchCameraAngle() {
 }
 
 // mode: "auto" | "manual". manual일 때만 speed/turn이 실제로 로봇을 움직인다.
-// cam_pan/cam_tilt: 0~180도 서보 각도(생략하면 기존 값 유지 — 매번 안 보내도 됨).
-// 로컬 직결 스트림 IP가 있으면 0ms 초저지연으로 모터를 즉시 구동하고, Supabase에도 상태를 동기화한다.
+// cam_pan/cam_tilt: 0~180도 서보 각도.
+// 로컬 직결 스트림 IP(127.0.0.1 또는 10.42.0.1)로 초저지연 직접 전송하고, Supabase에도 상태를 동기화한다.
 async function setRobotCommand({ mode, speed = 0, turn = 0, cam_pan, cam_tilt }) {
-  // 1. 로컬 직결 초저지연(0ms) 주행 명령 전송
-  const targetIp = _cachedLocalIp || "10.42.0.1";
-  if (targetIp && targetIp !== "127.0.0.1") {
-    const params = new URLSearchParams({ mode, speed, turn });
-    fetch(`http://${targetIp}:8080/drive?${params.toString()}`, { mode: "no-cors" }).catch(() => {});
-  }
+  const targetIp = _cachedLocalIp || _defaultIpForMode();
+  const applied = await sendDirectCommand(targetIp, "/drive", { mode, speed, turn });
 
-  // 2. Supabase DB 상태 동기화 (클라우드 상태 보존)
+  // 2. Supabase DB 상태 동기화
   const payload = { mode, speed, turn, updated_at: new Date().toISOString() };
   if (cam_pan !== undefined) payload.cam_pan = cam_pan;
   if (cam_tilt !== undefined) payload.cam_tilt = cam_tilt;
-  try {
-    await supabaseClient.from("robot_commands").update(payload).eq("id", 1);
-  } catch (err) {
-    console.debug("LabBot: Supabase 주행 명령 동기화 실패(로컬 직결 동작 중)", err);
-  }
+  syncRobotState(payload);
+  return applied;
 }
 
-// 카메라 각도만 바꿀 때는 mode/speed/turn을 건드리지 않는다 — 주행 중에 카메라만 돌려도
-// 로봇이 갑자기 멈추거나 자동/수동 모드가 바뀌면 안 되기 때문에, robot_commands의
-// mode/speed/turn은 그대로 두고 cam_pan/cam_tilt만 갱신하는 별도 함수로 분리했다.
-// 로컬 직결 스트림 IP가 있으면 0ms 초저지연으로 로봇에 직접 쏘고, Supabase에도 상태를 동기화한다.
+// 카메라 각도 조절 함수
 async function setCameraAngle({ cam_pan, cam_tilt }) {
-  // 1. 로컬 직결 초저지연(0ms) 서보 명령 전송
-  const targetIp = _cachedLocalIp || "10.42.0.1";
-  if (targetIp && targetIp !== "127.0.0.1") {
-    const params = new URLSearchParams();
-    if (cam_pan !== undefined) params.set("pan", cam_pan);
-    if (cam_tilt !== undefined) params.set("tilt", cam_tilt);
-    fetch(`http://${targetIp}:8080/camera?${params.toString()}`, { mode: "no-cors" }).catch(() => {});
-  }
+  const targetIp = _cachedLocalIp || _defaultIpForMode();
+  const params = {};
+  if (cam_pan !== undefined) params.pan = cam_pan;
+  if (cam_tilt !== undefined) params.tilt = cam_tilt;
+  const applied = await sendDirectCommand(targetIp, "/camera", params);
 
-  // 2. Supabase DB 상태 동기화 (클라우드 상태 보존)
+  // 2. Supabase DB 상태 동기화
   const payload = {};
   if (cam_pan !== undefined) payload.cam_pan = cam_pan;
   if (cam_tilt !== undefined) payload.cam_tilt = cam_tilt;
-  try {
-    await supabaseClient.from("robot_commands").update(payload).eq("id", 1);
-  } catch (err) {
-    console.debug("LabBot: Supabase 카메라 각도 동기화 실패(로컬 직결 동작 중)", err);
-  }
+  syncRobotState(payload);
+  return applied;
 }
 
 async function fetchTelemetry(timeoutMs = 1000) {
-  const targetIp = _cachedLocalIp || "10.42.0.1";
-  if (!targetIp || targetIp === "127.0.0.1") return null;
+  const targetIp = _cachedLocalIp || _defaultIpForMode();
+  if (!targetIp) return null;
   const url = `http://${targetIp}:8080/telemetry`;
   try {
     const controller = new AbortController();
@@ -154,8 +202,8 @@ async function fetchTelemetry(timeoutMs = 1000) {
   }
 }
 
-async function triggerQrScan(localIp = "10.42.0.1") {
-  const targetIp = _cachedLocalIp || localIp || "10.42.0.1";
+async function triggerQrScan(localIp) {
+  const targetIp = _cachedLocalIp || localIp || _defaultIpForMode();
   const url = `http://${targetIp}:8080/scan_qr`;
   try {
     const controller = new AbortController();
@@ -169,18 +217,82 @@ async function triggerQrScan(localIp = "10.42.0.1") {
   }
 }
 
+async function fetchAiStatus() {
+  const host = window.location.hostname || "127.0.0.1";
+  const url = `http://${host}:8081/ai_status`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
+    const resp = await fetch(url, { method: "GET", mode: "cors", signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch {
+    return null;
+  }
+}
+
+async function toggleIntruderGuard() {
+  const host = window.location.hostname || "127.0.0.1";
+  const url = `http://${host}:8081/toggle_guard`;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    const resp = await fetch(url, { method: "GET", mode: "cors", signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    return await resp.json();
+  } catch (err) {
+    return { status: "error", message: err.message || String(err) };
+  }
+}
+
+// 부저 경보. 실패하면 반드시 throw한다 — 예전에는 두 시도가 다 실패해도
+// {status:"ok"}를 돌려줘서, 로봇에 부저 코드가 아예 없던 시절에도 웹에는
+// 초록 성공 토스트가 떴다. 안전 기능에서 거짓 성공은 위험하다.
+async function triggerRemoteBuzzer(localIp) {
+  const targetIp = _cachedLocalIp || localIp || _defaultIpForMode();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const resp = await fetch(`http://${targetIp}:8080/buzzer`, {
+      method: "GET",
+      mode: "cors",
+      signal: controller.signal,
+    });
+    const body = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      throw new Error(body.message || `로봇이 ${resp.status}로 응답했습니다.`);
+    }
+    return body;
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error("로봇이 응답하지 않습니다. Wi-Fi 연결을 확인해주세요.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 경광등(triggerRemoteSiren)은 제거했다 — 이 보드의 LED는 표시등 수준이라
+// 실내 경보로 인식이 안 된다는 실기기 확인 결과(2026-08-27). 경보는 부저로만 한다.
+
 window.LabBotRobotConsole = {
   cameraSnapshotUrl,
   fetchRobotCommand,
   fetchRobotIp,
   getDirectStreamUrl,
+  getAiVisionStreamUrl,
   checkStreamHealth,
   fetchCameraAngle,
   fetchTelemetry,
   triggerQrScan,
+  fetchAiStatus,
+  toggleIntruderGuard,
+  triggerRemoteBuzzer,
   setRobotCommand,
   setCameraAngle,
   setTargetMode,
   getTargetMode,
 };
-

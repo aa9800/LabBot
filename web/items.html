@@ -23,6 +23,7 @@
       <nav class="nav-links">
         <a href="index.html" data-nav="home">홈</a>
         <a href="items.html" data-nav="items">물품목록</a>
+        <a href="lab-twin.html" data-nav="lab-twin">가상실험실</a>
         <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
         <a href="login.html" data-nav="login">로그인</a>
         <a href="admin.html" data-nav="admin" class="nav-admin-link">
@@ -41,9 +42,9 @@
 
     <div class="list-toolbar">
       <div class="search-box">
-        <input type="text" id="itemSearch" placeholder="물품 이름으로 검색" autocomplete="off" />
+        <input type="text" id="itemSearch" placeholder="물품 이름으로 검색" autocomplete="off" / aria-label="물품 이름으로 검색">
       </div>
-      <select id="itemLocationFilter" class="location-filter-select">
+      <select id="itemLocationFilter" aria-label="보관 위치로 거르기" class="location-filter-select">
         <option value="all">전체 위치</option>
         <!-- js/items.js에서 실제 등록된 위치 목록으로 채움 -->
       </select>

@@ -473,7 +473,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       .sort((a, b) => new Date(b.returned_at) - new Date(a.returned_at));
 
     statActiveCount.textContent = active.length;
-    statTotalCount.textContent = loans.length;
+    statTotalCount.textContent = loans.filter((l) => l.status !== "취소됨").length;  // 취소된 예약은 대여로 치지 않는다
 
     reservedListEl.innerHTML = "";
     reserved.forEach((loan) => reservedListEl.appendChild(renderReservedCard(loan)));

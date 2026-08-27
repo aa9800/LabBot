@@ -2610,7 +2610,9 @@ tbody tr:hover td {
 /* ---------- 관리자 링크 아이콘 ---------- */
 
 .nav-admin-link {
-  display: inline-flex;
+  /* 기본은 숨김 — 세션 확인 전까지 로그아웃 사용자에게 깜빡 보이던 문제.
+     nav.js가 관리자로 확인되면 inline-flex로 되돌린다. */
+  display: none;
   align-items: center;
   gap: 5px;
 }
@@ -2676,6 +2678,12 @@ tbody tr:hover td {
      admin.js가 각 td에 넣어주는 data-label이 카드 안 항목 이름표 역할을 한다. */
   .table-wrap-wide {
     overflow-x: visible;
+  }
+
+  /* 카드 레이아웃에서는 표의 min-width(480px)를 풀어야 한다 —
+     안 그러면 좁은 화면에서 페이지 전체가 가로로 밀린다. */
+  .table-wrap-wide table {
+    min-width: 0;
   }
 
   .table-wrap-wide table,
@@ -2823,3 +2831,106 @@ tbody tr:hover td {
   color: var(--accent-text);
   border-color: var(--accent-border);
 }
+
+/* ---------- AI 비전 및 스마트 방범 관제 센터 ---------- */
+
+.safety-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ai-guard-panel {
+  margin-top: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 1.5);
+  padding: 16px 20px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.ai-guard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.ai-guard-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-guard-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ai-guard-actions .btn {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.ai-guard-detections {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  background: var(--surface);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+}
+
+.ai-guard-detections-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono);
+}
+
+.ai-guard-status-row {
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.btn-toggle-active {
+  background: var(--accent) !important;
+  color: var(--accent-ink) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+}
+
+.btn-toggle-danger-active {
+  background: var(--danger) !important;
+  color: #fff !important;
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+  animation: pulse-danger 2s infinite;
+}
+
+@keyframes pulse-danger {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+

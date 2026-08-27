@@ -74,7 +74,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 여기서 미리 노출해 둘 필요가 없다. UI 노출용 편의 기능일 뿐, 실제 접근 차단은
   // DB의 is_admin() RLS가 담당한다.
   if (adminLink) {
-    adminLink.style.display = session && session.role === "admin" ? "inline" : "none";
+    adminLink.style.display = session && session.role === "admin" ? "inline-flex" : "none";  // CSS의 inline-flex와 맞춤(아이콘 정렬 유지)
   }
 
   if (loginLink && session) {

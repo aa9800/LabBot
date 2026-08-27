@@ -23,6 +23,7 @@
       <nav class="nav-links">
         <a href="index.html" data-nav="home">홈</a>
         <a href="items.html" data-nav="items">물품목록</a>
+        <a href="lab-twin.html" data-nav="lab-twin">가상실험실</a>
         <a href="mypage.html" data-nav="mypage" class="nav-mypage-link">마이페이지</a>
         <a href="login.html" data-nav="login">로그인</a>
         <a href="admin.html" data-nav="admin" class="nav-admin-link">
@@ -44,10 +45,10 @@
 
       <form id="loginForm">
         <label for="email">이메일</label>
-        <input type="email" id="email" name="email" placeholder="you@example.com" required />
+        <input type="email" id="email" name="email" placeholder="you@example.com" required / aria-label="you@example.com">
 
         <label for="password">비밀번호</label>
-        <input type="password" id="password" name="password" placeholder="••••••••" required />
+        <input type="password" id="password" name="password" placeholder="••••••••" required / aria-label="••••••••">
 
         <div class="auth-actions">
           <button type="submit" id="loginBtn" class="btn btn-primary">로그인</button>

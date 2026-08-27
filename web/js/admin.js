@@ -560,10 +560,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     events.forEach((ev) => {
       const row = document.createElement("tr");
       row.innerHTML = `
-        <td class="mono">${ev.rule_id}</td>
+        <td class="mono">${window.LabBotItems.escapeHtml(ev.rule_id)}</td>
         <td>${severityBadge(ev.severity)}</td>
         <td>${statusBadge(ev.status)}</td>
-        <td>${ev.source}</td>
+        <td>${window.LabBotItems.escapeHtml(ev.source)}</td>
         <td class="mono">${new Date(ev.detected_at).toLocaleString("ko-KR")}</td>
         <td><button type="button" class="btn btn-secondary btn-sm" data-action="detail">상세</button></td>
       `;
@@ -585,7 +585,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     safetyDetail.style.display = "block";
     safetyDetail.innerHTML = `
-      <div class="safety-detail-row"><span class="label">규칙</span><span class="mono">${event.rule_id}</span></div>
+      <div class="safety-detail-row"><span class="label">규칙</span><span class="mono">${window.LabBotItems.escapeHtml(event.rule_id)}</span></div>
       <div class="safety-detail-row"><span class="label">심각도</span>${severityBadge(event.severity)}</div>
       <div class="safety-detail-row"><span class="label">상태</span>${statusBadge(event.status)}</div>
       <div class="safety-detail-row"><span class="label">출처</span><span>${window.LabBotItems.escapeHtml(event.source)}</span></div>
@@ -743,15 +743,27 @@ document.addEventListener("DOMContentLoaded", async () => {
       }, 2000);
     };
 
-    robotCameraImg.src = streamUrl;
-    robotCameraImg.style.display = "block";
-    robotCameraMode = "stream";
-    if (robotHudOverlay) robotHudOverlay.style.display = "flex";
+    // 초록 배지는 첫 프레임이 실제로 도착한 뒤에만 켠다. 예전에는 src를 대입하자마자
+    // "🟢 실시간 스트림"을 칠해서, 로봇이 꺼져 있어도 잠시 초록불이 떴고
+    // 반대로 한 번 끊겼다 복구되면 onload가 없어서 영영 빨간불로 남아 있었다.
+    robotCameraImg.onload = () => {
+      robotCameraMode = "stream";
+      if (robotHudOverlay) robotHudOverlay.style.display = "flex";
+      robotCameraStatus.innerHTML = `
+        <div style="margin-top: 6px;">
+          <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 ${modeLabel} 실시간 스트림 (${localIp}:8080)</span>
+        </div>
+      `;
+    };
+
+    robotCameraMode = "connecting";
     robotCameraStatus.innerHTML = `
       <div style="margin-top: 6px;">
-        <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 ${modeLabel} 실시간 스트림 (${localIp}:8080 · 30 FPS)</span>
+        <span class="badge" style="font-size: 11px;"><span class="badge-dot"></span>⏳ ${modeLabel} 연결 중… (${localIp}:8080)</span>
       </div>
     `;
+    robotCameraImg.src = streamUrl;
+    robotCameraImg.style.display = "block";
   }
 
 
@@ -880,9 +892,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                 scannedItemCard.style.display = "none";
               });
 
-              document.getElementById("scannedItemAuditConfirmBtn")?.addEventListener("click", async () => {
-                window.LabBotToast.success(`[${matchedItem.name}] 실사 확인이 등록되었습니다!`);
+              // 이 버튼은 예전에 성공 토스트만 띄우고 DB에는 아무것도 쓰지 않았다.
+              // 관리자가 30개를 스캔하고 확정을 눌러도 audit_sessions는 비어 있었고,
+              // 다음 실사에서 전부 미확인으로 떴다. "어느 실사 세션에 속하는 스캔인지"를
+              // 정하는 설계가 아직 없어서, 거짓 성공을 없애는 쪽을 택한다 —
+              // 실제 실사는 아래 [재고 실사] 탭의 체크리스트로 하도록 안내한다.
+              document.getElementById("scannedItemAuditConfirmBtn")?.addEventListener("click", () => {
+                window.LabBotToast.info(
+                  `[${matchedItem.name}] 확인됨. 실사 기록은 [재고 실사] 탭에서 제출해주세요.`
+                );
                 scannedItemCard.style.display = "none";
+                document.querySelector('[data-tab="audit"]')?.click();
               });
 
               document.getElementById("scannedItemViewStockBtn")?.addEventListener("click", () => {
@@ -994,20 +1014,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         window.LabBotToast.success(res.message || "로봇 부저 경보가 울렸습니다.");
       } catch (err) {
         window.LabBotToast.error("부저 호출 실패: " + (err.message || err));
-      }
-    });
-  }
-
-  // RGB 사이렌 경광등 트리거 버튼
-  const btnTriggerSiren = document.getElementById("btnTriggerSiren");
-  if (btnTriggerSiren) {
-    btnTriggerSiren.addEventListener("click", async () => {
-      const localIp = robotCurrentIp || "127.0.0.1";
-      try {
-        const res = await window.LabBotRobotConsole.triggerRemoteSiren(localIp);
-        window.LabBotToast.success(res.message || "경광등이 점멸합니다.");
-      } catch (err) {
-        window.LabBotToast.error("경광등 호출 실패: " + (err.message || err));
       }
     });
   }
@@ -1252,6 +1258,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (hudSpeedBadge) {
           hudSpeedBadge.textContent = `🚗 SPD: ${telemetry.speed || 0} · TRN: ${telemetry.turn || 0}`;
         }
+        if (hudFpsBadge) {
+          // admin.html에 "⚡ 30 FPS"가 하드코딩돼 있어서, 스트림이 죽어도 30 FPS로
+          // 보였다. 실제 값이 있으면 그걸 쓰고 없으면 표시를 지운다.
+          hudFpsBadge.textContent = telemetry.fps ? `⚡ ${telemetry.fps} FPS` : "";
+        }
+      } else {
+        // 텔레메트리를 못 받으면 마지막 값을 그대로 두지 않는다 — 죽은 로봇의
+        // 거리/속도를 계속 보여주면 운영자가 살아있는 걸로 오인한다.
+        if (hudDistanceBadge) hudDistanceBadge.innerHTML = "📏 <strong>—</strong>";
+        if (hudAngleBadge) hudAngleBadge.textContent = "📐 P: — · T: —";
+        if (hudSpeedBadge) hudSpeedBadge.textContent = "🚗 SPD: — · TRN: —";
+        if (hudFpsBadge) hudFpsBadge.textContent = "";
+        if (hudSafetyBadge) {
+          hudSafetyBadge.className = "hud-tag";
+          hudSafetyBadge.innerHTML = "⚠️ 텔레메트리 끊김";
+        }
       }
     } catch {}
   }
@@ -1429,7 +1451,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     sessions.forEach((s) => {
       const row = document.createElement("tr");
       row.innerHTML = `
-        <td>${s.performed_by}</td>
+        <td>${window.LabBotItems.escapeHtml(s.performed_by)}</td>
         <td class="mono">${new Date(s.started_at).toLocaleString("ko-KR")}</td>
         <td>${s.scanned_count}개</td>
         <td>${s.mismatch_count}개</td>
@@ -1880,12 +1902,36 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  // 탭을 눌러도 데이터를 다시 안 불러서, 안전 이벤트를 처리하고 다른 탭에 갔다
+  // 돌아와도 옛날 목록이 그대로였다(새로고침해야만 갱신됨). 탭별 렌더를 다시 돌린다.
+  const TAB_RENDERERS = {
+    stock: () => renderStockTable(),
+    history: () => renderHistoryTable(),
+    damage: () => renderDamageTable(),
+    safety: () => renderSafetyTable(),
+    audit: () => Promise.all([renderAuditChecklist(), renderAuditSessions()]),
+    inquiry: () => renderInquiryCards(),
+    users: () => renderUserTable(),
+  };
+
   function switchTab(target) {
     tabButtons.forEach((b) => b.classList.remove("active"));
     tabPanels.forEach((p) => p.classList.remove("active"));
 
     document.querySelector(`.tab-btn[data-tab="${target}"]`).classList.add("active");
     document.getElementById(`tab-${target}`).classList.add("active");
+
+    const render = TAB_RENDERERS[target];
+    if (render) {
+      Promise.resolve(render()).catch((err) =>
+        console.debug("LabBot: 탭 갱신 실패", target, err)
+      );
+    }
+    // 요약 카드도 같이 갱신 — 안전 이벤트를 처리했는데 "검토 필요 3"이 그대로
+    // 남아 있는 문제를 막는다.
+    if (typeof renderSummaryCards === "function") {
+      Promise.resolve(renderSummaryCards()).catch(() => {});
+    }
   }
 
   tabButtons.forEach((btn) => {
