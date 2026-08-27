@@ -67,10 +67,19 @@ Yahboom 공식 데모 기준으로 **BOARD 32번 핀 PWM 440Hz** 방식으로 �
 로그인 에러 메시지 뭉뚱그림, QR 무한 재시도, 챗봇 대화기록 유실, drive 콜백 이중 등록,
 Isaac 포트 8080 충돌 무시, 시뮬 `127.0.0.1` 하드코딩, 데드맨 1초/3초 불일치.
 
-### 못 한 것 (DDL 권한 없음 / 설계 결정 필요)
-`docs/migration_2026-08-27_relay.sql`에 이유와 함께 모아뒀다 — Supabase SQL Editor에서
-실행 필요. `robot_commands.local_ip` 컬럼이 없어서 **로봇 IP 자동 보고만 아직 실패**한다
-(중계기가 3회 후 건너뛰고 나머지는 정상 처리). `record_audit_scan`은 여전히 껍데기 —
+### SQL 마이그레이션 — 실행 완료
+`docs/migration_2026-08-27_relay.sql`의 6개 항목을 Supabase SQL Editor에서 전부 실행했다
+(사용자가 크롬 세션으로 진행하라고 지시). 코드로 재확인:
+- `robot_commands`에 `local_ip`/`cam_pan`/`cam_tilt` 컬럼 추가 → **`report_local_ip()`가
+  400 실패에서 성공으로 전환**, 중계기 파이프라인이 이제 실패 0건으로 통과
+- `virtual_lab_objects` 테이블 + 바인딩 10건, 확인 RPC 3개 → `PGRST202`(함수 없음)에서
+  `P0001`(함수가 실행되어 잘못된 인자를 거부)로 전환 = 정상 동작
+- `restock_subscriptions`/`damage_reports` UPDATE 정책, `guard_loan_self_update`
+  search_path 고정, `refresh_restock_queue` 익명 실행 차단
+  (호출 경로가 전부 `session.id`를 요구하는 걸 먼저 확인하고 회수했다)
+
+### 못 한 것 (설계 결정 필요)
+`record_audit_scan`은 여전히 껍데기 —
 "어느 실사 세션에 속하는 스캔인지" 설계가 필요해서 임의로 정하지 않았다.
 로봇 **자동순찰 기본값(`mode:"auto"`)은 일부러 안 켰다** — 사용자 부재 중에 로봇이 스스로
 주행하면 물리적 사고 위험이 있어서, 옆에 있을 때 켜는 게 맞다.

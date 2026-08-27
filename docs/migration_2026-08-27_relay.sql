@@ -1,6 +1,12 @@
 -- LabKeeper 마이그레이션 — 2026-08-27
--- Supabase 대시보드 > SQL Editor 에 붙여넣고 실행하세요.
--- (DDL은 PostgREST로 실행할 수 없어서 여기 모아뒀습니다.)
+--
+-- ✅ 실행 완료 (2026-08-27, Supabase SQL Editor). 아래 6개 항목 전부 적용됐고
+--    코드로 재확인했습니다:
+--      robot_commands 컬럼 -> id/mode/speed/turn/updated_at/local_ip/cam_pan/cam_tilt
+--      virtual_lab_objects -> 테이블 생성 + 바인딩 10건 등록
+--      confirm_virtual_loan_pickup/return -> PGRST202(없음)에서 P0001(정상 거부)로 전환
+--      report_local_ip() -> 400 실패에서 True 성공으로 전환
+--    이 파일은 이력 보존용으로 남겨둡니다. 다시 실행해도 안전합니다.
 --
 -- 실행 순서는 상관없고, 전부 여러 번 실행해도 안전합니다(IF NOT EXISTS / DROP-CREATE).
 
