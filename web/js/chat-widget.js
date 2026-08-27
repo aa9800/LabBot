@@ -390,6 +390,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!panel) return;
     panel.remove();
     panel = null;
+    // 패널을 지우면 대화 DOM도 같이 사라지므로 "이미 불러왔다" 표시도 풀어야 한다.
+    // 안 풀면 다시 열었을 때 restoreHistory()가 early return 해서 인사말만 남고
+    // 서버에 저장된 대화가 안 보인다.
+    historyLoaded = false;
     document.removeEventListener("keydown", onKeydown);
     clearWidgetState(); // 직접 닫았으니 다음 페이지부터는 자동으로 다시 뜨지 않게
   }

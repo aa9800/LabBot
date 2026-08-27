@@ -232,6 +232,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     let stream = null;
     let rafId = null;
     let submitting = false;
+    // 한 번 거절된 QR 코드 — 같은 코드를 카메라가 계속 읽어서 RPC를 무한 재시도하고
+    // 에러 토스트가 쌓이는 걸 막는다. 다른 코드가 보이면 자연히 해제된다.
+    let lastRejectedCode = null;
     let closed = false;
 
     function showStep(name) {
@@ -299,6 +302,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       } catch (err) {
         const message = err.message || "확인에 실패했습니다. 다시 스캔해주세요.";
         scanStatus.textContent = message;
+        lastRejectedCode = code;  // 같은 코드로는 다시 안 쏜다
         // QR 코드가 이 대여 건의 물품이 아닐 때(서버 RPC의 qr_code 불일치 예외) —
         // 화면 하단 문구만으로는 놓치기 쉬워서 토스트로도 눈에 띄게 알려준다.
         if (message.includes("일치하지 않습니다")) {
@@ -346,7 +350,10 @@ document.addEventListener("DOMContentLoaded", async () => {
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const code = window.jsQR(imageData.data, imageData.width, imageData.height);
-          if (code && code.data) {
+          // 한 번 거절된 코드는 다시 시도하지 않는다. 안 그러면 다른 물품의 QR을
+          // 비추고 있는 동안 카메라가 같은 코드를 계속 읽어서, 왕복이 끝나는 족족
+          // RPC를 다시 쏘고 에러 토스트가 끝없이 쌓인다.
+          if (code && code.data && code.data !== lastRejectedCode) {
             submitting = true;
             submitCode(code.data).finally(() => {
               submitting = false;

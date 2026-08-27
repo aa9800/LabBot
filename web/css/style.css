@@ -64,6 +64,14 @@ body {
    관리자 화면은 이미 재고표 등 컬럼이 많아 폭이 빠듯해서 제외한다. */
 body:not([data-page="admin"]) {
   zoom: 1.1;
+  /* vh 단위와 미디어쿼리는 zoom 적용 "전" 뷰포트 기준으로 계산된다.
+     그래서 100vh를 그대로 쓰면 1.1배로 그려져 화면 밖으로 넘친다(로그인 화면에
+     74px짜리 죽은 스크롤이 생겼다). vh를 쓰는 곳에서 이 배율로 나눠준다. */
+  --zoom: 1.1;
+}
+
+:root {
+  --zoom: 1;  /* 관리자 화면 등 zoom을 안 쓰는 경우의 기본값 */
 }
 
 html {
@@ -74,7 +82,9 @@ body {
   font-family: var(--font-body);
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
+  /* zoom이 걸린 페이지에서 100vh를 그대로 쓰면 body가 뷰포트보다 1.1배 높아지고,
+     그 높이에 맞춰 자식(.auth-page 등)까지 늘어나 죽은 스크롤이 생긴다. */
+  min-height: calc(100vh / var(--zoom, 1));
   line-height: 1.55;
   opacity: 0;
   transition: opacity 0.32s ease;
@@ -1085,7 +1095,7 @@ h2 {
   border-radius: var(--radius);
   display: flex;
   flex-direction: column;
-  height: min(70vh, 640px);
+  height: min(calc(70vh / var(--zoom, 1)), 640px);
   overflow: hidden;
 }
 
@@ -1249,11 +1259,11 @@ h2 {
   /* bottom:156px 만큼 이미 아래쪽 여백을 먹고 있어서, 세로로 좁은 창(노트북 등)에서
      그냥 70vh를 쓰면 팝업 위쪽이 화면 밖으로 넘어가 헤더(드래그 손잡이 + 닫기 버튼)
      자체가 안 보이는 문제가 실제로 있었다 — bottom 오프셋을 뺀 나머지 공간만 쓴다. */
-  height: min(520px, calc(100vh - 168px));
+  height: min(520px, calc((100vh - 168px) / var(--zoom, 1)));
   min-width: 280px;
   min-height: 320px;
   max-width: calc(100vw - 24px);
-  max-height: calc(100vh - 168px);
+  max-height: calc((100vh - 168px) / var(--zoom, 1));
   z-index: 250;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1644,7 +1654,7 @@ tbody tr:hover td {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - 64px);
+  min-height: calc((100vh - 64px) / var(--zoom, 1));
   padding: 24px 16px;
 }
 
@@ -1751,7 +1761,7 @@ tbody tr:hover td {
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: calc(100vh - 64px);
+  min-height: calc((100vh - 64px) / var(--zoom, 1));
   padding: 24px;
   text-align: center;
 }

@@ -203,6 +203,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
     } catch (err) {
       window.LabBotToast.error("물품 목록을 불러오지 못했습니다: " + (err.message || err));
+      // 스켈레톤(가짜 로딩 줄)을 지우지 않으면 영원히 로딩 중처럼 보인다.
+      // 토스트는 몇 초 뒤 사라지므로 화면에도 이유를 남겨둔다.
+      listEl.innerHTML = `
+        <div class="empty-state">
+          <p>물품 목록을 불러오지 못했습니다.</p>
+          <p class="muted">인터넷 연결을 확인한 뒤 새로고침해주세요.</p>
+        </div>`;
       return;
     }
 
