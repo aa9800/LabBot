@@ -113,6 +113,33 @@ def main():
 
     stream_server.set_qr_scan_callback(on_manual_qr_scan)
 
+    last_person_alert_time = 0.0
+    PERSON_CHECK_EVERY = 40  # 약 2초마다 체크 — HOG 연산이 무거워서 매 틱마다는 안 돌림
+    PERSON_ALERT_COOLDOWN = 20.0  # 사람이 계속 있어도 알림은 20초에 최대 1회만
+    person_check_running = threading.Event()  # 이전 체크가 아직 안 끝났으면 겹쳐서 또 제출하지 않기 위한 플래그
+
+    def check_person():
+        nonlocal last_person_alert_time
+        try:
+            if not hal.detect_person():
+                return
+            now = time.time()
+            if (now - last_person_alert_time) < PERSON_ALERT_COOLDOWN:
+                return
+            last_person_alert_time = now
+            print("[labkeeper] 🧍 사람 감지 — SR-03 안전이벤트 단발 전송")
+            run_log.write("person_detected", rule_id="SR-03")
+            snap = stream_server.get_latest_frame()
+            report_safety_event(
+                "SR-03",
+                severity="HIGH",
+                note="실물 Raspbot 순찰 중 카메라 기반 사람 감지(HOG)",
+                source="real-raspbot",
+                snapshot_bytes=snap,
+            )
+        finally:
+            person_check_running.clear()
+
     last_obstacle_alert_time = 0.0
     OBSTACLE_ALERT_COOLDOWN = 15.0  # 장애물이 계속 있어도 알림 전송은 15초에 최대 1회만 단발 수행
 
@@ -198,6 +225,10 @@ def main():
                 jpeg_bytes = stream_server.get_latest_frame()
                 if jpeg_bytes:
                     db_executor.submit(upload_camera_snapshot_bytes, jpeg_bytes)
+
+            if tick % PERSON_CHECK_EVERY == 0 and not person_check_running.is_set():
+                person_check_running.set()
+                db_executor.submit(check_person)
 
             if tick % TELEMETRY_LOG_EVERY == 0:
                 run_log.write(

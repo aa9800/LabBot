@@ -58,6 +58,12 @@ MOTOR_SPEED_LIMIT = 100  # YB_Pcb_Car 데모들이 쓰는 PWM 스케일(0~100)�
 
 # ── 카메라/QR ────────────────────────────────────────────────────────
 CAMERA_SIZE = (320, 240)
+# 색감 튜닝용 — 화면이 창백/청록빛으로 보이면 이 값들을 조정한다.
+# CAMERA_SATURATION: 1.0이 기본, 낮을수록 색이 빠짐(창백함) -> 올리면 색이 진해짐.
+# CAMERA_AWB_MODE: "Auto"가 기본. 여전히 색감이 이상하면 "Indoor"/"Tungsten"/"Fluorescent"/
+#                  "Daylight"/"Cloudy" 중 조명 환경에 맞는 걸로 바꿔본다.
+CAMERA_SATURATION = 1.4
+CAMERA_AWB_MODE = "Auto"
 
 
 class RealHAL:
@@ -87,6 +93,7 @@ class RealHAL:
         self._pyzbar = None
         self._cv2 = None
         self._stream_server = None
+        self._hog = None
         self._latest_frame = None
         self._frame_lock = threading.Lock()
         self._camera_thread = None
@@ -104,10 +111,19 @@ class RealHAL:
             self._cv2 = cv2
             self._stream_server = stream_server
             self._pyzbar = pyzbar
+            # SR-03(사람 감지) 안전 이벤트용 — 외부 계정/모델 다운로드 없이 OpenCV 내장
+            # HOG+SVM 보행자 검출기를 사용한다(Roboflow 등 커스텀 모델로 나중에 교체 가능).
+            self._hog = cv2.HOGDescriptor()
+            self._hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
             self._picam2 = Picamera2()
             config = self._picam2.create_preview_configuration(
                 main={"format": "BGR888", "size": CAMERA_SIZE},
-                controls={"FrameDurationLimits": (33333, 33333)}  # 30fps 하드웨어 고정
+                controls={
+                    "FrameDurationLimits": (33333, 33333),  # 30fps 하드웨어 고정
+                    "AwbEnable": True,
+                    "AwbMode": getattr(libcamera.controls.AwbModeEnum, CAMERA_AWB_MODE),
+                    "Saturation": CAMERA_SATURATION,
+                }
             )
             config["transform"] = libcamera.Transform(hflip=1, vflip=1)
             self._picam2.configure(config)
@@ -205,6 +221,23 @@ class RealHAL:
     def try_read_qr(self):
         """온디맨드 구조 전환: 평상시 자동 주행/대기 중에는 무거운 QR 연산을 0%로 차단하여 발열 및 쓰로틀링 방지."""
         return None
+
+    def detect_person(self):
+        """SR-03 안전 이벤트용 — 현재 프레임에 사람이 있으면 True.
+        OpenCV 내장 HOG+SVM 보행자 검출기 사용(외부 모델 다운로드/계정 불필요).
+        나중에 Roboflow 등 커스텀 모델로 교체하려면 이 메서드 내부만 바꾸면 된다
+        (호출부인 run_real.py는 True/False만 알면 되므로 영향 없음)."""
+        frame = self.capture_frame()
+        if frame is None or self._hog is None:
+            return False
+        try:
+            boxes, _weights = self._hog.detectMultiScale(
+                frame, winStride=(8, 8), padding=(8, 8), scale=1.05
+            )
+            return len(boxes) > 0
+        except Exception as e:
+            print(f"[RealHAL] 사람 감지 실패: {e}")
+            return False
 
     def set_motion(self, speed, turn):
         """아케이드 믹싱(모듈 docstring 참고) 후 클램프해서 Control_Car로 보낸다."""
