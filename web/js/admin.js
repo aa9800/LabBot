@@ -683,46 +683,64 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
-  function refreshRobotCamera() {
-    const localIp = "10.42.0.1";
+  const targetRealBtn = document.getElementById("targetRealBtn");
+  const targetSimBtn = document.getElementById("targetSimBtn");
+
+  function updateTargetSwitcherUI(mode) {
+    if (!targetRealBtn || !targetSimBtn) return;
+    if (mode === "sim") {
+      targetSimBtn.classList.add("active");
+      targetSimBtn.style.opacity = "1";
+      targetRealBtn.classList.remove("active");
+      targetRealBtn.style.opacity = "0.6";
+    } else {
+      targetRealBtn.classList.add("active");
+      targetRealBtn.style.opacity = "1";
+      targetSimBtn.classList.remove("active");
+      targetSimBtn.style.opacity = "0.6";
+    }
+  }
+
+  if (targetRealBtn && targetSimBtn) {
+    const initialMode = window.LabBotRobotConsole.getTargetMode ? window.LabBotRobotConsole.getTargetMode() : "real";
+    updateTargetSwitcherUI(initialMode);
+
+    targetRealBtn.addEventListener("click", () => {
+      window.LabBotRobotConsole.setTargetMode("real");
+      updateTargetSwitcherUI("real");
+      robotCameraMode = "init";
+      refreshRobotCamera();
+      window.LabBotToast.success("🤖 관제 대상: 실물 로봇 (Raspbot · 10.42.0.1) 전환");
+    });
+
+    targetSimBtn.addEventListener("click", () => {
+      window.LabBotRobotConsole.setTargetMode("sim");
+      updateTargetSwitcherUI("sim");
+      robotCameraMode = "init";
+      refreshRobotCamera();
+      window.LabBotToast.info("🌐 관제 대상: 가상 디지털 트윈 (Isaac Sim · localhost) 전환");
+    });
+  }
+
+  async function refreshRobotCamera() {
+    const localIp = await window.LabBotRobotConsole.fetchRobotIp();
+    const mode = window.LabBotRobotConsole.getTargetMode ? window.LabBotRobotConsole.getTargetMode() : "real";
+    const modeLabel = mode === "sim" ? "🌐 Isaac Sim 가상 트윈" : "🤖 Raspbot 실물 로봇";
     robotCurrentIp = localIp;
     const streamUrl = `http://${localIp}:8080/stream`;
-
-    if (robotCameraMode === "stream") {
-      /* 브라우저 네트워크 병목을 유발하는 5초 헬스체크 비활성화 (스트리밍 끊김 방지)
-      if (robotHealthCheckTick % 5 === 0 && robotCurrentIp) {
-        const isHealthy = await window.LabBotRobotConsole.checkStreamHealth(robotCurrentIp);
-        if (!isHealthy) {
-          console.warn("LabBot: 실시간 스트림 연결 끊김 감지 -> 스냅샷 모드로 전환");
-          robotCameraMode = "init";
-          await loadSnapshotFallback();
-        }
-      }
-      */
-      return;
-    }
-
-    robotCameraImg.onload = () => {
-      robotCameraImg.style.display = "block";
-      robotCameraMode = "stream";
-      if (robotHudOverlay) robotHudOverlay.style.display = "flex";
-      robotCameraStatus.innerHTML = `
-        <div style="margin-top: 6px;">
-          <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 직결 스트림 (${localIp}:8080 · 30 FPS)</span>
-        </div>
-      `;
-    };
 
     robotCameraImg.onerror = () => {
       robotCameraMode = "offline";
       robotCameraStatus.innerHTML = `
         <div style="margin-top: 6px;">
-          <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 로봇 연결 대기 중 (${localIp})</span>
+          <span class="badge badge-st-closed" style="font-size: 11px;"><span class="badge-dot"></span>🔴 ${modeLabel} 연결 대기 중 (${localIp}:8080)</span>
         </div>
       `;
       setTimeout(() => {
-        robotCameraImg.src = `${streamUrl}?_retry=${Date.now()}`;
-      }, 1500);
+        if (robotCameraMode === "offline") {
+          robotCameraImg.src = streamUrl;
+        }
+      }, 2000);
     };
 
     robotCameraImg.src = streamUrl;
@@ -731,7 +749,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (robotHudOverlay) robotHudOverlay.style.display = "flex";
     robotCameraStatus.innerHTML = `
       <div style="margin-top: 6px;">
-        <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 실시간 직결 스트림 (${localIp}:8080 · 30 FPS)</span>
+        <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 ${modeLabel} 실시간 스트림 (${localIp}:8080 · 30 FPS)</span>
       </div>
     `;
   }

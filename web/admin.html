@@ -227,8 +227,19 @@
 
       <!-- Robot Console: 문제 상황 시 카메라로 직접 확인 + 필요하면 수동조작 -->
       <div class="safety-detail" id="robotConsole" style="margin-bottom: 16px;">
-        <div class="page-header-row" style="margin-bottom: 10px;">
-          <h3 style="margin: 0;">Robot Console</h3>
+        <div class="page-header-row" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <h3 style="margin: 0;">Robot Console</h3>
+            <!-- 타겟 전환 토글 스위처 (실물 로봇 vs Isaac 디지털 트윈) -->
+            <div class="robot-target-switcher" style="display: inline-flex; background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 4px;">
+              <button type="button" class="btn btn-sm robot-target-btn active" id="targetRealBtn" data-target="real" style="border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                🤖 실물 로봇 <span class="badge-dot" style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #10b981; margin-left: 4px;"></span>
+              </button>
+              <button type="button" class="btn btn-sm robot-target-btn" id="targetSimBtn" data-target="sim" style="border-radius: 6px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; opacity: 0.7;">
+                🌐 Isaac 트윈 <span class="badge-dot" style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3b82f6; margin-left: 4px;"></span>
+              </button>
+            </div>
+          </div>
           <span class="badge badge-st-open" id="robotModeBadge"><span class="badge-dot"></span>-</span>
         </div>
         <div class="robot-console-layout">

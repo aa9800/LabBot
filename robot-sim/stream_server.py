@@ -90,7 +90,8 @@ class StreamingHandler(BaseHTTPRequestHandler):
             logger.debug(f"HTTP GET handler exception: {e}")
 
     def _handle_get(self):
-        if self.path == "/stream":
+        req_path = self.path.split("?")[0]
+        if req_path == "/stream":
             self.send_response(200)
             self.send_header("Age", "0")
             self.send_header("Cache-Control", "no-cache, private, no-store, must-revalidate")
@@ -114,7 +115,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
                         self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
-        elif self.path.startswith("/snapshot"):
+        elif req_path.startswith("/snapshot"):
             frame = _buffer.get_latest()
             if frame:
                 self.send_response(200)
@@ -127,7 +128,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
                 self.wfile.write(frame)
             else:
                 self.send_error(404, "No frame available")
-        elif self.path.startswith("/camera"):
+        elif req_path.startswith("/camera"):
             # 초저지연 로컬 카메라 서보 각도 조절 직결 엔드포인트
             parsed = urlparse(self.path)
             qs = parse_qs(parsed.query)
@@ -144,7 +145,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
-        elif self.path.startswith("/drive"):
+        elif req_path.startswith("/drive"):
             # 초저지연 로컬 조이스틱 주행 직결 엔드포인트 (0ms 반응)
             parsed = urlparse(self.path)
             qs = parse_qs(parsed.query)
@@ -162,7 +163,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
-        elif self.path == "/telemetry":
+        elif req_path == "/telemetry":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -170,7 +171,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             data = _telemetry_provider() if _telemetry_provider is not None else {}
             self.wfile.write(json.dumps(data).encode("utf-8"))
-        elif self.path.startswith("/scan_qr"):
+        elif req_path.startswith("/scan_qr"):
             # 웹 버튼 클릭 시 온디맨드 1회 QR 스캔 실행
             code = None
             if _qr_scan_callback is not None:
@@ -188,7 +189,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
             else:
                 res = {"status": "ok", "found": False, "message": "QR 코드가 감지되지 않았습니다. 카메라 각도를 맞춰주세요."}
             self.wfile.write(json.dumps(res).encode("utf-8"))
-        elif self.path in ("/health", "/status"):
+        elif req_path in ("/health", "/status"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
@@ -222,6 +223,18 @@ def set_qr_scan_callback(cb):
     """온디맨드 QR 스캔 콜백 등록."""
     global _qr_scan_callback
     _qr_scan_callback = cb
+
+
+set_scan_qr_callback = set_qr_scan_callback
+
+
+def set_camera_angle_callback(cb):
+    """카메라 각도 변경 콜백 등록 (run_real 연동)."""
+    global _camera_angle_callback
+    _camera_angle_callback = cb
+
+
+set_camera_callback = set_camera_angle_callback
 
 
 def set_drive_callback(cb):

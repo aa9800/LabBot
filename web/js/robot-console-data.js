@@ -36,22 +36,34 @@ async function fetchRobotCommand() {
   return data;
 }
 
-let _cachedLocalIp = "10.42.0.1";
+let _currentMode = localStorage.getItem("labbot_target_mode") || "real";
+let _cachedLocalIp = _currentMode === "sim" ? "127.0.0.1" : "10.42.0.1";
 
-// local_ip는 핫스팟 기본 IP(10.42.0.1)를 즉시 반환하여 Supabase 타임아웃 지연을 원천 방지
+function setTargetMode(mode) {
+  _currentMode = mode === "sim" ? "sim" : "real";
+  _cachedLocalIp = _currentMode === "sim" ? "127.0.0.1" : "10.42.0.1";
+  localStorage.setItem("labbot_target_mode", _currentMode);
+  return _currentMode;
+}
+
+function getTargetMode() {
+  return _currentMode;
+}
+
+// local_ip는 현재 타겟 모드에 맞는 IP를 즉시 반환
 async function fetchRobotIp() {
-  return _cachedLocalIp || "10.42.0.1";
+  return _cachedLocalIp;
 }
 
 function getDirectStreamUrl(localIp, port = 8080) {
-  if (!localIp || localIp === "127.0.0.1") return null;
-  return `http://${localIp}:${port}/stream`;
+  const ip = localIp || _cachedLocalIp;
+  return `http://${ip}:${port}/stream`;
 }
 
-// 스트림 서버의 /health 엔드포인트를 빠르게 찔러보아 로컬 직결 가능 여부를 판별한다.
+// 스트림 서버의 /health 엔드포인트를 빠르게 찔러보아 직결 가능 여부를 판별한다.
 async function checkStreamHealth(localIp, port = 8080, timeoutMs = 1200) {
-  if (!localIp || localIp === "127.0.0.1") return false;
-  const url = `http://${localIp}:${port}/health`;
+  const ip = localIp || _cachedLocalIp;
+  const url = `http://${ip}:${port}/health`;
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -168,5 +180,7 @@ window.LabBotRobotConsole = {
   triggerQrScan,
   setRobotCommand,
   setCameraAngle,
+  setTargetMode,
+  getTargetMode,
 };
 
