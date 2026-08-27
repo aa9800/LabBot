@@ -729,17 +729,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     robotCurrentIp = localIp;
     const streamUrl = `http://${localIp}:8080/stream`;
 
-    robotCameraImg.onload = () => {
-      robotCameraImg.style.display = "block";
-      robotCameraMode = "stream";
-      if (robotHudOverlay) robotHudOverlay.style.display = "flex";
-      robotCameraStatus.innerHTML = `
-        <div style="margin-top: 6px;">
-          <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 ${modeLabel} 직결 스트림 (${localIp}:8080 · 30 FPS)</span>
-        </div>
-      `;
-    };
-
     robotCameraImg.onerror = () => {
       robotCameraMode = "offline";
       robotCameraStatus.innerHTML = `
@@ -749,15 +738,20 @@ document.addEventListener("DOMContentLoaded", async () => {
       `;
       setTimeout(() => {
         if (robotCameraMode === "offline") {
-          robotCameraImg.src = `${streamUrl}?_retry=${Date.now()}`;
+          robotCameraImg.src = streamUrl;
         }
       }, 2000);
     };
 
-    robotCameraImg.src = `${streamUrl}?_t=${Date.now()}`;
+    robotCameraImg.src = streamUrl;
     robotCameraImg.style.display = "block";
     robotCameraMode = "stream";
     if (robotHudOverlay) robotHudOverlay.style.display = "flex";
+    robotCameraStatus.innerHTML = `
+      <div style="margin-top: 6px;">
+        <span class="badge badge-st-resolved" style="font-size: 11px;"><span class="badge-dot"></span>🟢 ${modeLabel} 실시간 스트림 (${localIp}:8080 · 30 FPS)</span>
+      </div>
+    `;
   }
 
 
