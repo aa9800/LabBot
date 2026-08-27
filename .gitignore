@@ -36,3 +36,30 @@ Thumbs.db
 
 # 중계기 커서 — 로컬 상태라 커밋하지 않는다
 robot-sim/relay_cursor.json
+
+# ── AI 비전(YOLO) 학습 산출물 ─────────────────────────────────────
+# 코덱스가 만드는 ai_vision/ 의 "코드"는 커밋한다. 하지만 모델 가중치와 학습
+# 산출물은 용량이 커서(합계 약 46MB) 한 번 올라가면 git 히스토리에서 못 지운다.
+# 가중치는 다시 내려받거나 재학습으로 얻을 수 있으므로 제외한다.
+# (주의: .gitignore는 같은 줄 뒤 주석을 지원하지 않는다 — 반드시 줄을 나눌 것)
+
+# 모델 가중치 (yolo11n.pt, best.pt, last.pt 등)
+*.pt
+# 학습 실행 결과 (그래프·체크포인트)
+runs/
+# 내려받은 베이스 모델
+weights/
+# 학습 데이터셋
+datasets/
+robot-sim/datasets/
+# 학습 결과물 (곡선 png, csv, 가중치)
+robot-sim/ai_vision/models/
+# 실행 중 갱신되는 임시 스냅샷
+robot-sim/ai_vision/latest_ai_snapshot.jpg
+
+# 실행 중 생성되는 캡처 이미지 (소스 아님)
+robot-sim/cam_h_*.jpg
+robot-sim/live_isaac_fpv.jpg
+robot-sim/test_render_view.jpg
+robot-sim/isaac_project/lab_scene_*.png
+test_wh.jpg
