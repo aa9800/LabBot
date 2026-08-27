@@ -209,3 +209,95 @@ def report_local_ip(local_ip: str = None):
         print(f"[notify_supabase] 로컬 IP 보고 실패: {e}")
         return False
 
+
+
+def _log(msg):
+    """콘솔 인코딩(Windows cp949 등) 때문에 절대 예외를 던지지 않는 print.
+
+    로그 출력이 실패해서 정상 동작이 실패로 뒤바뀌는 사고를 막는다.
+    """
+    try:
+        print(msg)
+    except Exception:
+        try:
+            print(msg.encode("ascii", "replace").decode("ascii"))
+        except Exception:
+            pass
+
+
+# ── 중계기(relay.py) 전용 동기 버전 ────────────────────────────────────────
+# 위쪽 report_safety_event / upload_camera_snapshot_bytes는 백그라운드 스레드로
+# 던지고 곧바로 True를 돌려준다 — 로봇의 20Hz 제어 루프를 막지 않기 위한 설계다.
+# 하지만 중계기는 "정말 DB에 들어갔는지"를 알아야 커서를 올릴 수 있으므로
+# (실패했는데 커서를 올리면 이벤트가 영영 유실된다) 결과를 기다리는 버전이 필요하다.
+# 중계기는 PC의 전용 프로세스라서 몇 초 블로킹돼도 아무 문제가 없다.
+
+def upload_snapshot_sync(data: bytes, bucket: str = "robot-camera",
+                         object_path: str = "latest.jpg", timeout: float = 10.0) -> bool:
+    """JPEG 바이트를 Storage에 올리고 실제 성공 여부를 돌려준다."""
+    if not _READY or not data:
+        return False
+    url = f"{SUPABASE_URL}/storage/v1/object/{bucket}/{object_path}"
+    headers = {
+        "apikey": SUPABASE_SECRET_KEY,
+        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+        "Content-Type": "image/jpeg",
+        "x-upsert": "true",
+    }
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            resp.read()
+    except Exception as e:
+        _log(f"[notify_supabase] 스냅샷 업로드 실패: {e}")
+        return False
+    return True
+
+
+def report_safety_event_sync(rule_id: str, severity: str = "MEDIUM", note: str = "",
+                             source: str = "real-raspbot", snapshot_bytes: bytes = None,
+                             timeout: float = 10.0) -> bool:
+    """safety_events에 이벤트를 기록하고 실제 성공 여부를 돌려준다.
+
+    증거 사진이 있으면 먼저 올리고, 업로드가 실패하면 사진 없이라도 이벤트는 남긴다
+    (사진 때문에 안전 이벤트 자체를 잃는 게 더 나쁘다).
+    """
+    if not _READY:
+        return False
+
+    photo_note = ""
+    if snapshot_bytes:
+        import datetime
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        obj_name = f"evidence_{rule_id}_{stamp}.jpg"
+        if upload_snapshot_sync(snapshot_bytes, object_path=obj_name, timeout=timeout):
+            photo_note = f" [현장증거사진: {obj_name}]"
+        else:
+            photo_note = " [증거사진 업로드 실패]"
+
+    url = f"{SUPABASE_URL}/rest/v1/safety_events"
+    payload = {
+        "rule_id": rule_id,
+        "severity": severity,
+        "source": source,
+        "note": (note + photo_note).strip(),
+    }
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode("utf-8"), headers=_headers(), method="POST"
+    )
+    # 주의: print를 try 안에 두면 안 된다. Windows 콘솔(cp949)에서 이모지 출력이
+    # UnicodeEncodeError를 던지는데, 그게 except에 걸리면 "DB 쓰기는 성공했는데
+    # False를 반환"하게 된다. 중계기는 그걸 실패로 보고 같은 이벤트를 무한 재전송한다.
+    # (실제로 이 버그를 테스트에서 밟았다 — 행은 생성됐는데 False가 나왔음)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            resp.read()
+        succeeded, err = True, None
+    except Exception as e:
+        succeeded, err = False, e
+
+    if succeeded:
+        _log(f"[notify_supabase] 안전이벤트 등록 완료 ({rule_id}, {severity})")
+    else:
+        _log(f"[notify_supabase] 안전이벤트 등록 실패: {err}")
+    return succeeded

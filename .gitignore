@@ -33,3 +33,6 @@ robot-sim/_archive_pygame_webots/webots_project/worlds/.*.jpg
 .DS_Store
 Thumbs.db
 .vscode/
+
+# 중계기 커서 — 로컬 상태라 커밋하지 않는다
+robot-sim/relay_cursor.json

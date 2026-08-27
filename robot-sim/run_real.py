@@ -21,19 +21,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from controller import PatrolController, OBSTACLE_STOP_DISTANCE
-from notify_supabase import (
-    fetch_items,
-    fetch_robot_command,
-    report_safety_event,
-    upload_camera_snapshot_bytes,
-)
+# 로봇에서는 Supabase를 직접 부르지 않는다(인터넷 없음) — get_my_local_ip만 로컬 함수라 쓴다.
+from notify_supabase import get_my_local_ip
 from real_hal import RealHAL
 from run_logger import JsonlRunLogger
+import event_queue
 import stream_server
 
 TICK_SECONDS = 0.05  # 20Hz — 실물 초음파 측정(최대 0.03초 x 2)이 있어서 pygame 60Hz보다 낮춤
-COMMAND_POLL_EVERY = 10   # 약 0.5초마다 원격조작 명령 확인
-CAMERA_UPLOAD_EVERY = 60  # 약 3초마다 카메라 스냅샷 업로드
 TELEMETRY_LOG_EVERY = 20  # 약 1초마다 텔레메트리 기록
 MANUAL_COMMAND_MAX_AGE_SECONDS = 3.0  # Webots와 동일한 dead-man switch 기준
 
@@ -58,22 +53,20 @@ def main():
     run_log = JsonlRunLogger(log_dir, source="real")
     print(f"[labkeeper] 주행 로그: {run_log.path}")
 
-    # 비동기 I/O 및 스레드 락 초기화
+    # 로봇은 자기 핫스팟에 붙어 있어서 인터넷이 없다 — Supabase를 직접 부르지 않고
+    # event_queue에 쌓아두면, 랜선으로 인터넷이 되는 PC의 relay.py가 긁어가서 대신 쓴다.
+    event_queue.push("local_ip", {"local_ip": get_my_local_ip()})
+
+    # 비동기 작업용 스레드 풀 및 락 초기화 (DB 대신 무거운 로컬 연산 오프로딩에 쓴다)
     db_executor = ThreadPoolExecutor(max_workers=3)
     command_lock = threading.Lock()
 
-    items = fetch_items()
-    items_by_location = {}
-    for it in items:
-        items_by_location.setdefault(it.get("location"), []).append(it)
-    if items:
-        print(f"[labkeeper] 웹에서 물품 {len(items)}개 불러옴 (Supabase)")
-    else:
-        print("[labkeeper] 웹에서 물품을 못 가져왔습니다 — .env 확인 (스캔은 되지만 물품 매칭은 안 됨)")
-
     hal = RealHAL(enable_camera=True)
     stream_server.set_camera_angle_callback(hal.set_camera_angle)
-    scanned_ids = set()
+    stream_server.set_drive_callback(hal.set_motion)
+    stream_server.set_buzzer_callback(hal.trigger_buzzer)
+    stream_server.set_siren_callback(hal.trigger_siren)
+    stream_server.set_qr_scan_callback(hal.scan_qr_now)
 
     command = {"mode": "manual", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
     was_manual = True
@@ -94,15 +87,10 @@ def main():
     stream_server.set_telemetry_provider(get_telemetry)
 
     def on_scan(location):
-        items_here = items_by_location.get(location, [])
-        names = ", ".join(it["name"] for it in items_here) if items_here else "(등록된 물품 없음)"
-        print(f"[labkeeper] 📸 체크포인트 확인: {location} — {names}")
+        print(f"[labkeeper] 📸 체크포인트 확인: {location}")
         run_log.write("checkpoint_scanned", checkpoint=location)
-        for it in items_here:
-            scanned_ids.add(it["id"])
-        # 이벤트 영속성: 비동기 스레드 풀에서 DB 저장
-        from notify_supabase import record_audit_scan
-        db_executor.submit(record_audit_scan, location, [it["id"] for it in items_here])
+        # 어느 물품이 여기 있는지는 중계기가 Supabase를 보고 판단한다 (로봇은 인터넷 없음)
+        event_queue.push("audit_scan", {"location": location})
 
     def on_manual_qr_scan():
         """웹에서 [QR 체크하기] 버튼을 눌렀을 때 온디맨드로 1회 실행."""
@@ -127,15 +115,17 @@ def main():
             if (now - last_person_alert_time) < PERSON_ALERT_COOLDOWN:
                 return
             last_person_alert_time = now
-            print("[labkeeper] 🧍 사람 감지 — SR-03 안전이벤트 단발 전송")
+            print("[labkeeper] 🧍 사람 감지 — SR-03 안전이벤트 큐 적재")
             run_log.write("person_detected", rule_id="SR-03")
-            snap = stream_server.get_latest_frame()
-            report_safety_event(
-                "SR-03",
-                severity="HIGH",
-                note="실물 Raspbot 순찰 중 카메라 기반 사람 감지(HOG)",
-                source="real-raspbot",
-                snapshot_bytes=snap,
+            event_queue.push(
+                "safety_event",
+                {
+                    "rule_id": "SR-03",
+                    "severity": "HIGH",
+                    "note": "실물 Raspbot 순찰 중 카메라 기반 사람 감지(HOG)",
+                    "source": "real-raspbot",
+                },
+                snapshot_bytes=stream_server.get_latest_frame(),
             )
         finally:
             person_check_running.clear()
@@ -150,17 +140,18 @@ def main():
             return  # 쿨다운 중에는 중복 알림/DB 업로드 스팸 방지
 
         last_obstacle_alert_time = now
-        print(f"[labkeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 단발 전송")
+        print(f"[labkeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 큐 적재")
         run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
-        # 이벤트 영속성: 비동기 스레드 풀에서 증거 스냅샷 첨부하여 DB 등록
-        snap = stream_server.get_latest_frame()
-        db_executor.submit(
-            report_safety_event,
-            "SR-01",
-            severity="HIGH",
-            note=f"실물 Raspbot 순찰 중 초음파 장애물 감지 ({distance:.1f}cm)",
-            source="real-raspbot",
-            snapshot_bytes=snap,
+        # 증거 스냅샷을 붙여 큐에 넣는다 (네트워크 없음 — 중계기가 가져가서 DB에 쓴다)
+        event_queue.push(
+            "safety_event",
+            {
+                "rule_id": "SR-01",
+                "severity": "HIGH",
+                "note": f"실물 Raspbot 순찰 중 초음파 장애물 감지 ({distance:.1f}cm)",
+                "source": "real-raspbot",
+            },
+            snapshot_bytes=stream_server.get_latest_frame(),
         )
 
     def on_obstacle_cleared():
@@ -194,6 +185,11 @@ def main():
                 hal.set_motion(speed, turn)
         else:
             hal.stop()
+        return {
+            "mode": mode,
+            "speed": hal.last_speed,
+            "turn": hal.last_turn,
+        }
 
     stream_server.set_drive_callback(on_direct_drive)
 
@@ -221,10 +217,8 @@ def main():
             else:
                 patrol.tick(TICK_SECONDS)
 
-            if tick % CAMERA_UPLOAD_EVERY == 0:
-                jpeg_bytes = stream_server.get_latest_frame()
-                if jpeg_bytes:
-                    db_executor.submit(upload_camera_snapshot_bytes, jpeg_bytes)
+            # 주기 스냅샷은 큐에 넣지 않는다 — 중계기가 /snapshot을 직접 긁어가는 게
+            # 훨씬 싸다(항상 최신 한 장만 필요한데 큐에 넣으면 메모리만 잡아먹는다).
 
             if tick % PERSON_CHECK_EVERY == 0 and not person_check_running.is_set():
                 person_check_running.set()
