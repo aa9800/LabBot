@@ -82,6 +82,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     loginLink.removeAttribute("href");
     loginLink.addEventListener("click", async (e) => {
       e.preventDefault();
+      // 대화기록 초기화(사용자 요청)는 signOut()보다 먼저 해야 한다 — 로그아웃한
+      // 뒤에는 auth.uid()가 없어져서 RLS가 삭제 자체를 막는다. 이 페이지에
+      // chat-data.js가 없을 수도 있어서(관리자 화면 등) 있을 때만 호출한다.
+      if (window.LabBotChat) {
+        await window.LabBotChat.clearChatHistory(session);
+      }
       await window.LabBotAuth.signOut();
       if (window.LabBotNav) {
         window.LabBotNav.goTo("index.html");

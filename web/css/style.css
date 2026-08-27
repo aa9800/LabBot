@@ -1235,6 +1235,106 @@ h2 {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* ---------- 챗봇 플로팅 팝업 (chat-widget.js) — chatbot.html 페이지 이동 대신
+   그 자리에 띄우는 작은 창. 안쪽은 .chat-window를 그대로 재사용하고, 여기서는
+   위치·크기·닫기 버튼만 추가한다. 헤더를 드래그해서 옮기고, 우하단 모서리를
+   드래그해서 크기를 바꿀 수 있다(chat-widget.js) — 그래서 처음엔 right/bottom으로
+   기본 위치만 잡아두고, 드래그·리사이즈가 시작되는 순간 JS가 left/top 고정값으로
+   바꿔치기한다. */
+.chat-widget {
+  position: fixed;
+  right: 20px;
+  bottom: 156px; /* 챗봇(bottom:20)+문의하기(bottom:88) FAB 두 개를 다 넘어서 뜨도록 */
+  width: min(360px, calc(100vw - 40px));
+  /* bottom:156px 만큼 이미 아래쪽 여백을 먹고 있어서, 세로로 좁은 창(노트북 등)에서
+     그냥 70vh를 쓰면 팝업 위쪽이 화면 밖으로 넘어가 헤더(드래그 손잡이 + 닫기 버튼)
+     자체가 안 보이는 문제가 실제로 있었다 — bottom 오프셋을 뺀 나머지 공간만 쓴다. */
+  height: min(520px, calc(100vh - 168px));
+  min-width: 280px;
+  min-height: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 168px);
+  z-index: 250;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-widget.is-dragging,
+.chat-widget.is-resizing {
+  user-select: none;
+}
+
+.chat-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-shrink: 0;
+  cursor: move;
+  touch-action: none;
+}
+
+.chat-widget-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.chat-widget-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.chat-widget-close:hover {
+  color: var(--accent-text);
+  background: var(--surface);
+}
+
+.chat-widget .chat-window {
+  flex: 1;
+  min-height: 0;
+  width: auto;
+  max-width: none;
+  height: auto;
+  border: none;
+  border-radius: 0;
+}
+
+.chat-widget-resize {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.chat-widget-resize:hover {
+  color: var(--accent-text);
+}
+
 /* ---------- 관리자 화면 ---------- */
 
 .page-header-row {
