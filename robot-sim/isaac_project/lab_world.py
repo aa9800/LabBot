@@ -114,7 +114,7 @@ def get_all_checkpoints():
 
 def build_lab_environment(stage):
     """Isaac Sim USD 스테이지에 연구실 9개 보관 선반, 바닥 라인트랙, 조명을 생성한다."""
-    print("[LabWorld] 🔬 LabKeeper 9개 보관 구역 디지털 트윈 구축 시작...")
+    print("[LabWorld] Building LabKeeper 9 Storage Zones digital twin...")
 
     # 1. 돔 라이트 (실험실 전체 밝은 환경 조명)
     dome_light_path = "/World/LabDomeLight"
@@ -124,8 +124,8 @@ def build_lab_environment(stage):
         dome_light.GetColorAttr().Set(Gf.Vec3f(0.95, 0.98, 1.0))
 
     # 2. 9개 구역 선반 및 라벨 큐브 생성
-    for zone in LAB_ZONES:
-        shelf_path = f"/World/Shelves/{zone['name']}"
+    for idx, zone in enumerate(LAB_ZONES):
+        shelf_path = f"/World/Shelves/Zone_{idx}"
         shelf_prim = stage.DefinePrim(shelf_path, "Cube")
         xform = UsdGeom.Xformable(shelf_prim)
         xform.ClearXformOpOrder()
@@ -142,7 +142,7 @@ def build_lab_environment(stage):
 
         # 선반 위 물품 QR 체크포인트 시각 마커 (작은 황금색 원통)
         cp = zone["checkpoint"]
-        cp_marker_path = f"/World/Checkpoints/{zone['name']}_Marker"
+        cp_marker_path = f"/World/Checkpoints/Marker_{idx}"
         cp_prim = stage.DefinePrim(cp_marker_path, "Cylinder")
         cp_xform = UsdGeom.Xformable(cp_prim)
         cp_xform.ClearXformOpOrder()
@@ -171,4 +171,4 @@ def build_lab_environment(stage):
         seg_xform.AddScaleOp().Set(Gf.Vec3d(length / 2.0, 0.02, 0.001))  # 4cm 너비 라인
         UsdGeom.Gprim(seg_prim).GetDisplayColorAttr().Set([Gf.Vec3f(0.1, 0.1, 0.1)])
 
-    print(f"[LabWorld] ✅ 9개 보관 구역 및 둘레 {len(LAB_TRACK_POINTS_M)-1}구간 순찰 트랙 구축 완료!")
+    print(f"[LabWorld] 9 Storage Zones and {len(LAB_TRACK_POINTS_M)-1} patrol segments built successfully!")

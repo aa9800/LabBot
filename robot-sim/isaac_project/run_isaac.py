@@ -76,13 +76,18 @@ def _create_obstacle(stage):
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     log_dir = os.path.join(_ROBOT_SIM_ROOT, "logs")
     run_log = JsonlRunLogger(log_dir, source="isaac")
-    print(f"[LabKeeper] 🚀 Isaac Sim 주행 로그: {run_log.path}")
+    print(f"[LabKeeper] Isaac Sim run log: {run_log.path}")
 
     items = fetch_items()
     checkpoints = get_all_checkpoints()
-    print(f"[LabKeeper] 9대 연구실 보관 구역 체크포인트 로드 완료: {[c['name'] for c in checkpoints]}")
+    print(f"[LabKeeper] 9 Storage Zones loaded: {[c['name'] for c in checkpoints]}")
 
     assets_root = get_assets_root_path()
     jetbot_usd = assets_root + "/Isaac/Robots/NVIDIA/Jetbot/jetbot.usd"
@@ -115,9 +120,9 @@ def main():
     # 3. 로컬 30 FPS 웹 스트림 서버 시작 (admin.html 연동)
     try:
         stream_server.start_stream_server(port=8080)
-        print("[LabKeeper] 🟢 실시간 웹 FPV 스트림 서버 가동 (http://localhost:8080/stream)")
+        print("[LabKeeper] Stream Server running on http://localhost:8080/stream")
     except Exception as e:
-        print(f"[LabKeeper] ⚠️ 스트림 서버 기동 알림: {e}")
+        print(f"[LabKeeper] Stream server notice: {e}")
 
     # 스트림 서버 콜백 연결 (수동 운전 / 서보 / 온디맨드 QR 스캔)
     manual_override = {"active": False, "speed": 0.0, "turn": 0.0, "last_at": 0.0}
@@ -134,7 +139,7 @@ def main():
     def on_manual_qr_scan():
         qr_result = hal.scan_qr_now()
         if qr_result:
-            print(f"[LabKeeper] 🔍 [온디맨드 물품 QR 인식]: {qr_result}")
+            print(f"[LabKeeper] [On-Demand QR Scanned]: {qr_result}")
             run_log.write("manual_qr_scan_success", qr=qr_result)
             return {"success": True, "data": qr_result}
         return {"success": False, "message": "근처에 인식 가능한 물품 QR이 없습니다."}
@@ -153,7 +158,7 @@ def main():
         }
 
     stream_server.set_drive_callback(on_drive_cmd)
-    stream_server.set_camera_callback(on_cam_cmd)
+    stream_server.set_camera_angle_callback(on_cam_cmd)
     stream_server.set_scan_qr_callback(on_manual_qr_scan)
     stream_server.set_telemetry_provider(telemetry_provider)
 
@@ -162,7 +167,7 @@ def main():
     def on_scan(location):
         items_here = [it for it in items if it.get("location") == location]
         names = ", ".join(it["name"] for it in items_here) if items_here else "(등록된 물품 없음)"
-        print(f"[LabKeeper] 📍 정기 순찰 체크포인트 확인: {location} — {names}")
+        print(f"[LabKeeper] Checkpoint scanned: {location} - {names}")
         run_log.write("checkpoint_scanned", checkpoint=location)
 
     def on_obstacle(distance):
@@ -170,14 +175,14 @@ def main():
         now = time.time()
         if now - last_obstacle_alert_time >= OBSTACLE_ALERT_COOLDOWN:
             last_obstacle_alert_time = now
-            print(f"[LabKeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 전송")
+            print(f"[LabKeeper] Obstacle detected ({distance:.1f}cm) - Stop + SR-01 alert sent")
             run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
             report_safety_event(
                 "SR-01", severity="MEDIUM", note=f"Isaac Sim 순찰 중 장애물 감지 ({distance:.1f}cm)", source="isaac-sim"
             )
 
     def on_obstacle_cleared():
-        print("[LabKeeper] 🟢 장애물 안전 해제 — 순찰 재개")
+        print("[LabKeeper] Obstacle cleared - Resuming patrol")
         run_log.write("obstacle_cleared")
 
     controller = PatrolController(
@@ -185,7 +190,7 @@ def main():
     )
 
     tick = 0
-    print("[LabKeeper] 🏁 Isaac Sim 가상 실험실 순찰 시작!")
+    print("[LabKeeper] Isaac Sim Lab Patrol Started!")
     try:
         while simulation_app.is_running():
             tick += 1

@@ -224,6 +224,18 @@ def set_qr_scan_callback(cb):
     _qr_scan_callback = cb
 
 
+set_scan_qr_callback = set_qr_scan_callback
+
+
+def set_camera_angle_callback(cb):
+    """카메라 각도 변경 콜백 등록 (run_real 연동)."""
+    global _camera_angle_callback
+    _camera_angle_callback = cb
+
+
+set_camera_callback = set_camera_angle_callback
+
+
 def set_drive_callback(cb):
     """직결 주행 명령 콜백 등록 (run_real 연동)."""
     global _drive_callback
