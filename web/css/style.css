@@ -44,6 +44,45 @@
   --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
+/* ---------- 일반(밝은) 모드 — 사용자 요청으로 추가. 같은 변수 이름에 새 값만 채우는
+   방식이라 이 블록 아래로는 다른 CSS를 고칠 필요가 없다(전부 var()로 참조). 배지/
+   경고 텍스트 색(--danger, --warning, --accent-text)은 자기 색 배경(-soft) 위에서도,
+   흰 페이지 배경 위에서도 둘 다 읽혀야 해서 어두운 모드보다 더 진하게 잡았다 — 원래
+   값은 어두운 배경 위에서만 밝게 빛나 보이도록 고른 색이라 흰 배경에 그대로 쓰면
+   대비가 너무 약하다. bg/surface는 첫 시도 때 순백에 가까워 "너무 밝다"는 피드백을
+   받아서 한 단계 더 어둡게 잡았다. nav.js가 <html data-theme="light">를 붙였다
+   뗐다 하는 걸로 전환한다. */
+:root[data-theme="light"] {
+  --bg: #e7e7e3;
+  --surface: #f2f2f0;
+  --surface-2: #dfe1db;
+  --border: #c7cac2;
+  --border-soft: #d5d7d0;
+
+  --text: #24261f;
+  --text-strong: #0f100c;
+  --text-muted: #5b5e55;
+  --text-faint: #82857b;
+
+  --accent: #0a9a68;
+  --accent-text: #067a51;
+  --accent-deep: #067a51;
+  --accent-soft: rgba(10, 154, 104, 0.1);
+  --accent-border: rgba(10, 154, 104, 0.35);
+  --accent-ink: #ffffff;
+
+  --danger: #c62828;
+  --danger-soft: rgba(198, 40, 40, 0.08);
+  --danger-border: rgba(198, 40, 40, 0.3);
+
+  --warning: #9a5b00;
+  --warning-soft: rgba(154, 91, 0, 0.1);
+  --warning-border: rgba(154, 91, 0, 0.3);
+
+  --shadow: 0 16px 40px rgba(30, 30, 20, 0.12);
+  --shadow-toast: 0 8px 24px rgba(30, 30, 20, 0.14);
+}
+
 .mono {
   font-family: var(--font-mono);
   font-size: 0.8rem;
@@ -208,6 +247,29 @@ h2 {
 /* 관리자 버튼은 다른 메뉴들과 묶어두지 않고, 내비게이션 오른쪽 끝(구석)에 따로 붙인다. */
 .nav-admin-link {
   margin-left: auto;
+}
+
+/* 다크/일반 모드 전환 — nav.js가 모든 페이지의 .nav-links 맨 끝에 이 버튼을 직접
+   심는다(HTML 파일마다 각자 넣으면 하나라도 빠뜨리기 쉬워서 한 곳에서 관리). */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.theme-toggle:hover {
+  color: var(--accent-text);
+  border-color: var(--accent-border);
+  background: var(--surface-2);
 }
 
 /* ---------- 공통 레이아웃 ---------- */
@@ -448,40 +510,6 @@ h2 {
   text-align: center;
 }
 
-.steps-row {
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.step-card {
-  position: relative;
-  flex: 1;
-  min-width: 180px;
-  max-width: 240px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 26px 18px 20px;
-  text-align: center;
-  transition: border-color 0.2s ease;
-}
-
-.step-card:hover {
-  border-color: var(--accent-border);
-}
-
-.step-number {
-  position: absolute;
-  top: 12px;
-  left: 14px;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: var(--text-faint);
-}
-
 .step-icon {
   display: block;
   color: var(--accent);
@@ -493,34 +521,11 @@ h2 {
   height: 28px;
 }
 
-.step-title {
-  margin: 0 0 6px;
-  font-size: 1rem;
-  color: var(--text-strong);
-}
-
 .step-desc {
   margin: 0;
   font-size: 0.85rem;
   color: var(--text-muted);
   line-height: 1.5;
-}
-
-.step-arrow {
-  align-self: center;
-  color: var(--text-faint);
-  font-size: 1.3rem;
-}
-
-@media (max-width: 720px) {
-  .step-arrow {
-    display: none;
-  }
-
-  .steps-row {
-    flex-direction: column;
-    align-items: center;
-  }
 }
 
 /* 이용 방법 — 대여/반납은 서로 다른 흐름이라 버튼으로 골라 각 3단계만 보여준다. */
@@ -557,22 +562,98 @@ h2 {
 
 .usage-steps {
   display: none;
-  gap: 14px;
 }
 
 .usage-steps.active {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  display: block;
 }
 
-.usage-steps .step-card {
-  max-width: none;
-  min-width: 0;
+/* 세그먼트 탭 바 — 카드 그리드 대신, 3단계를 가로 막대 하나에 3등분해 넣고
+   클릭한 단계의 설명만 아래(.step-detail)에 펼친다(교수님 피드백 반영). */
+.step-tabbar {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
 }
 
-@media (max-width: 640px) {
-  .usage-steps.active {
-    grid-template-columns: 1fr;
+.step-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 10px;
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.step-tab:last-child {
+  border-right: none;
+}
+
+.step-tab:hover:not(.active) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.step-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.step-tab-num {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.step-tab.active .step-tab-num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.step-detail {
+  display: none;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 6px 6px;
+}
+
+.step-detail.active {
+  display: flex;
+}
+
+.step-detail .step-icon {
+  margin-bottom: 0;
+}
+
+@media (max-width: 560px) {
+  .step-tab {
+    flex-direction: column;
+    gap: 6px;
+    font-size: 0.75rem;
+    padding: 10px 6px;
+  }
+
+  .step-detail {
+    flex-direction: column;
+    text-align: center;
   }
 }
 
@@ -1134,6 +1215,101 @@ h2 {
    챗봇 버튼(56px 높이, bottom:20px) 바로 위에 쌓이도록 bottom만 다르게 잡는다. */
 .fab-inquiry {
   bottom: 88px;
+}
+
+/* ---------- 대여 진행률 바 (rental-progress-widget.js) — 챗봇 버튼과 같은 높이
+   (bottom:20px)에, 가로로는 화면 중앙에 뜬다(사용자 요청). 수령 대기중인 예약이
+   있을 때만 나타나고, 눌러서 마이페이지로 이동한다. FAB 두 개가 우측에 쌓여 있어서
+   폭을 넉넉히 남겨 겹치지 않게 한다. */
+.rental-progress-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+  max-width: min(420px, calc(100vw - 160px));
+  transition: border-color 0.15s ease;
+}
+
+.rental-progress-bar:hover {
+  border-color: var(--accent-border);
+}
+
+.rp-label {
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rp-track {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.rp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.rp-dot.rp-done {
+  background: var(--accent);
+}
+
+.rp-dot.rp-current {
+  background: var(--warning);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+.rp-line {
+  width: 16px;
+  height: 2px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.rp-line.rp-done {
+  background: var(--accent);
+}
+
+.rp-hint {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .rental-progress-bar {
+    /* 좁은 화면에서는 중앙 정렬한 채로 폭을 넓게 잡으면 우측의 FAB 두 개와
+       실제로 겹친다(375px 폭에서 실측 확인) — "같은 라인"은 데스크톱 기준으로
+       유지하고, 모바일에서만 FAB 위쪽으로 올려서 겹침을 피한다. */
+    bottom: 156px;
+    max-width: calc(100vw - 32px);
+    padding: 8px 14px;
+    gap: 8px;
+  }
+
+  .rp-hint {
+    display: none;
+  }
 }
 
 /* ---------- 챗봇 화면 ---------- */
