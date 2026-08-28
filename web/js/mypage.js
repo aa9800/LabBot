@@ -534,7 +534,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     inquiryListEl.innerHTML = pageInquiries
       .map(
         (q) => `
-        <article class="inquiry-card">
+        <article class="inquiry-card" data-inquiry-id="${q.id}">
           <div class="inquiry-card-header">
             <span class="badge ${INQUIRY_STATUS_BADGE_CLASS[q.status]}"><span class="badge-dot"></span>${INQUIRY_STATUS_LABEL[q.status]}</span>
             <h3 class="inquiry-card-subject">${escapeHtml(q.subject)}</h3>
@@ -542,10 +542,32 @@ document.addEventListener("DOMContentLoaded", async () => {
           </div>
           <p class="inquiry-card-message">${escapeHtml(q.message)}</p>
           ${q.admin_reply ? `<p class="inquiry-card-reply"><strong>답변</strong> · ${escapeHtml(q.admin_reply)}</p>` : ""}
+          <div class="safety-actions">
+            <button type="button" class="btn btn-secondary btn-sm" data-action="delete-inquiry">삭제</button>
+          </div>
         </article>
       `
       )
       .join("");
+
+    inquiryListEl.querySelectorAll('[data-action="delete-inquiry"]').forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const card = e.currentTarget.closest("[data-inquiry-id]");
+        const inquiryId = Number(card.dataset.inquiryId);
+        if (!confirm("이 문의를 목록에서 삭제하시겠습니까?")) return;
+
+        const target = e.currentTarget;
+        target.disabled = true;
+        try {
+          await window.LabBotInquiry.hideMyInquiry(inquiryId);
+          window.LabBotToast.success("문의를 삭제했습니다.");
+          await renderInquiries();
+        } catch (err) {
+          window.LabBotToast.error("삭제에 실패했습니다: " + (err.message || err));
+          target.disabled = false;
+        }
+      });
+    });
 
     renderInquiryPagination(inquiries.length);
   }

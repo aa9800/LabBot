@@ -199,7 +199,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         <button type="button" class="chat-widget-close" aria-label="챗봇 닫기">✕</button>
       </div>
       <div class="chat-window">
-        <p class="chat-guide">🔎 이용규칙이 궁금하거나, 어떤 실험에 어떤 물품이 필요한지 물어보세요</p>
+        <p class="chat-guide"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" /><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>이용규칙이 궁금하거나, 어떤 실험에 어떤 물품이 필요한지 물어보세요</p>
         ${
           !session
             ? `<p class="chat-login-notice">로그인하지 않아도 챗봇과 대화할 수 있지만, 실제 재고 기반 추천과

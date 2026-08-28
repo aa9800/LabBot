@@ -1890,3 +1890,157 @@ drop policy if exists "robot_guide_tasks_own_insert" on robot_guide_tasks;
 create policy "robot_guide_tasks_own_insert" on robot_guide_tasks for insert with check (user_id=auth.uid());
 drop policy if exists "robot_guide_tasks_own_update" on robot_guide_tasks;
 create policy "robot_guide_tasks_own_update" on robot_guide_tasks for update using (user_id=auth.uid() or is_admin());
+
+-- =============================================================
+-- 34. 마이페이지에서 내 문의 "삭제" (사용자 요청 — 실제로는 DB에서 지우는 게 아니라
+--     본인 마이페이지 목록에서만 숨기는 것) — 관리자는 전체 문의 이력을 계속 봐야 하므로
+--     실제 row delete는 하지 않고, hidden_by_user 플래그만 세워서 본인 조회 쿼리에서만
+--     제외한다. subject/message/status 등 다른 컬럼까지 사용자가 직접 고칠 수 있는
+--     길을 열면 안 되므로(27번 섹션의 "본인 글이라도 직접 못 고치게" 원칙과 동일한 이유),
+--     별도 update 정책 대신 hide_my_inquiry() 하나만 security definer로 열어서 딱
+--     hidden_by_user 컬럼만, 본인 행에 한해 바꿀 수 있게 한다.
+-- =============================================================
+
+alter table inquiries add column if not exists hidden_by_user boolean not null default false;
+
+create or replace function public.hide_my_inquiry(p_inquiry_id bigint)
+returns void as $$
+begin
+  update inquiries
+  set hidden_by_user = true
+  where id = p_inquiry_id
+    and user_id = auth.uid();
+
+  if not found then
+    raise exception '문의 id %를 찾을 수 없거나 본인 글이 아닙니다', p_inquiry_id;
+  end if;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+-- =============================================================
+-- 35. 관리자 통계 탭 시연용 샘플 데이터 (사용자 요청 — "실제 데이터도 넣어줘")
+--     ※ 다른 섹션과 달리 스키마 변경이 아니라 "데이터 삽입"이다. 발표/데모에서 통계 탭이
+--       빈 표로 보이지 않게 하려는 용도이므로, 실제 운영 데이터가 이미 쌓여 있다면 굳이
+--       실행하지 않아도 된다. 맨 아래 정리(rollback) 쿼리도 같이 적어둔다.
+--
+--     주의 1) loans에는 INSERT 트리거가 세 개 걸려 있어서 그대로는 삽입이 안 된다:
+--       - trg_guard_loan_insert : 재고 0이거나 점검중/만료 물품이면 거부
+--       - trg_guard_loan_self_insert : 25번 섹션 — 관리자가 아니면 '예약중' 외의 상태나
+--         due_at/returned_at/qr_confirmed_at이 채워진 행을 거부한다. SQL Editor에서는
+--         auth.uid()가 NULL이라 is_admin()이 false가 되므로 과거 이력 삽입이 전부 막힌다.
+--       - trg_loans_decrement_stock : 무조건 available_qty -1 (이미 반납된 과거 이력까지
+--         재고를 깎아버려서 재고가 영구히 어긋난다)
+--       그래서 삽입하는 동안만 세 개를 끄고, 재고는 아래에서 상태별로 직접 맞춘다.
+--     주의 2) '대여중'/'예약중'처럼 지금도 물건을 쥐고 있는 건만 available_qty를 -1 한다
+--       (반납완료 건은 이미 돌아온 물건이라 재고에 영향이 없다).
+--     주의 3) 아래 스크립트는 통째로 한 번에 실행해야 한다 — 중간에 실패하면 트랜잭션이
+--       롤백되면서 트리거도 원래대로 돌아온다. 한 줄씩 나눠 실행하다 실패하면 트리거가
+--       꺼진 채로 남을 수 있으니, 그때는 맨 아래 enable 세 줄을 수동으로 실행할 것.
+-- =============================================================
+
+alter table loans disable trigger trg_guard_loan_insert;
+alter table loans disable trigger trg_guard_loan_self_insert;
+alter table loans disable trigger trg_loans_decrement_stock;
+
+do $$
+declare
+  v_users uuid[];
+  v_items bigint[];
+  v_n_users int;
+  v_n_items int;
+  v_first_loan_id bigint;
+  v_item bigint;
+  v_user uuid;
+  v_borrowed timestamptz;
+  v_roll numeric;
+  v_src text;
+  i int;
+  -- 실사 정확도 추이(오래된 것 -> 최근 순) — 로봇 순찰 도입 후 정확도가 올라가는 흐름
+  v_accuracy int[] := array[78, 84, 88, 93, 96];
+  v_session_id bigint;
+  v_scanned int;
+  v_mismatch int;
+  s int;
+  m int;
+begin
+  select array_agg(id order by id) into v_users from profiles;
+  select array_agg(id order by id) into v_items from items;
+
+  if v_users is null or v_items is null then
+    raise notice '샘플 데이터를 넣지 않았습니다 — profiles 또는 items가 비어 있습니다.';
+    return;
+  end if;
+
+  v_n_users := array_length(v_users, 1);
+  v_n_items := array_length(v_items, 1);
+  select coalesce(max(id), 0) + 1 into v_first_loan_id from loans;
+
+  -- ---------- 대여 이력 90건 ----------
+  for i in 1..90 loop
+    -- power(random(), 2.2)로 앞쪽 물품에 쏠리게 만든다 — 모든 물품이 똑같이 대여되는
+    -- 균등분포는 "장비 대여 사용량" 표에서 아무 정보도 못 준다(현실도 소수 장비에 쏠린다).
+    v_item := v_items[1 + floor(power(random(), 2.2) * v_n_items)::int];
+    v_user := v_users[1 + floor(random() * v_n_users)::int];
+    v_src := case when random() < 0.25 then 'chatbot' else 'manual' end;
+    v_roll := random();
+
+    if v_roll < 0.82 then
+      -- 반납완료 (최근 8주 사이)
+      v_borrowed := now() - (interval '1 day' * (7 + random() * 49));
+      insert into loans (user_id, item_id, borrowed_at, due_at, returned_at, status, source, qr_confirmed_at)
+      values (v_user, v_item, v_borrowed, v_borrowed + interval '7 days',
+              v_borrowed + (interval '1 day' * (1 + random() * 7)), '반납완료', v_src, v_borrowed);
+
+    elsif v_roll < 0.95 then
+      -- 대여중 (0~12일 전에 빌려감 — 7일 기한이라 일부는 자연히 연체 상태가 된다)
+      v_borrowed := now() - (interval '1 day' * (random() * 12));
+      insert into loans (user_id, item_id, borrowed_at, due_at, status, source, qr_confirmed_at)
+      values (v_user, v_item, v_borrowed, v_borrowed + interval '7 days', '대여중', v_src, v_borrowed);
+      update items set available_qty = available_qty - 1
+        where id = v_item and available_qty > 0;
+
+    else
+      -- 예약중 (아직 수령 전이라 due_at/qr_confirmed_at은 NULL)
+      v_borrowed := now() - (interval '1 day' * (random() * 2));
+      insert into loans (user_id, item_id, borrowed_at, status, source)
+      values (v_user, v_item, v_borrowed, '예약중', v_src);
+      update items set available_qty = available_qty - 1
+        where id = v_item and available_qty > 0;
+    end if;
+  end loop;
+
+  -- ---------- 재고 실사 이력 5회 ----------
+  for s in 1..array_length(v_accuracy, 1) loop
+    v_scanned := 38 + floor(random() * 8)::int;
+    v_mismatch := round(v_scanned * (100 - v_accuracy[s]) / 100.0);
+
+    insert into audit_sessions (performed_by, started_at, finished_at, scanned_count)
+    values ('관리자(샘플)',
+            now() - (interval '7 days' * (array_length(v_accuracy, 1) - s + 1)),
+            now() - (interval '7 days' * (array_length(v_accuracy, 1) - s + 1)) + interval '35 minutes',
+            v_scanned)
+    returning id into v_session_id;
+
+    for m in 1..v_mismatch loop
+      insert into audit_mismatches (session_id, item_id, note)
+      values (v_session_id, v_items[1 + floor(random() * v_n_items)::int], '실사 미확인 (샘플)');
+    end loop;
+  end loop;
+
+  raise notice '샘플 데이터 삽입 완료 — 되돌리려면 loans의 id >= % 인 행을 지우세요.', v_first_loan_id;
+end $$;
+
+alter table loans enable trigger trg_guard_loan_insert;
+alter table loans enable trigger trg_guard_loan_self_insert;
+alter table loans enable trigger trg_loans_decrement_stock;
+
+-- ---------- 샘플 데이터 되돌리기 (필요할 때만 실행) ----------
+-- 위 DO 블록이 NOTICE로 알려준 시작 id를 <시작id> 자리에 넣는다. '대여중'/'예약중'이었던
+-- 샘플 행이 깎아둔 재고를 먼저 되돌린 뒤 지워야 재고가 맞는다.
+--
+-- update items i set available_qty = available_qty + sub.cnt
+--   from (select item_id, count(*) cnt from loans
+--         where id >= <시작id> and status in ('대여중', '예약중') group by item_id) sub
+--   where i.id = sub.item_id;
+-- delete from loans where id >= <시작id>;
+-- delete from audit_sessions where performed_by = '관리자(샘플)';  -- mismatches는 cascade로 함께 삭제

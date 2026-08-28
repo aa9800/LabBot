@@ -7,18 +7,33 @@ document.addEventListener("DOMContentLoaded", () => {
   if (!btn || !window.LabBotAuth) return;
 
   btn.addEventListener("click", async () => {
+    // 이미 열려있으면 다시 눌렀을 때 닫히게(토글) — 취소 버튼을 굳이 안 눌러도 되도록.
+    const existing = document.querySelector('.modal-overlay[data-modal="inquiry"]');
+    if (existing) {
+      existing.remove();
+      btn.style.zIndex = ""; // 아래 openInquiryModal에서 올려둔 z-index 원복
+      return;
+    }
+
     const session = await window.LabBotAuth.getSession();
     if (!session) {
       window.LabBotToast.info("로그인 후 문의를 남길 수 있습니다.");
       return;
     }
-    openInquiryModal(session);
+    openInquiryModal(session, btn);
   });
 });
 
-function openInquiryModal(session) {
+function openInquiryModal(session, fabBtn) {
+  // .modal-overlay는 z-index:300으로 전체 화면을 덮어서, 열려있는 동안 그 아래 깔린
+  // FAB 버튼(z-index 없음)은 화면에 보여도 클릭이 오버레이한테 먹혀 버튼까지 안 닿는다.
+  // 모달이 떠 있는 동안만 버튼을 오버레이보다 위로 올려서 "다시 누르면 닫힘"이 실제로
+  // 동작하게 한다 — 닫히면(취소/제출성공/토글) 반드시 원복해야 한다.
+  if (fabBtn) fabBtn.style.zIndex = "301";
+
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
+  overlay.dataset.modal = "inquiry"; // FAB 버튼 토글 클릭 시 이 모달만 식별해서 닫기 위함
   overlay.innerHTML = `
     <div class="modal-card">
       <h3 class="modal-title">관리자에게 문의하기</h3>
@@ -43,19 +58,14 @@ function openInquiryModal(session) {
   document.body.appendChild(overlay);
   overlay.querySelector("#inquirySubjectInput").focus();
 
+  // 취소/보내기 버튼으로만 닫힌다 — 사용자 요청으로 배경 클릭 닫기를 뺐다(입력 중 실수로
+  // 바깥을 눌러 내용이 날아가는 걸 방지).
   const close = () => {
-    document.removeEventListener("keydown", onKeydown);
     overlay.remove();
+    if (fabBtn) fabBtn.style.zIndex = "";
   };
-  const onKeydown = (e) => {
-    if (e.key === "Escape") close();
-  };
-  document.addEventListener("keydown", onKeydown);
 
   overlay.querySelector('[data-action="close"]').addEventListener("click", close);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) close(); // 배경 클릭으로도 닫히게
-  });
 
   overlay.querySelector('[data-action="submit"]').addEventListener("click", async (e) => {
     const subject = overlay.querySelector("#inquirySubjectInput").value.trim();

@@ -106,10 +106,14 @@
   // 3. 사용자 대여/예약 내역 로드
   async function loadUserLoans() {
     if (!window.LabBotAuth) return;
-    const session = await LabBotAuth.currentSession();
-    if (!session) return;
-
+    // auth.js가 내보내는 이름은 getSession이다(currentSession은 존재하지 않는다).
+    // 게다가 이 호출이 try 밖에 있어서, TypeError가 initVirtualLab()까지 그대로 올라가
+    // renderLabCanvas() 이후가 통째로 실행되지 않았다 — 캔버스가 빈 화면이던 원인.
+    // 세션 조회 실패가 캔버스 렌더까지 막지 않도록 try 안으로 넣는다.
     try {
+      const session = await LabBotAuth.getSession();
+      if (!session) return;
+
       const { data, error } = await supabaseClient
         .from("loans")
         .select("*, items(id, name, category, location, item_type, available_qty, total_qty, unit)")
@@ -345,7 +349,7 @@
   // 6. 예약 처리 핸들러
   async function handleReserveClick() {
     if (!window.LabBotAuth) return;
-    const session = await LabBotAuth.currentSession();
+    const session = await LabBotAuth.getSession();
     if (!session) {
       // "warning" 타입은 toast.js에 대응하는 CSS가 없어서(성공/실패/안내 3종류뿐)
       // 아무 색도 안 입혀진 채로 뜬다 — 이 앱에서 안내성 경고는 "info"(앰버색)로 처리한다.

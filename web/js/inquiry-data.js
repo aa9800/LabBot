@@ -12,12 +12,14 @@ async function submitInquiry(session, { subject, message }) {
   return data;
 }
 
-// 내 문의 목록 (마이페이지)
+// 내 문의 목록 (마이페이지) — hidden_by_user로 숨긴 문의는 본인 목록에서 제외한다.
+// DB에서 지운 게 아니라 숨긴 것뿐이라 관리자 쪽 fetchAllInquiries는 그대로 전체를 본다.
 async function fetchMyInquiries(userId) {
   const { data, error } = await supabaseClient
     .from("inquiries")
     .select("*")
     .eq("user_id", userId)
+    .eq("hidden_by_user", false)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
@@ -56,6 +58,14 @@ async function closeInquiry(inquiryId) {
   return data;
 }
 
+// 내 문의 "삭제" (마이페이지, docs/labbot_schema.sql 34번 섹션) — 실제 DB row는 그대로
+// 두고 hidden_by_user만 세운다(관리자는 계속 전체 이력을 봐야 하므로). hide_my_inquiry()
+// RPC가 본인 소유 확인까지 원자적으로 처리한다.
+async function hideMyInquiry(inquiryId) {
+  const { error } = await supabaseClient.rpc("hide_my_inquiry", { p_inquiry_id: inquiryId });
+  if (error) throw error;
+}
+
 const INQUIRY_STATUS_LABEL = { open: "답변대기", answered: "답변완료", closed: "종결" };
 // open은 관리자 조치가 필요한 상태라서, safety_events의 "조치 필요" 배지와 같은
 // 강조색(badge-st-needs_review)을 쓴다 — 중립 회색(badge-pending)은 정작 처리해야
@@ -68,6 +78,7 @@ window.LabBotInquiry = {
   fetchAllInquiries,
   replyInquiry,
   closeInquiry,
+  hideMyInquiry,
   INQUIRY_STATUS_LABEL,
   INQUIRY_STATUS_BADGE_CLASS,
 };

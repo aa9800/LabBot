@@ -895,7 +895,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                   </div>
                   <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center;">
                     <button type="button" class="btn btn-secondary btn-sm" id="scannedItemAuditConfirmBtn">✅ 재고 실사 확정</button>
-                    <button type="button" class="btn btn-primary btn-sm" id="scannedItemViewStockBtn">🔍 재고표에서 보기</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="scannedItemViewStockBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" /><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>재고표에서 보기</button>
                   </div>
                 </div>
               `;
@@ -954,7 +954,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (robotHudOverlay) robotHudOverlay.style.boxShadow = "none";
       } finally {
         robotScanQrBtn.disabled = false;
-        robotScanQrBtn.innerHTML = `🔍 물품 QR 인식하기`;
+        robotScanQrBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" /><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg> 물품 QR 인식하기`;
       }
     });
   }
@@ -2095,6 +2095,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     audit: () => Promise.all([renderAuditChecklist(), renderAuditSessions()]),
     inquiry: () => renderInquiryCards(),
     users: () => renderUserTable(),
+    stats: () => renderStatsPanel(),
   };
 
   function switchTab(target) {
@@ -2168,6 +2169,97 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // ---------- 통계 (관리자 일상 운영 파악용) ----------
+  // 인기 장비 Top5 / 카테고리별 대여 현황 / 연체율은 loans(+items 조인) 하나로 전부 계산되고,
+  // 실사 정확도 추이는 audit_sessions를 재사용한다 — 새 테이블/RPC 없이 기존 데이터 재집계만으로 충분하다.
+  async function renderStatsPanel() {
+    let loans, auditSessions;
+    try {
+      [loans, auditSessions] = await Promise.all([
+        window.LabBotRentals.fetchAllLoans(),
+        window.LabBotAudit.fetchAuditSessions(),
+      ]);
+    } catch (err) {
+      window.LabBotToast.error("통계를 불러오지 못했습니다: " + (err.message || err));
+      return;
+    }
+
+    const { escapeHtml } = window.LabBotItems;
+    // 취소된 예약은 실제 대여로 안 친다 — mypage.js의 총 대여횟수 집계와 같은 기준.
+    const validLoans = loans.filter((l) => l.status !== "취소됨");
+
+    document.getElementById("statsTotalLoans").textContent = validLoans.length;
+
+    // 연체율 — "지금 당장 챙겨야 할 문제"가 반납 완료건에 희석되지 않도록, 현재 대여중인
+    // 건만 놓고 그중 연체 비율을 낸다(요약 카드의 summaryOverdueUsers와 같은 관점).
+    const activeLoans = validLoans.filter((l) => l.status === "대여중");
+    const overdueCount = activeLoans.filter((l) => window.LabBotRentals.isOverdue(l)).length;
+    document.getElementById("statsOverdueRate").textContent =
+      activeLoans.length === 0 ? "0%" : `${Math.round((overdueCount / activeLoans.length) * 100)}%`;
+
+    // 장비 대여 사용량 — 한 번이라도 대여된 물품 전체를 건수 순으로. Top N으로 자르면
+    // "적게 쓰이는 장비"를 못 보게 되는데, 그것도 운영 판단(추가구매/처분)에 필요한 정보다.
+    // 목록이 길어질 수 있어서 표 컨테이너에 max-height(.stats-scroll-table)를 줬다.
+    const itemCounts = new Map(); // item_id -> { name, category, count }
+    validLoans.forEach((l) => {
+      if (!l.items) return; // 삭제된 물품 참조 등
+      const entry = itemCounts.get(l.item_id) || { name: l.items.name, category: l.items.category, count: 0 };
+      entry.count += 1;
+      itemCounts.set(l.item_id, entry);
+    });
+    const topItems = [...itemCounts.values()].sort((a, b) => b.count - a.count);
+
+    const topItemsBody = document.getElementById("statsTopItemsBody");
+    topItemsBody.innerHTML =
+      topItems.length === 0
+        ? `<tr><td colspan="3" class="mono" style="text-align:center; padding: 20px;">대여 이력이 없습니다.</td></tr>`
+        : topItems
+            .map((it) => `<tr><td>${escapeHtml(it.name)}</td><td>${escapeHtml(it.category || "-")}</td><td>${it.count}건</td></tr>`)
+            .join("");
+
+    // 카테고리별 대여 현황 — 비율의 분모는 validLoans.length가 아니라 "카테고리를 알 수 있는
+    // 건수"의 합이어야 한다. 물품이 삭제된 대여 건(items가 null)은 어느 카테고리에도 안 들어가는데
+    // 분모에만 남으면 비율 합이 100%가 안 되고(예: 75%+13%=88%) 표가 틀린 것처럼 보인다.
+    const categoryCounts = new Map();
+    validLoans.forEach((l) => {
+      if (!l.items) return;
+      const cat = l.items.category || "미분류";
+      categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
+    });
+    const categoryRows = [...categoryCounts.entries()].sort((a, b) => b[1] - a[1]);
+    const categorizedTotal = categoryRows.reduce((sum, [, count]) => sum + count, 0);
+
+    const categoryBody = document.getElementById("statsCategoryBody");
+    categoryBody.innerHTML =
+      categoryRows.length === 0
+        ? `<tr><td colspan="3" class="mono" style="text-align:center; padding: 20px;">대여 이력이 없습니다.</td></tr>`
+        : categoryRows
+            .map(
+              ([cat, count]) =>
+                `<tr><td>${escapeHtml(cat)}</td><td>${count}건</td><td>${Math.round((count / categorizedTotal) * 100)}%</td></tr>`
+            )
+            .join("");
+
+    // 재고 실사 정확도 추이 (최신순 5건) — audit_sessions는 이미 "재고 실사" 탭에서 전체
+    // 이력을 보여주므로, 여기서는 최근 흐름만 요약하고 전체는 그쪽 탭으로 안내한다.
+    const recentSessions = [...auditSessions].sort((a, b) => new Date(b.started_at) - new Date(a.started_at)).slice(0, 5);
+    const accuracyOf = (s) => (s.scanned_count === 0 ? null : Math.round(((s.scanned_count - s.mismatch_count) / s.scanned_count) * 100));
+
+    const latestAcc = recentSessions.length === 0 ? null : accuracyOf(recentSessions[0]);
+    document.getElementById("statsLatestAccuracy").textContent = latestAcc === null ? "-" : `${latestAcc}%`;
+
+    const auditBody = document.getElementById("statsAuditTrendBody");
+    auditBody.innerHTML =
+      recentSessions.length === 0
+        ? `<tr><td colspan="5" class="mono" style="text-align:center; padding: 20px;">실사 이력이 없습니다.</td></tr>`
+        : recentSessions
+            .map((s) => {
+              const acc = accuracyOf(s);
+              return `<tr><td class="mono">${new Date(s.started_at).toLocaleDateString("ko-KR")}</td><td>${escapeHtml(s.performed_by)}</td><td>${s.scanned_count}개</td><td>${s.mismatch_count}개</td><td>${acc === null ? "-" : acc + "%"}</td></tr>`;
+            })
+            .join("");
+  }
+
   async function showPanel() {
     forbidden.style.display = "none";
     panel.style.display = "block";
@@ -2181,6 +2273,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await renderAuditSessions();
     await renderInquiryCards();
     await renderUserTable();
+    await renderStatsPanel();
     await renderSummaryCards();
     // startRobotConsolePolling() 호출이 빠져 있어서 로봇 카메라/모드 배지가 아예 갱신되지
     // 않고 있었다(이미지 태그가 항상 빈 채로 남는 문제 — GPT 리뷰 지적의 실제 원인).
