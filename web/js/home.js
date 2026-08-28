@@ -25,6 +25,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
+  // 세그먼트 탭 바 — 대여/반납 각 흐름 안에서, 누른 단계(1/2/3)의 설명만 펼쳐 보여준다.
+  // 흐름마다 탭바가 따로 있으니(.usage-steps 컨테이너 단위로) 이벤트를 그 안에서만 처리한다.
+  document.querySelectorAll(".usage-steps").forEach((stepsContainer) => {
+    const tabs = stepsContainer.querySelectorAll(".step-tab");
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        tabs.forEach((t) => t.classList.remove("active"));
+        tab.classList.add("active");
+
+        stepsContainer.querySelectorAll(".step-detail").forEach((detail) => {
+          detail.classList.toggle("active", detail.dataset.stepDetail === tab.dataset.step);
+        });
+      });
+    });
+  });
+
   // 푸터의 실시간 시계 — 순수 장식이지만, 고정 문구보다 실제로 시계가 돌아가는
   // 편이 이 페이지가 살아있다는 인상을 준다. 서버 시각이 아니라 접속한 브라우저의
   // 로컬 시각이다(별도 API 호출 없이 그냥 눈으로 보는 용도라 충분함).

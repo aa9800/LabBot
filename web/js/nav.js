@@ -1,5 +1,19 @@
 // LabBot - 공통 네비게이션 스크립트
 
+// 다크/일반 모드 — 기본은 다크(지금까지의 디자인)이고, 사용자가 명시적으로 고른
+// 적이 있을 때만 localStorage 값을 따른다. <html> 태그가 이미 파싱된 뒤에(스크립트가
+// body 맨 끝에서 로드되므로) 곧바로 실행해서, 페이지가 다크로 그려졌다가 일반으로
+// 다시 칠해지는 깜빡임을 최대한 줄인다.
+const THEME_KEY = "labbot_theme";
+function applyTheme(theme) {
+  if (theme === "light") {
+    document.documentElement.setAttribute("data-theme", "light");
+  } else {
+    document.documentElement.removeAttribute("data-theme");
+  }
+}
+applyTheme(localStorage.getItem(THEME_KEY));
+
 // 로그인한 사용자의 문의 중 "답변완료"인데 아직 안 알려준 게 있으면 토스트로 알려준다.
 // 페이지를 옮길 때마다(로그인 상태로 있는 한 매 페이지에서) 확인하지만, 한 번 알려준
 // 문의 id는 localStorage에 남겨둬서 같은 답변을 또 알려주지 않는다.
@@ -75,6 +89,39 @@ document.addEventListener("DOMContentLoaded", async () => {
   // DB의 is_admin() RLS가 담당한다.
   if (adminLink) {
     adminLink.style.display = session && session.role === "admin" ? "inline-flex" : "none";  // CSS의 inline-flex와 맞춤(아이콘 정렬 유지)
+  }
+
+  // 다크/일반 모드 전환 버튼 — 모든 페이지의 .nav-links 맨 끝에 여기서 직접 심는다
+  // (HTML 파일마다 각자 넣으면 하나쯤 빠뜨리기 쉬워서 한 곳에서만 관리한다).
+  const navLinksEl = document.querySelector(".nav-links");
+  if (navLinksEl) {
+    const SUN_ICON =
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8L6 18M18 6l1.8-1.8"/></svg>';
+    const MOON_ICON =
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.6A9 9 0 1 1 11.4 3a7 7 0 0 0 9.6 9.6z"/></svg>';
+
+    const themeToggle = document.createElement("button");
+    themeToggle.type = "button";
+    themeToggle.className = "theme-toggle";
+
+    const syncToggleIcon = () => {
+      const isLight = document.documentElement.getAttribute("data-theme") === "light";
+      // 버튼은 "지금 상태"가 아니라 "눌렀을 때 바뀔 상태"를 보여준다 — 다크 모드일 땐
+      // 해 아이콘(누르면 밝아짐), 일반 모드일 땐 달 아이콘(누르면 어두워짐).
+      themeToggle.innerHTML = isLight ? MOON_ICON : SUN_ICON;
+      themeToggle.setAttribute("aria-label", isLight ? "다크 모드로 전환" : "일반 모드로 전환");
+    };
+    syncToggleIcon();
+
+    themeToggle.addEventListener("click", () => {
+      const nowLight = document.documentElement.getAttribute("data-theme") === "light";
+      const next = nowLight ? "dark" : "light";
+      applyTheme(next);
+      localStorage.setItem(THEME_KEY, next);
+      syncToggleIcon();
+    });
+
+    navLinksEl.appendChild(themeToggle);
   }
 
   if (loginLink && session) {

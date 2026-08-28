@@ -169,17 +169,19 @@
       if (!isVisible) return "";
 
       // 재고 상태 계산 (DB 연동)
+      // 뷰포트는 라이트/다크 모드와 무관하게 항상 다크 모드로 고정되므로, 여기 색상도
+      // 테마 변수(var(--accent) 등) 대신 다크 모드 값을 그대로 박아둔다.
       let stockStatus = "AVAILABLE";
-      let statusColor = "#10b981"; // 초록
+      let statusColor = "#00d992"; // 사이트 강조색과 동일한 초록(다크 모드 값 고정)
 
       if (matched) {
         stockStatus = computeStockStatus(matched);
         if (stockStatus === "OUT_OF_STOCK" || stockStatus === "EXPIRED") {
-          statusColor = "#ef4444"; // 빨강
+          statusColor = "#f87171";
         } else if (stockStatus === "LOW_STOCK" || stockStatus === "EXPIRING_SOON") {
-          statusColor = "#f59e0b"; // 노랑
+          statusColor = "#fbbf24";
         } else if (stockStatus === "MAINTENANCE") {
-          statusColor = "#6366f1"; // 보라/인디고
+          statusColor = "#8b949e"; // 점검중은 다른 페이지의 badge-inuse와 같은 중립색
         }
       }
 
@@ -192,7 +194,7 @@
              id="node-${vObj.sceneObjectId}"
              style="left: ${vObj.position.x}%; top: ${vObj.position.y}%;"
              data-obj-id="${vObj.sceneObjectId}">
-          <div class="node-box" style="border-color: ${isSelected ? "#38bdf8" : statusColor}">
+          <div class="node-box" style="border-color: ${isSelected ? "#2fd6a1" : statusColor}">
             <span class="node-code-badge">${vObj.label}</span>
             ${iconSvg}
             <span class="node-status-dot" style="background: ${statusColor}"></span>
@@ -310,7 +312,7 @@
       `;
     } else {
       actionBtnsHtml += `
-        <button class="btn-virtual-action" style="background:#e2e8f0; color:#64748b; cursor:not-allowed;" disabled>
+        <button class="btn-virtual-action" style="background:var(--surface-2); color:var(--text-faint); cursor:not-allowed;" disabled>
           현재 대여/사용 불가
         </button>
       `;
@@ -345,7 +347,9 @@
     if (!window.LabBotAuth) return;
     const session = await LabBotAuth.currentSession();
     if (!session) {
-      if (window.LabBotToast) LabBotToast.show("로그인이 필요한 기능입니다.", "warning");
+      // "warning" 타입은 toast.js에 대응하는 CSS가 없어서(성공/실패/안내 3종류뿐)
+      // 아무 색도 안 입혀진 채로 뜬다 — 이 앱에서 안내성 경고는 "info"(앰버색)로 처리한다.
+      if (window.LabBotToast) LabBotToast.show("로그인이 필요한 기능입니다.", "info");
       setTimeout(() => (window.location.href = "login.html"), 1000);
       return;
     }
@@ -378,20 +382,20 @@
       <div class="virtual-scanner-overlay" id="scannerOverlay">
         <div class="virtual-scanner-modal">
           <h3>${mode === "pickup" ? "가상 QR 수령 스캔" : mode === "usage" ? "가상 QR 사용 스캔" : "가상 QR 반납 스캔"}</h3>
-          <p style="color:#64748b; font-size:0.85rem; margin-top:4px;">
+          <p style="color:var(--text-muted); font-size:0.85rem; margin-top:4px;">
             디지털 트윈 로봇이 대상 물품의 QR 라벨을 확인 중입니다.
           </p>
           <div class="scanner-viewfinder">
             <div class="scanner-laser-line"></div>
-            <div style="font-family:monospace; color:#38bdf8; font-size:0.8rem; z-index:5;">
+            <div style="font-family:var(--font-mono); color:var(--accent-text); font-size:0.8rem; z-index:5;">
               [SCANNING ITEM]
             </div>
           </div>
           ${mode === "usage" ? `
-            <label for="virtualUsageQty" style="display:block; margin:0.75rem 0; color:#334155;">
+            <label for="virtualUsageQty" style="display:block; margin:0.75rem 0; color:var(--text);">
               사용 수량
               <input id="virtualUsageQty" type="number" min="1" max="${Math.max(1, (loan.items?.available_qty || 0) + 1)}" value="1"
-                style="width:100%; margin-top:0.35rem; padding:0.55rem; border:1px solid #cbd5e1; border-radius:8px;" />
+                style="width:100%; margin-top:0.35rem; padding:0.55rem; background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:var(--radius-sm);" />
             </label>` : ""}
           <button class="btn-virtual-action btn-virtual-scan" id="btnConfirmScanAction">
             스캔 인식 완료 (서버 검증 실행)
