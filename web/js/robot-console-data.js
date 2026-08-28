@@ -277,6 +277,21 @@ async function triggerQrScan(localIp) {
   }
 }
 
+async function fetchNightGuardStatus(localIp) {
+  const targetIp = _cachedLocalIp || localIp || _defaultIpForMode();
+  return sendDirectCommand(targetIp, "/guard/status", {}, 1200);
+}
+
+async function configureNightGuard(config = {}, localIp) {
+  const targetIp = _cachedLocalIp || localIp || _defaultIpForMode();
+  return sendDirectCommand(targetIp, "/guard/config", config, 1600);
+}
+
+async function triggerNightGuardInvestigation(localIp) {
+  const targetIp = _cachedLocalIp || localIp || _defaultIpForMode();
+  return sendDirectCommand(targetIp, "/guard/trigger", { source: "admin-test", person: 0 }, 1600);
+}
+
 async function fetchVirtualBinding(itemId) {
   try {
     const { data, error } = await supabaseClient
@@ -454,6 +469,9 @@ window.LabBotRobotConsole = {
   checkStreamHealth,
   fetchCameraAngle,
   fetchTelemetry,
+  fetchNightGuardStatus,
+  configureNightGuard,
+  triggerNightGuardInvestigation,
   triggerQrScan,
   startRobotGuide,
   fetchRobotGuideStatus,

@@ -31,18 +31,106 @@ const SAFETY_STATUS_LABEL = {
 
 const SAFETY_SEVERITY_LABEL = { HIGH: "높음", MEDIUM: "보통", LOW: "낮음" };
 
-async function fetchSafetyEvents({ status = "all", severity = "all" } = {}) {
+const SAFETY_RULE_LABEL = {
+  PATH_OBSTRUCTION: "통로 장애물",
+  FIRE_SAFETY_BLOCK: "소화기 접근 방해",
+  CHEMICAL_UNATTENDED: "시약 장기 방치 의심",
+  CHECKOUT_ITEM_MISMATCH: "대여 물품 불일치",
+  INTRUDER_DETECTED: "비인가 인원 감지",
+  "SR-01": "전방 장애물",
+  "SR-03": "순찰 중 사람 감지",
+  BIOHAZARD_CHECK: "정상 시설 확인(과거 기록)",
+};
+
+const EVIDENCE_NOTE_PATTERN = /\[현장증거사진:\s*([^\]\r\n]+)\]/;
+const NON_ACTIONABLE_RULES = new Set(["BIOHAZARD_CHECK"]);
+
+function getSafetyRuleLabel(ruleId) {
+  return SAFETY_RULE_LABEL[ruleId] || ruleId || "알 수 없는 감지";
+}
+
+function isActionableSafetyEvent(event) {
+  return Boolean(event) && !NON_ACTIONABLE_RULES.has(event.rule_id);
+}
+
+function extractSafetyEvidencePath(event) {
+  const explicitPath = event && event.photo_path;
+  const noteMatch = String((event && event.note) || "").match(EVIDENCE_NOTE_PATTERN);
+  const path = String(explicitPath || (noteMatch && noteMatch[1]) || "").trim().replace(/^\/+/, "");
+  return path && !path.includes("..") ? path : null;
+}
+
+function cleanSafetyNote(note) {
+  return String(note || "").replace(EVIDENCE_NOTE_PATTERN, "").trim();
+}
+
+async function getSafetyEvidenceUrl(event, expiresInSec = 300) {
+  const path = extractSafetyEvidencePath(event);
+  if (!path) return null;
+
+  const { data, error } = await supabaseClient.storage
+    .from("robot-camera")
+    .createSignedUrl(path, expiresInSec);
+  if (error) throw error;
+  return data && data.signedUrl ? data.signedUrl : null;
+}
+
+function extractEventZone(note) {
+  const match = String(note || "").match(/구역\s*\[([^\]]+)\]/);
+  return match ? match[1].trim() : "";
+}
+
+// 과거에 5초 간격으로 저장된 같은 감지는 삭제하지 않고 화면에서 한 묶음으로 보여준다.
+// 상태/구역이 다르면 별개의 사건으로 유지하며, 90초 이상 떨어진 재발도 새 사건으로 본다.
+function collapseRepeatedSafetyEvents(events, windowMs = 90000) {
+  const groupsByKey = new Map();
+  const collapsed = [];
+
+  (events || []).forEach((event) => {
+    const zone = extractEventZone(cleanSafetyNote(event.note));
+    const key = [event.rule_id, event.source, event.status, event.severity, zone].join("|");
+    const eventTime = new Date(event.detected_at).getTime();
+    const previous = groupsByKey.get(key);
+    const canMerge =
+      previous &&
+      Number.isFinite(eventTime) &&
+      Number.isFinite(previous._oldestTime) &&
+      previous._oldestTime - eventTime <= windowMs;
+
+    if (canMerge) {
+      previous.repeat_count += 1;
+      previous._oldestTime = eventTime;
+      previous.first_detected_at = event.detected_at;
+      return;
+    }
+
+    const group = {
+      ...event,
+      repeat_count: 1,
+      first_detected_at: event.detected_at,
+      _oldestTime: eventTime,
+    };
+    groupsByKey.set(key, group);
+    collapsed.push(group);
+  });
+
+  return collapsed.map(({ _oldestTime, ...event }) => event);
+}
+
+async function fetchSafetyEvents({ status = "all", severity = "all", limit = null } = {}) {
   let query = supabaseClient
     .from("safety_events")
     .select("*")
+    .neq("rule_id", "BIOHAZARD_CHECK")
     .order("detected_at", { ascending: false });
 
   if (status !== "all") query = query.eq("status", status);
   if (severity !== "all") query = query.eq("severity", severity);
+  if (Number.isInteger(limit) && limit > 0) query = query.limit(limit);
 
   const { data, error } = await query;
   if (error) throw error;
-  return data;
+  return data || [];
 }
 
 async function fetchSafetyEventDetail(id) {
@@ -82,6 +170,13 @@ window.LabBotSafety = {
   SAFETY_NEXT_ACTIONS,
   SAFETY_STATUS_LABEL,
   SAFETY_SEVERITY_LABEL,
+  SAFETY_RULE_LABEL,
+  getSafetyRuleLabel,
+  isActionableSafetyEvent,
+  cleanSafetyNote,
+  extractSafetyEvidencePath,
+  getSafetyEvidenceUrl,
+  collapseRepeatedSafetyEvents,
   fetchSafetyEvents,
   fetchSafetyEventDetail,
   transitionSafetyEvent,
