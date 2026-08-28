@@ -544,7 +544,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function renderSafetyTable() {
     let events;
     try {
-      events = await window.LabBotSafety.fetchSafetyEvents({ status: safetyStatusFilter.value });
+      const rawEvents = await window.LabBotSafety.fetchSafetyEvents({
+        status: safetyStatusFilter.value,
+        limit: 200,
+      });
+      events = window.LabBotSafety
+        .collapseRepeatedSafetyEvents(rawEvents)
+        .filter(window.LabBotSafety.isActionableSafetyEvent);
     } catch (err) {
       window.LabBotToast.error("안전 이벤트를 불러오지 못했습니다: " + (err.message || err));
       return;
@@ -558,9 +564,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     events.forEach((ev) => {
+      const ruleLabel = window.LabBotSafety.getSafetyRuleLabel(ev.rule_id);
+      const repeatedBadge =
+        ev.repeat_count > 1
+          ? `<span class="safety-repeat-badge" title="같은 위험이 ${ev.repeat_count}회 연속 감지되어 한 건으로 묶였습니다.">반복 ${ev.repeat_count}회</span>`
+          : "";
       const row = document.createElement("tr");
       row.innerHTML = `
-        <td class="mono">${window.LabBotItems.escapeHtml(ev.rule_id)}</td>
+        <td>
+          <div class="safety-rule-cell">
+            <span>${window.LabBotItems.escapeHtml(ruleLabel)}</span>
+            <span class="mono safety-rule-code">${window.LabBotItems.escapeHtml(ev.rule_id)}</span>
+            ${repeatedBadge}
+          </div>
+        </td>
         <td>${severityBadge(ev.severity)}</td>
         <td>${statusBadge(ev.status)}</td>
         <td>${window.LabBotItems.escapeHtml(ev.source)}</td>
@@ -582,16 +599,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     const nextActions = window.LabBotSafety.SAFETY_NEXT_ACTIONS[event.status] || [];
+    const ruleLabel = window.LabBotSafety.getSafetyRuleLabel(event.rule_id);
+    const cleanNote = window.LabBotSafety.cleanSafetyNote(event.note);
+    const evidencePath = window.LabBotSafety.extractSafetyEvidencePath(event);
+    let evidenceUrl = null;
+    let evidenceLoadFailed = false;
+    if (evidencePath) {
+      try {
+        evidenceUrl = await window.LabBotSafety.getSafetyEvidenceUrl(event);
+      } catch (err) {
+        evidenceLoadFailed = true;
+        console.warn("LabBot: 안전 이벤트 증거 사진을 불러오지 못했습니다", err);
+      }
+    }
 
     safetyDetail.style.display = "block";
     safetyDetail.innerHTML = `
-      <div class="safety-detail-row"><span class="label">규칙</span><span class="mono">${window.LabBotItems.escapeHtml(event.rule_id)}</span></div>
+      <div class="safety-detail-row"><span class="label">감지 항목</span><span>${window.LabBotItems.escapeHtml(ruleLabel)} <span class="mono safety-rule-code">${window.LabBotItems.escapeHtml(event.rule_id)}</span></span></div>
       <div class="safety-detail-row"><span class="label">심각도</span>${severityBadge(event.severity)}</div>
       <div class="safety-detail-row"><span class="label">상태</span>${statusBadge(event.status)}</div>
       <div class="safety-detail-row"><span class="label">출처</span><span>${window.LabBotItems.escapeHtml(event.source)}</span></div>
       <div class="safety-detail-row"><span class="label">감지시각</span><span class="mono">${new Date(event.detected_at).toLocaleString("ko-KR")}</span></div>
-      <div class="safety-detail-row"><span class="label">감지 메모</span><span>${window.LabBotItems.escapeHtml(event.note) || "-"}</span></div>
+      <div class="safety-detail-row"><span class="label">감지 메모</span><span>${window.LabBotItems.escapeHtml(cleanNote) || "-"}</span></div>
       ${event.resolved_at ? `<div class="safety-detail-row"><span class="label">조치 메모</span><span>${window.LabBotItems.escapeHtml(event.resolution_note) || "-"}</span></div>` : ""}
+
+      ${evidencePath ? `<div class="safety-evidence" id="safetyEvidenceSlot" aria-live="polite"></div>` : ""}
 
       <p class="label" style="margin-top: 14px;">처리 이력</p>
       <ul class="safety-log-list">
@@ -613,6 +645,30 @@ document.addEventListener("DOMContentLoaded", async () => {
           : `<p class="mono" style="margin-top: 10px; color: var(--text-faint);">이미 종결된 이벤트라 더 이상 상태를 바꿀 수 없습니다.</p>`
       }
     `;
+
+    const evidenceSlot = safetyDetail.querySelector("#safetyEvidenceSlot");
+    if (evidenceSlot) {
+      const evidenceTitle = document.createElement("p");
+      evidenceTitle.className = "safety-evidence-title";
+      evidenceTitle.textContent = "감지 당시 현장 사진";
+      evidenceSlot.appendChild(evidenceTitle);
+
+      if (evidenceUrl) {
+        const image = document.createElement("img");
+        image.className = "safety-evidence-image";
+        image.src = evidenceUrl;
+        image.alt = `${ruleLabel} 감지 당시 로봇 카메라 사진`;
+        image.loading = "lazy";
+        evidenceSlot.appendChild(image);
+      } else {
+        const message = document.createElement("p");
+        message.className = "safety-evidence-unavailable";
+        message.textContent = evidenceLoadFailed
+          ? "사진 파일을 불러오지 못했습니다. 저장소 연결 상태를 확인해 주세요."
+          : "사진 파일 주소를 확인할 수 없습니다.";
+        evidenceSlot.appendChild(message);
+      }
+    }
 
     safetyDetail.querySelectorAll("[data-next]").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -980,38 +1036,77 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // 야간 방범 순찰 & 침입자 자동 추적 토글
-  let intruderGuardActive = false;
+  // 야간 경비 정책: 정기순찰 ↔ 센서대기 ↔ 이상 재확인 ↔ 조사 주행
+  let latestNightGuardStatus = null;
   const robotIntruderGuardBtn = document.getElementById("robotIntruderGuardBtn");
+  const nightPatrolInterval = document.getElementById("nightPatrolInterval");
+  const nightGuardNextPatrol = document.getElementById("nightGuardNextPatrol");
   const aiGuardStatusBadge = document.getElementById("aiGuardStatusBadge");
   const aiLiveDetectionsList = document.getElementById("aiLiveDetectionsList");
   const aiGuardActionText = document.getElementById("aiGuardActionText");
+
+  function renderNightGuardStatus(guard) {
+    if (!guard) return;
+    latestNightGuardStatus = guard;
+    const active = !!guard.active;
+    const enabled = !!guard.enabled;
+    const investigating = guard.state === "investigating";
+    if (nightPatrolInterval && document.activeElement !== nightPatrolInterval) {
+      nightPatrolInterval.value = String(guard.patrol_interval_minutes || 30);
+    }
+    if (robotIntruderGuardBtn) {
+      robotIntruderGuardBtn.classList.toggle("btn-toggle-active", enabled && !investigating);
+      robotIntruderGuardBtn.classList.toggle("btn-toggle-danger-active", investigating);
+      robotIntruderGuardBtn.textContent = enabled ? "🌙 자동 야간 경비 켜짐" : "🌙 자동 야간 경비 꺼짐";
+    }
+    if (aiGuardStatusBadge) {
+      aiGuardStatusBadge.className = `badge ${investigating ? "badge-st-closed" : active ? "badge-st-resolved" : enabled ? "badge-st-in_progress" : "badge-st-open"}`;
+      aiGuardStatusBadge.innerHTML = `<span class="badge-dot"></span>${guard.label || "상태 확인"}`;
+    }
+    if (aiGuardActionText) {
+      aiGuardActionText.textContent = guard.reason ? `${guard.label} · ${guard.reason}` : (guard.label || "대기 중");
+      aiGuardActionText.style.color = investigating ? "var(--danger)" : "var(--text-muted)";
+    }
+    if (nightGuardNextPatrol) {
+      const remain = guard.next_patrol_in_seconds;
+      nightGuardNextPatrol.textContent = active && Number.isFinite(remain)
+        ? `다음 순찰 ${Math.ceil(remain / 60)}분 후`
+        : enabled ? `${String(guard.start_hour).padStart(2, "0")}:00 자동 시작` : "";
+    }
+  }
 
   if (robotIntruderGuardBtn) {
     robotIntruderGuardBtn.addEventListener("click", async () => {
       const localIp = robotCurrentIp || "127.0.0.1";
       try {
-        const res = await window.LabBotRobotConsole.toggleIntruderGuard(localIp);
-        intruderGuardActive = !!(res && res.intruder_guard_mode);
-        if (intruderGuardActive) {
-          robotIntruderGuardBtn.classList.add("btn-toggle-danger-active");
-          robotIntruderGuardBtn.textContent = "방범 순찰 가동 중";
-          if (aiGuardStatusBadge) {
-            aiGuardStatusBadge.className = "badge badge-st-resolved";
-            aiGuardStatusBadge.innerHTML = `<span class="badge-dot"></span>방범 가동 중`;
-          }
-          window.LabBotToast.success("야간 방범 모드가 활성화되었습니다. 침입자 감지 시 부저 및 자동 추적이 실행됩니다.");
-        } else {
-          robotIntruderGuardBtn.classList.remove("btn-toggle-danger-active");
-          robotIntruderGuardBtn.textContent = "방범 순찰 모드";
-          if (aiGuardStatusBadge) {
-            aiGuardStatusBadge.className = "badge badge-st-open";
-            aiGuardStatusBadge.innerHTML = `<span class="badge-dot"></span>방범 대기`;
-          }
-          window.LabBotToast.info("방범 순찰 모드가 해제되었습니다.");
-        }
+        const enabled = !(latestNightGuardStatus?.enabled ?? true);
+        const res = await window.LabBotRobotConsole.configureNightGuard({
+          enabled: enabled ? 1 : 0,
+          patrol_interval_minutes: Number(nightPatrolInterval?.value || 30),
+        }, localIp);
+        renderNightGuardStatus(res);
+        window.LabBotToast[enabled ? "success" : "info"](
+          enabled
+            ? "자동 야간 경비를 켰습니다. 밤에는 정기순찰 사이 센서 대기로 전환됩니다."
+            : "자동 야간 경비를 껐습니다. 기존 주간 대여 보조 운행은 유지됩니다."
+        );
       } catch (err) {
-        window.LabBotToast.error("방범 모드 전환 실패: " + (err.message || err));
+        window.LabBotToast.error("야간 경비 설정 실패: " + (err.message || err));
+      }
+    });
+  }
+
+  if (nightPatrolInterval) {
+    nightPatrolInterval.addEventListener("change", async () => {
+      try {
+        const res = await window.LabBotRobotConsole.configureNightGuard({
+          enabled: latestNightGuardStatus?.enabled === false ? 0 : 1,
+          patrol_interval_minutes: Number(nightPatrolInterval.value),
+        }, robotCurrentIp || "127.0.0.1");
+        renderNightGuardStatus(res);
+        window.LabBotToast.success(`야간 순찰 간격을 ${nightPatrolInterval.value}분으로 변경했습니다.`);
+      } catch (err) {
+        window.LabBotToast.error("순찰 간격 변경 실패: " + (err.message || err));
       }
     });
   }
@@ -1036,13 +1131,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       const localIp = robotCurrentIp || "127.0.0.1";
       const status = await window.LabBotRobotConsole.fetchAiStatus(localIp);
       if (status && status.status === "ok") {
-        if (aiGuardActionText) {
+        if (aiGuardActionText && status.guard_action && status.guard_action.includes("TRACKING")) {
           aiGuardActionText.textContent = status.guard_action || "대기 중";
-          if (status.guard_action && status.guard_action.includes("TRACKING")) {
-            aiGuardActionText.style.color = "var(--danger)";
-          } else {
-            aiGuardActionText.style.color = "var(--text-muted)";
-          }
+          aiGuardActionText.style.color = "var(--danger)";
+        } else if (latestNightGuardStatus) {
+          renderNightGuardStatus(latestNightGuardStatus);
         }
 
         if (aiLiveDetectionsList) {
@@ -1347,12 +1440,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       const telemetry = await window.LabBotRobotConsole.fetchTelemetry(600);
       if (telemetry) {
+        if (telemetry.night_guard) renderNightGuardStatus(telemetry.night_guard);
         const dist = telemetry.distance_cm;
         if (hudDistanceBadge) {
           hudDistanceBadge.innerHTML = `📏 <strong>${dist !== undefined && dist < 900 ? dist.toFixed(1) + " cm" : "측정 중"}</strong>`;
         }
         if (hudSafetyBadge) {
-          if (dist !== undefined && dist < 40.0) {
+          const avoidance = telemetry.avoidance;
+          if (avoidance && avoidance.active) {
+            const mustWait = avoidance.state === "wait_person" || avoidance.state === "blocked_wait";
+            hudSafetyBadge.className = `hud-tag ${mustWait ? "hud-status-danger" : "hud-status-warning"}`;
+            hudSafetyBadge.textContent = `${mustWait ? "🛑" : "↪️"} ${avoidance.label || "장애물 우회 중"}`;
+            robotCameraImg.style.borderColor = mustWait ? "#ef4444" : "#f59e0b";
+            robotCameraImg.style.boxShadow = mustWait
+              ? "0 0 16px rgba(239, 68, 68, 0.7)"
+              : "0 0 16px rgba(245, 158, 11, 0.55)";
+          } else if (dist !== undefined && dist < 40.0) {
             hudSafetyBadge.className = "hud-tag hud-status-danger";
             hudSafetyBadge.innerHTML = "🛑 전방 장애물 위험!";
             robotCameraImg.style.borderColor = "#ef4444";
@@ -2157,7 +2260,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById("summaryPendingDamage").textContent = damageReports.filter(
         (r) => r.status !== "analyzed"
       ).length;
-      document.getElementById("summaryNeedsReview").textContent = safetyEvents.filter(
+      const visibleSafetyEvents = window.LabBotSafety
+        .collapseRepeatedSafetyEvents(safetyEvents)
+        .filter(window.LabBotSafety.isActionableSafetyEvent);
+      document.getElementById("summaryNeedsReview").textContent = visibleSafetyEvents.filter(
         (e) => e.status === "NEEDS_REVIEW"
       ).length;
       document.getElementById("summaryPendingInquiry").textContent = inquiries.filter(
