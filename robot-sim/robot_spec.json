@@ -1,0 +1,57 @@
+{
+  "model": "Yahboom Raspbot (Raspberry Pi 5)",
+  "specStatus": "MIXED_MEASURED_AND_PROVISIONAL",
+  "productCode": "ICbanQ P016883920",
+  "dimensionsM": {
+    "length": 0.185,
+    "width": 0.155,
+    "height": 0.145,
+    "verification": "PROVISIONAL_REMEASURE_ON_PHYSICAL_ROBOT"
+  },
+  "drive": {
+    "type": "4wd_skid_steer",
+    "motorCount": 4,
+    "motorType": "TT_DC_Gear_Motor",
+    "controlChannels": 2,
+    "wheelDiameterM": 0.065,
+    "wheelRadiusM": 0.0325,
+    "trackWidthM": 0.135,
+    "measurementStatus": "MEASURED_2026-08-26",
+    "wheelBaseM": 0.095,
+    "pwmMin": -100,
+    "pwmMax": 100,
+    "defaultSpeed": 70,
+    "turnGain": 90
+  },
+  "camera": {
+    "type": "Pi_Camera_HD_PanTilt",
+    "heightM": 0.125,
+    "forwardOffsetM": 0.06,
+    "horizontalFovDeg": 62.2,
+    "panMinDeg": 0,
+    "panMaxDeg": 180,
+    "panDefaultDeg": 90,
+    "tiltMinDeg": 0,
+    "tiltMaxDeg": 180,
+    "tiltDefaultDeg": 90
+  },
+  "ultrasonic": {
+    "type": "HC-SR04",
+    "heightM": 0.075,
+    "forwardOffsetM": 0.085,
+    "fovDeg": 30.0,
+    "stopDistanceCm": 40.0,
+    "clearDistanceCm": 50.0
+  },
+  "lineSensors": {
+    "count": 4,
+    "spanM": 0.06,
+    "forwardOffsetM": 0.08,
+    "channelNames": [
+      "left",
+      "mid_left",
+      "mid_right",
+      "right"
+    ]
+  }
+}

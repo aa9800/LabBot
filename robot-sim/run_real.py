@@ -1,6 +1,5 @@
 """실제 Raspbot(라즈베리파이5)에서 실행하는 진입점.
 
-main.py(pygame)·labkeeper_controller.py(Webots)와 같은 구조를 그대로 따른다 —
 controller.py(PatrolController)와 notify_supabase.py는 손대지 않고 그대로 재사용,
 HAL만 RealHAL로 바꿔 끼운다.
 
@@ -10,7 +9,7 @@ HAL만 RealHAL로 바꿔 끼운다.
 다음에 올리는 게 맞다. 지금은 코드만 준비해두는 단계.)
 
 조작(터미널에서 Ctrl+C로 종료 외에는 무인 자동 순찰):
-  - 웹 Robot Console에서 수동조작으로 바꾸면 여기서도 Webots와 동일하게 반응한다
+  - 웹 Robot Console에서 수동조작으로 바꾸면 Isaac Sim과 동일하게 반응한다
     (3초 안에 새 명령이 안 오면 dead-man switch로 자동 정지).
   - SPACE/C/R/M/F/N 같은 pygame 키 조작은 실물에는 해당 사항이 없다(화면이 없음).
 """
@@ -28,15 +27,15 @@ from run_logger import JsonlRunLogger
 import event_queue
 import stream_server
 
-TICK_SECONDS = 0.05  # 20Hz — 실물 초음파 측정(최대 0.03초 x 2)이 있어서 pygame 60Hz보다 낮춤
+TICK_SECONDS = 0.05  # 20Hz — 실물 초음파 측정(최대 0.03초 x 2)이 있어서 60Hz보다 낮춤
 TELEMETRY_LOG_EVERY = 20  # 약 1초마다 텔레메트리 기록
-MANUAL_COMMAND_MAX_AGE_SECONDS = 3.0  # Webots와 동일한 dead-man switch 기준
+MANUAL_COMMAND_MAX_AGE_SECONDS = 3.0  # dead-man switch 기준
 
 _ROBOT_SIM_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
 def _command_age_seconds(command):
-    """labkeeper_controller.py와 동일한 로직 — updated_at을 못 읽으면 무조건 "끊김"으로 처리."""
+    """updated_at을 못 읽으면 무조건 "끊김"으로 처리."""
     updated_at = command.get("updated_at")
     if not updated_at:
         return float("inf")

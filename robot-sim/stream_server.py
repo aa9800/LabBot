@@ -196,10 +196,37 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
             if code:
-                res = {"status": "ok", "found": True, "code": code, "timestamp": time.time()}
+                res = {"status": "ok", "found": True, "timestamp": time.time()}
+                if isinstance(code, dict):
+                    res.update(code)
+                else:
+                    res["code"] = code
             else:
                 res = {"status": "ok", "found": False, "message": "QR 코드가 감지되지 않았습니다. 카메라 각도를 맞춰주세요."}
             self.wfile.write(json.dumps(res).encode("utf-8"))
+        elif req_path == "/guide/start":
+            if _guide_start_callback is None:
+                self._send_json_error(501, "이 로봇은 물품 안내를 지원하지 않습니다.")
+                return
+            parsed = urlparse(self.path)
+            qs = parse_qs(parsed.query)
+            params = {key: values[0] for key, values in qs.items()}
+            try:
+                result = _guide_start_callback(params)
+                self._send_json(200, {"status": "ok", **(result or {})})
+            except (ValueError, KeyError) as e:
+                self._send_json_error(404, str(e))
+            except Exception as e:
+                self._send_json_error(500, f"안내 시작 실패: {e}")
+        elif req_path == "/guide/status":
+            result = _guide_status_callback() if _guide_status_callback is not None else {"status": "unsupported"}
+            self._send_json(200, result)
+        elif req_path in ("/guide/complete", "/guide/cancel"):
+            if _guide_finish_callback is None:
+                self._send_json_error(501, "이 로봇은 물품 안내를 지원하지 않습니다.")
+                return
+            result = _guide_finish_callback("completed" if req_path.endswith("complete") else "cancelled")
+            self._send_json(200, {"status": "ok", **(result or {})})
         elif req_path.startswith("/buzzer"):
             # 웹 버튼 클릭 시 경보 부저 작동.
             # 콜백이 없거나 실패하면 정직하게 실패를 돌려준다 — 예전에는 무조건
@@ -273,12 +300,15 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def _send_json_error(self, status_code, message):
+        self._send_json(status_code, {"status": "error", "message": message})
+
+    def _send_json(self, status_code, body):
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
-        self.wfile.write(json.dumps({"status": "error", "message": message}).encode("utf-8"))
+        self.wfile.write(json.dumps(body).encode("utf-8"))
 
 
 _camera_angle_callback = None
@@ -286,6 +316,9 @@ _drive_callback = None
 _telemetry_provider = None
 _qr_scan_callback = None
 _buzzer_callback = None
+_guide_start_callback = None
+_guide_status_callback = None
+_guide_finish_callback = None
 
 
 def set_buzzer_callback(cb):
@@ -323,6 +356,14 @@ def set_telemetry_provider(fn):
     """실시간 텔레메트리 제공 함수 등록 (거리, 모드, 서보 각도 등)."""
     global _telemetry_provider
     _telemetry_provider = fn
+
+
+def set_guide_callbacks(start=None, status=None, finish=None):
+    """물품 안내 시작/상태/종료 콜백을 등록한다."""
+    global _guide_start_callback, _guide_status_callback, _guide_finish_callback
+    _guide_start_callback = start
+    _guide_status_callback = status
+    _guide_finish_callback = finish
 
 
 def set_camera_frame(jpeg_bytes: bytes):

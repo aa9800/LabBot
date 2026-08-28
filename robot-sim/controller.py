@@ -3,10 +3,10 @@
 HAL(hal 인자)에만 의존하고 pygame이나 GPIO를 직접 건드리지 않는다.
 그래서 SimHAL로 연습한 이 파일을 나중에 RealHAL로 그대로 바꿔 끼울 수 있다.
 """
-SPEED = 70.0
-TURN_GAIN = 90.0
+SPEED = 100.0
+TURN_GAIN = 100.0
 OBSTACLE_STOP_DISTANCE = 40
-# 정지 기준과 해제 기준을 같게 두면 Webots 물리 관성이나 실제 초음파 노이즈 때문에
+# 정지 기준과 해제 기준을 같게 두면 물리 엔진 관성이나 실제 초음파 노이즈 때문에
 # 39.9cm/40.1cm 경계에서 감지와 해제가 반복된다. 10cm 히스테리시스로 이벤트 스팸과
 # 모터의 떨림을 막는다.
 OBSTACLE_CLEAR_DISTANCE = 50
@@ -66,13 +66,17 @@ class PatrolController:
             self._scanned_marker = None
 
         left, mid_l, mid_r, right = self.hal.read_line_sensors()
-        if mid_l or mid_r:
+        if mid_l and mid_r:
             turn = 0.0
+        elif mid_l:
+            turn = -30.0
+        elif mid_r:
+            turn = 30.0
         elif left:
             turn = -TURN_GAIN
         elif right:
             turn = TURN_GAIN
         else:
-            turn = TURN_GAIN  # 라인을 완전히 잃으면(대개 코너) 한쪽으로 돌며 재탐색
+            turn = 25.0  # 라인을 일시 이탈했을 때 완만한 선회로 부드럽게 재진입
 
         self.hal.set_motion(SPEED, turn)

@@ -1,6 +1,6 @@
 """실제 Raspbot(Raspberry Pi 5 + Yahboom Raspbot)용 HAL.
 
-sim/hal_sim.py, webots_hal.py, isaac_hal.py와 반드시 같은 5개 메서드
+sim/hal_sim.py, isaac_hal.py와 반드시 같은 5개 메서드
 (read_line_sensors / read_ultrasonic / try_read_qr / set_motion / stop)를
 같은 시그니처로 구현한다 — controller.py(PatrolController)는 한 글자도 고치지 않는다.
 
@@ -23,14 +23,14 @@ Yahboom 공식 데모 노트북에서 직접 읽어와 그대로 옮긴 것이�
 
 라인트래킹 센서가 "선을 감지"할 때 GPIO 입력이 LOW(False)가 되는 반사형 IR 모듈이라는 것도
 같은 노트북의 주석("四路循迹引脚电平状态"/이하 상태표)에서 확인했다 — 그래서 아래에서는
-`not GPIO.input(pin)`으로 뒤집어서 "선 위에 있으면 True"로 SimHAL/WebotsHAL과 의미를 맞춘다.
+`not GPIO.input(pin)`으로 뒤집어서 "선 위에 있으면 True"로 SimHAL/IsaacHAL과 의미를 맞춘다.
 
 ## set_motion(speed, turn) 변환 방식 (엔지니어링 결정, 실측 아님)
 
 controller.py는 SPEED=70, TURN_GAIN=90 같은 값을 그대로 내려보낸다 — 이 값들은 이미
 Yahboom 데모들이 Car_Run(70, 70)처럼 직접 쓰는 0~100 PWM 스케일과 같은 자릿수라서,
-Webots/Isaac처럼 m/s로 변환하지 않고 UI 계약(음수=좌회전, 양수=우회전)에 맞춰
-left = speed + turn, right = speed - turn으로 섞은 뒤 [-100, 100]으로 클램프한다. 이건 하드웨어 사양이 아니라
+속도(전후진)와 조향(좌우)을 받아서 양쪽 바퀴 모터를 구동한다.
+각 바퀴에 필요한 스칼라 차동값을 즉시 YB_Pcb_Car로 내린다. 이건 하드웨어 사양이 아니라
 이 프로젝트에서 고른 변환 공식이라는 점을 분명히 해둔다.
 """
 import math
@@ -94,6 +94,8 @@ class RealHAL:
             self._buzzer_pwm.start(0)  # 듀티 0 = 무음 대기
         except Exception as e:
             print(f"[RealHAL] 부저 초기화 실패: {e}")
+
+        self._init_leds()
 
         self.car = YB_Pcb_Car.YB_Pcb_Car()
         self.last_speed = 0.0
@@ -322,8 +324,112 @@ class RealHAL:
         threading.Thread(target=_buzz, daemon=True).start()
         return {"status": "ok", "buzzer": True, "duration_sec": duration_sec}
 
-    # 경광등(RGB LED)은 만들지 않는다 — 이 보드의 LED(BOARD 38/40)는 표시등 수준이라
-    # 실내에서 경보로 인식이 안 된다는 판단(2026-08-27 실기기 확인). 경보는 부저로만 한다.
+    # ── LED 상태 표시등 (BOARD 38=파랑, BOARD 40=빨강, 단순 ON/OFF) ─────
+    # Ctrl_RGB()는 이 보드에 존재하지 않는다. 실제로는 GPIO 2핀짜리 LED만 있다.
+    # 조합 가능한 상태: 꺼짐 / 파랑만 / 빨강만 / 파랑+빨강 동시 (보라빛)
+
+    LED_BLUE_PIN = 38
+    LED_RED_PIN = 40
+
+    def _init_leds(self):
+        """LED 핀 초기화 — __init__에서 호출."""
+        try:
+            GPIO.setup(self.LED_BLUE_PIN, GPIO.OUT)
+            GPIO.setup(self.LED_RED_PIN, GPIO.OUT)
+            GPIO.output(self.LED_BLUE_PIN, GPIO.LOW)
+            GPIO.output(self.LED_RED_PIN, GPIO.LOW)
+        except Exception as e:
+            print(f"[RealHAL] LED 초기화 실패: {e}")
+
+    def set_status_led(self, status: str):
+        """상태에 따라 LED를 켜고 끈다.
+        - 'patrol': 파랑만 (정상 순찰)
+        - 'alert': 빨강만 (침입자/긴급)
+        - 'manual': 파랑+빨강 (수동 조작)
+        - 'off': 전부 끔
+        """
+        blue = GPIO.LOW
+        red = GPIO.LOW
+        if status == "patrol":
+            blue = GPIO.HIGH
+        elif status == "alert":
+            red = GPIO.HIGH
+        elif status in ("manual", "ai"):
+            blue = GPIO.HIGH
+            red = GPIO.HIGH
+        try:
+            GPIO.output(self.LED_BLUE_PIN, blue)
+            GPIO.output(self.LED_RED_PIN, red)
+        except Exception:
+            pass
+
+    def flash_alert_led(self, duration_sec: float = 2.0):
+        """빨강 LED 깜빡임 — 침입자 감지 등 긴급 시."""
+        def _flash():
+            try:
+                for _ in range(max(1, int(duration_sec * 3))):
+                    GPIO.output(self.LED_RED_PIN, GPIO.HIGH)
+                    time.sleep(0.16)
+                    GPIO.output(self.LED_RED_PIN, GPIO.LOW)
+                    time.sleep(0.16)
+            except Exception:
+                pass
+        threading.Thread(target=_flash, daemon=True).start()
+
+    # ── 부저 멜로디 패턴 ──────────────────────────────────────────────
+    # 패시브 부저라 주파수를 바꾸면 다른 음이 난다.
+    # 상황별로 다른 소리를 내서 구분할 수 있게 한다.
+
+    def buzz_success(self):
+        """짧은 성공음 (QR 스캔 성공 등) — 높은 음 1회."""
+        if self._buzzer_pwm is None:
+            return
+        def _beep():
+            try:
+                self._buzzer_pwm.ChangeFrequency(880)
+                self._buzzer_pwm.ChangeDutyCycle(BUZZER_DUTY)
+                time.sleep(0.15)
+                self._buzzer_pwm.ChangeDutyCycle(0)
+                self._buzzer_pwm.ChangeFrequency(BUZZER_FREQ_HZ)
+            except Exception:
+                pass
+        threading.Thread(target=_beep, daemon=True).start()
+
+    def buzz_warning(self):
+        """경고음 — 중간 음 2회."""
+        if self._buzzer_pwm is None:
+            return
+        def _warn():
+            try:
+                for _ in range(2):
+                    self._buzzer_pwm.ChangeFrequency(660)
+                    self._buzzer_pwm.ChangeDutyCycle(BUZZER_DUTY)
+                    time.sleep(0.2)
+                    self._buzzer_pwm.ChangeDutyCycle(0)
+                    time.sleep(0.15)
+                self._buzzer_pwm.ChangeFrequency(BUZZER_FREQ_HZ)
+            except Exception:
+                pass
+        threading.Thread(target=_warn, daemon=True).start()
+
+    def buzz_siren(self, duration_sec: float = 3.0):
+        """사이렌 패턴 — 고저음 반복 (침입자 경보용)."""
+        if self._buzzer_pwm is None:
+            return
+        def _siren():
+            try:
+                for _ in range(max(1, int(duration_sec * 2))):
+                    self._buzzer_pwm.ChangeFrequency(1000)
+                    self._buzzer_pwm.ChangeDutyCycle(BUZZER_DUTY)
+                    time.sleep(0.15)
+                    self._buzzer_pwm.ChangeFrequency(400)
+                    self._buzzer_pwm.ChangeDutyCycle(BUZZER_DUTY)
+                    time.sleep(0.15)
+                self._buzzer_pwm.ChangeDutyCycle(0)
+                self._buzzer_pwm.ChangeFrequency(BUZZER_FREQ_HZ)
+            except Exception:
+                pass
+        threading.Thread(target=_siren, daemon=True).start()
 
     def cleanup(self):
         """프로그램 종료 시 호출 — 카메라 스레드 정지 + GPIO 핀 정리. controller.py의

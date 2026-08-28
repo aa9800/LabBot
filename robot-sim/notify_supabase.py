@@ -1,8 +1,7 @@
-"""Webots(labkeeper_controller)가 실제 Supabase DB(web/과 같은 DB)에 붙는 헬퍼.
+"""로봇(실물/Isaac Sim)이 실제 Supabase DB(web/과 같은 DB)에 붙는 헬퍼.
 
-notify.py(기존, pygame용 — LabKeeper 로컬 FastAPI 서버를 본다)는 그대로 두고,
-이 파일을 새로 만들었다. 이유: 지훈님이 만든 실제 웹은 이제 그 FastAPI가 아니라
-Supabase를 직접 쓰기 때문에, Webots 쪽만 이 새 모듈로 갈아 끼운다.
+이전에는 pygame 시뮬레이터가 event_queue와 relay.py를 통해 통신했다면,
+Isaac Sim과 실물 로봇은 Supabase를 직접 쓴다.
 
 표준 라이브러리(urllib)만 쓴다 — notify.py와 같은 이유(새 의존성 추가 안 함).
 
@@ -91,6 +90,20 @@ def fetch_robot_command():
     except (urllib.error.URLError, OSError) as e:
         print(f"[notify_supabase] 원격조작 명령을 못 가져왔습니다(자동 순찰 유지): {e}")
     return {"mode": "auto", "speed": 0.0, "turn": 0.0, "cam_pan": 90, "cam_tilt": 90}
+
+
+def fetch_robot_local_ip():
+    """AI 중계기가 사용할 현재 로봇 직결 IP를 읽는다."""
+    if not _READY:
+        return None
+    url = f"{SUPABASE_URL}/rest/v1/robot_commands?id=eq.1&select=local_ip"
+    req = urllib.request.Request(url, headers=_headers(), method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            rows = json.loads(resp.read().decode("utf-8"))
+            return rows[0].get("local_ip") if rows else None
+    except (urllib.error.URLError, OSError):
+        return None
 
 
 def upload_camera_snapshot_bytes(data: bytes, bucket: str = "robot-camera", object_path: str = "latest.jpg"):

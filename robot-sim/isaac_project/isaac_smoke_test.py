@@ -1,8 +1,10 @@
-"""2단계 검증: controller.py(PatrolController)가 IsaacHAL을 통해 실제로 Jetbot을
-움직이는지 확인 — pygame(SimHAL)/Webots(WebotsHAL)에 이어 세 번째 HAL 교체.
+"""Isaac Sim + isaac_hal.py + controller.py 연동 스모크 테스트.
 
-controller.py는 파일 이름 그대로 import한다(Webots처럼 importlib로 우회할 필요 없음 —
-Isaac Sim은 Webots와 달리 'controller'라는 내장 모듈 이름 충돌이 없다). robot-sim/ 루트를
+omni.usd 환경에서 IsaacHAL을 주입한 PatrolController가 에러 없이 
+움직이는지 확인.
+
+controller.py는 파일 이름 그대로 import한다. 
+Isaac Sim은 내장 모듈 이름 충돌이 없다. robot-sim/ 루트를
 sys.path에 추가해서 controller.py를 그대로 재사용한다.
 
 시나리오: 로봇이 사각 루프를 따라 순찰하다가, 5초 지점에 코드로 장애물을 "등장"시켜서

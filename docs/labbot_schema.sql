@@ -1638,3 +1638,255 @@ alter table user_warnings enable row level security;
 drop policy if exists "user_warnings_admin_only" on user_warnings;
 create policy "user_warnings_admin_only" on user_warnings
   for all using (is_admin()) with check (is_admin());
+
+-- =============================================================
+-- 32. 가상 실험실 디지털 트윈 바인딩 + QR 비밀값 비노출 가상 스캔
+-- =============================================================
+
+create table if not exists virtual_lab_objects (
+  scene_object_id text primary key,
+  item_id bigint not null references items(id) on delete cascade,
+  room text not null,
+  display_mode text not null default 'single' check (display_mode in ('single', 'grouped')),
+  enabled boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table virtual_lab_objects enable row level security;
+
+drop policy if exists "virtual_lab_objects_select_all" on virtual_lab_objects;
+create policy "virtual_lab_objects_select_all" on virtual_lab_objects
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "virtual_lab_objects_admin_write" on virtual_lab_objects;
+create policy "virtual_lab_objects_admin_write" on virtual_lab_objects
+  for all using (is_admin()) with check (is_admin());
+
+create or replace function public.confirm_virtual_loan_pickup(
+  p_loan_id bigint,
+  p_scene_object_id text
+)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item_id bigint;
+begin
+  select * into v_loan from loans
+  where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then raise exception '예약을 찾을 수 없습니다.'; end if;
+  if v_loan.status <> '예약중' then raise exception '이미 처리된 예약입니다.'; end if;
+
+  select item_id into v_item_id from virtual_lab_objects
+  where scene_object_id = p_scene_object_id and enabled = true;
+  if v_item_id is distinct from v_loan.item_id then
+    raise exception '가상 물품이 예약 물품과 일치하지 않습니다.';
+  end if;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '대여중', due_at = now() + interval '7 days', qr_confirmed_at = now()
+  where id = p_loan_id returning * into v_loan;
+  return v_loan;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create or replace function public.confirm_virtual_loan_return(
+  p_loan_id bigint,
+  p_scene_object_id text
+)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item_id bigint;
+begin
+  select * into v_loan from loans
+  where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then raise exception '대여 내역을 찾을 수 없습니다.'; end if;
+  if v_loan.status <> '대여중' then raise exception '반납할 수 있는 상태가 아닙니다.'; end if;
+
+  select item_id into v_item_id from virtual_lab_objects
+  where scene_object_id = p_scene_object_id and enabled = true;
+  if v_item_id is distinct from v_loan.item_id then
+    raise exception '가상 물품이 대여 물품과 일치하지 않습니다.';
+  end if;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans set status = '반납완료', returned_at = now()
+  where id = p_loan_id returning * into v_loan;
+  return v_loan;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+create or replace function public.confirm_virtual_item_usage(
+  p_loan_id bigint,
+  p_scene_object_id text,
+  p_qty integer default 1
+)
+returns loans as $$
+declare
+  v_loan loans;
+  v_item items;
+  v_item_id bigint;
+begin
+  if p_qty < 1 then raise exception '사용 수량은 1개 이상이어야 합니다.'; end if;
+
+  select * into v_loan from loans
+  where id = p_loan_id and user_id = auth.uid() for update;
+  if not found then raise exception '예약을 찾을 수 없습니다.'; end if;
+  if v_loan.status <> '예약중' then raise exception '이미 처리된 예약입니다.'; end if;
+
+  select item_id into v_item_id from virtual_lab_objects
+  where scene_object_id = p_scene_object_id and enabled = true;
+  if v_item_id is distinct from v_loan.item_id then
+    raise exception '가상 물품이 예약 물품과 일치하지 않습니다.';
+  end if;
+
+  select * into v_item from items where id = v_loan.item_id for update;
+  if v_item.item_type not in ('REAGENT', 'CONSUMABLE') then
+    raise exception '소모품 또는 시약만 사용 처리할 수 있습니다.';
+  end if;
+  if v_item.available_qty < (p_qty - 1) then raise exception '남은 재고가 부족합니다.'; end if;
+  update items set available_qty = available_qty - (p_qty - 1) where id = v_item.id;
+
+  perform set_config('labbot.trusted_transition', 'true', true);
+  update loans
+  set status = '반납완료', qr_confirmed_at = now(), returned_at = now(), consumed_qty = p_qty
+  where id = p_loan_id returning * into v_loan;
+  return v_loan;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+revoke all on function public.confirm_virtual_loan_pickup(bigint, text) from public;
+revoke all on function public.confirm_virtual_loan_return(bigint, text) from public;
+revoke all on function public.confirm_virtual_item_usage(bigint, text, integer) from public;
+grant execute on function public.confirm_virtual_loan_pickup(bigint, text) to authenticated;
+grant execute on function public.confirm_virtual_loan_return(bigint, text) to authenticated;
+grant execute on function public.confirm_virtual_item_usage(bigint, text, integer) to authenticated;
+
+-- 대표 객체만 실제 items 행에 연결한다. 재고/QR 사본은 만들지 않는다.
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'eq-pipette-01', id, '대여·반납실', 'single' from items where name ilike '%마이크로피펫%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'con-tips-01', id, '대여·반납실', 'grouped' from items where name ilike '%피펫 팁%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'eq-centrifuge-01', id, '대여·반납실', 'single' from items where name ilike '%마이크로 원심분리기%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'eq-scale-01', id, '대여·반납실', 'single' from items where name ilike '%전자저울%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'eq-phmeter-01', id, '시약보관실', 'single' from items where name ilike '%pH meter%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'eq-microscope-01', id, '기기실-1', 'single' from items where name ilike '%현미경%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'eq-pcr-01', id, '기기실-1', 'single' from items where name ilike '%PCR 장비%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'eq-freezer-01', id, '냉동보관실', 'single' from items where name ilike '%초저온 냉동고%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'reagent-ethanol-01', id, '시약보관실', 'grouped' from items where name ilike '%무수 에탄올%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'saf-extinguisher-01', id, '안전장비함', 'single' from items where name ilike '%소화기%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+
+-- =============================================================
+-- 33. 물품별 로봇 안내 좌표 + 대여/보안 구역 분리
+-- =============================================================
+alter table virtual_lab_objects add column if not exists zone_type text not null default 'restricted_lab'
+  check (zone_type in ('rental', 'restricted_lab'));
+alter table virtual_lab_objects add column if not exists access_level text not null default 'authorized'
+  check (access_level in ('public', 'authorized', 'staff'));
+alter table virtual_lab_objects add column if not exists shelf_code text;
+alter table virtual_lab_objects add column if not exists shelf_row integer;
+alter table virtual_lab_objects add column if not exists shelf_slot integer;
+alter table virtual_lab_objects add column if not exists location_detail text;
+alter table virtual_lab_objects add column if not exists nav_x double precision;
+alter table virtual_lab_objects add column if not exists nav_y double precision;
+alter table virtual_lab_objects add column if not exists nav_heading double precision default 0;
+
+update virtual_lab_objects set room='대여·반납실', zone_type='rental', access_level='public', shelf_code='A-01', shelf_row=2, shelf_slot=1, location_detail='A-01 선반 2번째 줄, 왼쪽에서 1번째 칸', nav_x=-2.6, nav_y=-5.2 where scene_object_id='eq-pipette-01';
+update virtual_lab_objects set room='대여·반납실', zone_type='rental', access_level='public', shelf_code='A-02', shelf_row=2, shelf_slot=3, location_detail='A-02 선반 2번째 줄, 왼쪽에서 3번째 바구니', nav_x=-2.6, nav_y=-6.5 where scene_object_id='con-tips-01';
+update virtual_lab_objects set room='대여·반납실', zone_type='rental', access_level='public', shelf_code='B-01', shelf_row=1, shelf_slot=1, location_detail='B-01 선반 1번째 줄, 오른쪽에서 1번째 칸', nav_x=2.6, nav_y=-5.2 where scene_object_id='eq-centrifuge-01';
+update virtual_lab_objects set room='대여·반납실', zone_type='rental', access_level='public', shelf_code='B-02', shelf_row=2, shelf_slot=2, location_detail='B-02 선반 2번째 줄, 오른쪽에서 2번째 칸', nav_x=2.6, nav_y=-6.5 where scene_object_id='eq-scale-01';
+update virtual_lab_objects set zone_type='restricted_lab', access_level='authorized', shelf_code='LAB-G01', nav_x=-2.35, nav_y=2.1 where scene_object_id='eq-microscope-01';
+update virtual_lab_objects set zone_type='restricted_lab', access_level='authorized', shelf_code='LAB-I01', nav_x=-1.8, nav_y=10.0 where scene_object_id='eq-pcr-01';
+update virtual_lab_objects set zone_type='restricted_lab', access_level='authorized', shelf_code='LAB-R01', nav_x=0.0, nav_y=13.6 where scene_object_id='eq-phmeter-01';
+update virtual_lab_objects set zone_type='restricted_lab', access_level='authorized', shelf_code='LAB-F01', nav_x=1.8, nav_y=14.6 where scene_object_id='eq-freezer-01';
+update virtual_lab_objects set zone_type='restricted_lab', access_level='authorized', shelf_code='LAB-R02', nav_x=0.0, nav_y=13.6 where scene_object_id='reagent-ethanol-01';
+update virtual_lab_objects set zone_type='restricted_lab', access_level='staff', shelf_code='LAB-S01', nav_x=0.0, nav_y=0.0 where scene_object_id='saf-extinguisher-01';
+
+-- 개별 3D 모델을 만들지 않은 DB 물품도 그룹 선반 좌표로 안내·가상 QR 확인이 가능하다.
+-- 이미 대표 객체가 있는 물품은 위의 더 정확한 바인딩을 그대로 사용한다.
+insert into virtual_lab_objects (
+  scene_object_id, item_id, room, display_mode, zone_type, access_level, shelf_code,
+  shelf_row, shelf_slot, location_detail, nav_x, nav_y
+)
+select
+  'db-item-' || i.id::text,
+  i.id,
+  case when i.item_type in ('CONSUMABLE','PPE','SAFETY') then '대여·반납실' else i.location end,
+  'grouped',
+  case when i.item_type in ('CONSUMABLE','PPE','SAFETY') then 'rental' else 'restricted_lab' end,
+  case when i.item_type in ('CONSUMABLE','PPE','SAFETY') then 'public' else 'authorized' end,
+  case
+    when i.item_type='CONSUMABLE' then 'A-03'
+    when i.item_type in ('PPE','SAFETY') then 'B-03'
+    else 'LAB-' || upper(substr(md5(i.location), 1, 4))
+  end,
+  ((i.id - 1) / 4)::integer % 3 + 1,
+  ((i.id - 1) % 4)::integer + 1,
+  (case
+    when i.item_type='CONSUMABLE' then 'A-03 선반 '
+    when i.item_type in ('PPE','SAFETY') then 'B-03 선반 '
+    else '제한구역 보관 위치 '
+  end) || ((((i.id - 1) / 4)::integer % 3) + 1)::text || '번째 줄, 번호표 ' || i.id::text,
+  case
+    when i.item_type='CONSUMABLE' then -2.6
+    when i.item_type in ('PPE','SAFETY') then 2.6
+    when i.location in ('기기실-1','기기실-2','세포배양실') then -1.8
+    when i.location in ('냉동보관실','냉장보관실') then 1.8
+    else 0.0
+  end,
+  case
+    when i.item_type in ('CONSUMABLE','PPE','SAFETY') then -7.7
+    when i.location='기기실-1' then 10.0
+    when i.location='기기실-2' then 12.4
+    when i.location='세포배양실' then 14.6
+    when i.location='시약보관실' then 13.6
+    when i.location='냉동보관실' then 14.6
+    when i.location='냉장보관실' then 12.4
+    else 4.0
+  end
+from items i
+where not exists (select 1 from virtual_lab_objects v where v.item_id=i.id)
+on conflict (scene_object_id) do nothing;
+
+create table if not exists robot_guide_tasks (
+  id uuid primary key default gen_random_uuid(),
+  loan_id bigint references loans(id) on delete set null,
+  item_id bigint not null references items(id) on delete cascade,
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  scene_object_id text references virtual_lab_objects(scene_object_id) on delete set null,
+  task_type text not null check (task_type in ('pickup', 'return', 'use')),
+  status text not null default 'requested' check (status in ('requested', 'navigating', 'arrived', 'completed', 'cancelled', 'failed')),
+  shelf_code text,
+  target_x double precision,
+  target_y double precision,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table robot_guide_tasks enable row level security;
+drop policy if exists "robot_guide_tasks_own_select" on robot_guide_tasks;
+create policy "robot_guide_tasks_own_select" on robot_guide_tasks for select using (user_id=auth.uid() or is_admin());
+drop policy if exists "robot_guide_tasks_own_insert" on robot_guide_tasks;
+create policy "robot_guide_tasks_own_insert" on robot_guide_tasks for insert with check (user_id=auth.uid());
+drop policy if exists "robot_guide_tasks_own_update" on robot_guide_tasks;
+create policy "robot_guide_tasks_own_update" on robot_guide_tasks for update using (user_id=auth.uid() or is_admin());
