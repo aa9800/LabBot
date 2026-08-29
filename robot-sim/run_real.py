@@ -163,10 +163,10 @@ def main():
 
                 if ai_person_backend is not None:
                     try:
-                        detections.extend(
-                            d for d in ai_person_backend.detect(source_frame)
-                            if d.class_name == "person"
-                        )
+                        # 이 모델은 COCO 80클래스를 이미 다 계산하므로 전부 취한다.
+                        # 걸러내는 건 연산을 아끼지 못하고 정보만 버리는 것이다.
+                        # 구조: COCO 80클래스(일상 전반) + 커스텀 모델의 실험실 물품 10종.
+                        detections.extend(ai_person_backend.detect(source_frame))
                     except Exception as person_err:
                         # 사람 판정이 실패해도 물품 탐지와 스트림은 계속 살려둔다.
                         print(f"[labkeeper] 사람 판정 실패(무시하고 계속): {person_err}")
@@ -175,9 +175,11 @@ def main():
                     detections.extend(d for d in snapshot.detections if d.class_name == "person")
 
                 annotated = draw_detections(source_frame, detections)
+                # AI 스트림은 초당 10장뿐이라(일반 스트림 30fps의 1/3) 품질을 올려도
+                # 대역폭에 여유가 있다. 55는 확대한 화면에서 압축 깨짐이 눈에 띄었다.
                 ok, jpeg = cv2.imencode(
                     ".jpg", annotated,
-                    [int(cv2.IMWRITE_JPEG_QUALITY), 55, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
+                    [int(cv2.IMWRITE_JPEG_QUALITY), 85, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
                 )
                 jpeg_bytes = jpeg.tobytes() if ok else None
                 if jpeg_bytes:
@@ -241,6 +243,15 @@ def main():
             "flammable_cabinet": "인화성 물질 캐비닛",
             "biohazard_bin": "생물학적 폐기물통",
             "person": "사람",
+            # 순정 COCO 모델이 같이 잡아주는 일상 물품 (학습 없이 얻는 것)
+            "chair": "의자", "couch": "소파", "potted plant": "화분",
+            "dining table": "책상", "bed": "침대", "toilet": "변기", "sink": "싱크대",
+            "tv": "모니터", "laptop": "노트북", "mouse": "마우스", "remote": "리모컨",
+            "keyboard": "키보드", "cell phone": "휴대폰", "microwave": "전자레인지",
+            "oven": "오븐", "refrigerator": "냉장고", "clock": "시계",
+            "backpack": "가방", "handbag": "핸드백", "umbrella": "우산",
+            "book": "책", "vase": "꽃병", "scissors": "가위",
+            "bottle": "병", "cup": "컵", "bowl": "그릇", "toothbrush": "칫솔",
         }
         detections = [
             {
@@ -458,28 +469,55 @@ def main():
     last_obstacle_alert_time = 0.0
     OBSTACLE_ALERT_COOLDOWN = 15.0  # 장애물이 계속 있어도 알림 전송은 15초에 최대 1회만 단발 수행
 
+    # 벽·책상처럼 원래 거기 있는 물체는 "사건"이 아니다. 쿨다운만 걸면 로봇이 벽 앞에
+    # 서 있는 동안 15초마다 계속 신고해서(실측: SR-01 194건) 관리자 화면이 도배된다.
+    # 그래서 한 번 신고한 장애물은 "사라졌다가 다시 나타날 때"만 다시 신고한다.
+    obstacle_reported = {"active": False}
+
     def on_obstacle(distance):
         nonlocal last_obstacle_alert_time
         now = time.time()
+        if obstacle_reported["active"]:
+            return  # 이미 신고한 그 장애물이 아직 앞에 있는 것 — 새 사건이 아니다
         if (now - last_obstacle_alert_time) < OBSTACLE_ALERT_COOLDOWN:
             return  # 쿨다운 중에는 중복 알림/DB 업로드 스팸 방지
 
+        obstacle_reported["active"] = True
         last_obstacle_alert_time = now
-        print(f"[labkeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 안전이벤트 큐 적재")
-        run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
+
+        # 초음파는 "20cm 앞에 뭔가 있다"까지만 안다. 그게 벽인지 사람인지 넘어진 의자인지는
+        # 카메라가 이미 보고 있으므로, 같은 순간의 탐지 결과를 붙여 무엇이 막았는지 남긴다.
+        # 사람이 막고 있으면 심각도를 올린다 — 벽 앞에 선 것과 사람 앞에 선 것은 다른 사건이다.
+        seen = ai_corrected["detections"] or []
+        labels = []
+        for d in sorted(seen, key=lambda x: -x.get("confidence", 0))[:3]:
+            labels.append(f"{d.get('class_name')} {round(d.get('confidence', 0) * 100)}%")
+        what = ", ".join(labels) if labels else "식별된 물체 없음"
+        person_blocking = any(d.get("class_name") == "person" for d in seen)
+        severity = "HIGH" if person_blocking else "MEDIUM"
+
+        print(f"[labkeeper] 🛑 장애물 감지({distance:.1f}cm) — 정지 + SR-01 ({what})")
+        run_log.write(
+            "obstacle_detected",
+            distance_cm=round(distance, 2),
+            rule_id="SR-01",
+            detected=what,
+        )
         # 증거 스냅샷을 붙여 큐에 넣는다 (네트워크 없음 — 중계기가 가져가서 DB에 쓴다)
         event_queue.push(
             "safety_event",
             {
                 "rule_id": "SR-01",
-                "severity": "HIGH",
-                "note": f"실물 Raspbot 순찰 중 초음파 장애물 감지 ({distance:.1f}cm)",
+                "severity": severity,
+                "note": f"실물 Raspbot 순찰 중 장애물 감지 ({distance:.1f}cm) — 카메라 인식: {what}",
                 "source": "real-raspbot",
             },
             snapshot_bytes=stream_server.get_latest_frame(),
         )
 
     def on_obstacle_cleared():
+        # 장애물이 치워졌으니, 다음에 뭔가 나타나면 그건 새 사건으로 신고한다.
+        obstacle_reported["active"] = False
         print("[labkeeper] ✅ 장애물 사라짐 — 순찰 재개")
         run_log.write("obstacle_cleared")
 

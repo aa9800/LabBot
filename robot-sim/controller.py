@@ -8,11 +8,13 @@ from obstacle_avoidance import ObstacleAvoider
 
 SPEED = 100.0
 TURN_GAIN = 100.0
-OBSTACLE_STOP_DISTANCE = 40
+# 40cm는 실내에서 너무 멀었다 — 책상·벽 옆을 지나기만 해도 멈춰서 순찰이 진행되지
+# 않았다. 라즈봇 차체가 작고 초음파 최소 측정이 2cm라 20cm면 제동 여유가 충분하다.
+OBSTACLE_STOP_DISTANCE = 20
 # 정지 기준과 해제 기준을 같게 두면 물리 엔진 관성이나 실제 초음파 노이즈 때문에
-# 39.9cm/40.1cm 경계에서 감지와 해제가 반복된다. 10cm 히스테리시스로 이벤트 스팸과
+# 19.9cm/20.1cm 경계에서 감지와 해제가 반복된다. 10cm 히스테리시스로 이벤트 스팸과
 # 모터의 떨림을 막는다.
-OBSTACLE_CLEAR_DISTANCE = 50
+OBSTACLE_CLEAR_DISTANCE = 30
 SCAN_HOLD_SECONDS = 1.0
 
 

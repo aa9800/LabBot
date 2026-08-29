@@ -358,12 +358,32 @@ class EdgeInferenceWorker:
         return result
 
 
-def draw_detections(frame: np.ndarray, detections: Sequence[Detection]):
-    output = frame.copy()
+def draw_detections(frame: np.ndarray, detections: Sequence[Detection], scale: int = 2):
+    """탐지 박스와 라벨을 그린다.
+
+    카메라가 320x240이라 원본 위에 바로 글자를 쓰면 몇 픽셀짜리가 되어 읽을 수 없다.
+    그래서 먼저 확대한 뒤 그린다 — 선과 글자가 확대 후 그려지므로 계단현상이 없다
+    (확대를 나중에 하면 그려둔 글자까지 같이 뭉개진다).
+    추론은 원본 320px로 하므로 정확도·속도에는 영향이 없다.
+    """
+    if scale > 1:
+        output = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    else:
+        output = frame.copy()
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.45 * scale
+    thickness = max(1, scale)
+
     for detection in detections:
-        x1, y1, x2, y2 = detection.box
+        x1, y1, x2, y2 = (v * scale for v in detection.box)
         color = (0, 0, 255) if detection.class_name == "person" else (0, 220, 170)
-        cv2.rectangle(output, (x1, y1), (x2, y2), color, 2)
+        cv2.rectangle(output, (x1, y1), (x2, y2), color, thickness)
+
         label = f"{detection.class_name} {detection.confidence:.0%}"
-        cv2.putText(output, label, (x1, max(14, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+        (tw, th), base = cv2.getTextSize(label, font, font_scale, thickness)
+        ty = max(th + 4, y1 - 4)
+        # 글자 뒤에 색 띠를 깔아 배경이 밝든 어둡든 읽히게 한다.
+        cv2.rectangle(output, (x1, ty - th - base), (x1 + tw + 4, ty + base), color, -1)
+        cv2.putText(output, label, (x1 + 2, ty), font, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
     return output

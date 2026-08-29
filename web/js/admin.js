@@ -1448,6 +1448,46 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.removeEventListener("pointerup", camStopRepeat);
   }
 
+  // 화살표 키로 카메라 팬/틸트 조작. 주행(WASD)과 손이 겹치지 않게 나눠뒀다.
+  // 누르고 있으면 D패드를 누르고 있는 것과 같은 속도로 연속 이동한다.
+  const CAM_KEY_MAP = {
+    arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right",
+  };
+  const camKeysHeld = new Map();  // key -> setInterval 핸들
+
+  function camKeyStop(key) {
+    const timer = camKeysHeld.get(key);
+    if (timer) clearInterval(timer);
+    camKeysHeld.delete(key);
+    const btn = document.querySelector(`[data-cam="${CAM_KEY_MAP[key]}"]`);
+    if (btn) btn.classList.remove("is-active");
+  }
+
+  window.addEventListener("keydown", (e) => {
+    const key = e.key.toLowerCase();
+    if (!(key in CAM_KEY_MAP)) return;
+    if (!robotControlAllowed()) return;
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    e.preventDefault();           // 화살표로 페이지가 스크롤되는 것을 막는다
+    if (camKeysHeld.has(key)) return;  // 키 반복(auto-repeat)으로 타이머가 쌓이지 않게
+
+    const direction = CAM_KEY_MAP[key];
+    const btn = document.querySelector(`[data-cam="${direction}"]`);
+    if (btn) btn.classList.add("is-active");   // D패드 버튼도 같이 눌린 것처럼 보이게
+    camStep(direction);                        // 누르자마자 한 번 즉시 반응
+    camKeysHeld.set(key, setInterval(() => camStep(direction), CAM_REPEAT_MS));
+  });
+
+  window.addEventListener("keyup", (e) => {
+    const key = e.key.toLowerCase();
+    if (key in CAM_KEY_MAP) camKeyStop(key);
+  });
+
+  // 탭 전환 등으로 keyup을 놓치면 카메라가 계속 돌아간다 — 창을 벗어나면 전부 정지.
+  window.addEventListener("blur", () => {
+    Array.from(camKeysHeld.keys()).forEach(camKeyStop);
+  });
+
   camDpadButtons.forEach((btn) => {
     btn.addEventListener("pointerdown", () => {
       const direction = btn.dataset.cam;
@@ -1551,11 +1591,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const activeKeyboardKeys = new Set();
   let keyboardFeedbackTimer = null;
 
+  // 화살표 키는 주행이 아니라 카메라 팬/틸트에 쓴다(아래 카메라 키 핸들러 참고).
+  // 주행은 WASD 전용 — 한 손은 주행, 다른 손은 카메라로 나뉘어야 조작이 겹치지 않는다.
   function canonicalDriveKey(key) {
-    if (key === "arrowup") return "w";
-    if (key === "arrowleft") return "a";
-    if (key === "arrowdown") return "s";
-    if (key === "arrowright") return "d";
     return key;
   }
 
@@ -1580,10 +1618,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function updateKeyboardDrive() {
-    const forward = activeKeyboardKeys.has("w") || activeKeyboardKeys.has("arrowup");
-    const reverse = activeKeyboardKeys.has("s") || activeKeyboardKeys.has("arrowdown");
-    const left = activeKeyboardKeys.has("a") || activeKeyboardKeys.has("arrowleft");
-    const right = activeKeyboardKeys.has("d") || activeKeyboardKeys.has("arrowright");
+    const forward = activeKeyboardKeys.has("w");
+    const reverse = activeKeyboardKeys.has("s");
+    const left = activeKeyboardKeys.has("a");
+    const right = activeKeyboardKeys.has("d");
 
     const throttle = Number(forward) - Number(reverse);
     const steering = Number(right) - Number(left);
