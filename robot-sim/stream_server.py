@@ -7,6 +7,7 @@ Supabase DB나 스토리지를 거치지 않고 30 FPS / ~30ms급 초고속 실�
 import io
 import json
 import logging
+import os
 import socket
 import threading
 import time
@@ -29,6 +30,21 @@ class FrameBuffer:
         self.fps_counter = 0
         self.fps_last_time = time.time()
         self.current_fps = 0.0
+        # 지금 이 스트림을 실제로 받아가는 클라이언트 수. 0이면 프레임을 만들어봐야
+        # 버리는 것이라 생산 측(카메라 루프 · AI 루프)이 인코딩을 건너뛴다.
+        self.viewers = 0
+        self._viewer_lock = threading.Lock()
+
+    def add_viewer(self):
+        with self._viewer_lock:
+            self.viewers += 1
+
+    def remove_viewer(self):
+        with self._viewer_lock:
+            self.viewers = max(0, self.viewers - 1)
+
+    def has_viewers(self):
+        return self.viewers > 0
 
     def update(self, frame_bytes: bytes):
         with self.condition:
@@ -132,6 +148,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
             client_version = 0
+            selected_buffer.add_viewer()
             try:
                 while True:
                     frame, client_version = selected_buffer.wait_for_new_frame(client_version, timeout=0.5)
@@ -146,6 +163,8 @@ class StreamingHandler(BaseHTTPRequestHandler):
                         self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
+            finally:
+                selected_buffer.remove_viewer()
         elif req_path.startswith("/snapshot") or req_path == "/ai/snapshot":
             frame = (_ai_buffer if req_path == "/ai/snapshot" else _buffer).get_latest()
             if frame:
@@ -210,6 +229,11 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             data = _telemetry_provider() if _telemetry_provider is not None else {}
             self.wfile.write(json.dumps(data).encode("utf-8"))
+        elif req_path == "/health":
+            # 라즈베리파이 하드웨어 상태(온도·스로틀·CPU·메모리). 관리자 페이지에서
+            # 상시 표시한다 — 2026-08-30에 82.9도까지 올라 스로틀링이 걸린 채로
+            # 서보 명령이 밀리는 문제가 있었고, 그게 화면에 안 보여서 늦게 찾았다.
+            self._send_json(200, read_pi_health())
         elif req_path == "/ai/status":
             data = _ai_status_provider() if _ai_status_provider is not None else {
                 "running": False,
@@ -415,6 +439,92 @@ def set_buzzer_callback(cb):
 # 실내 경보로 인식이 안 된다는 실기기 확인 결과(2026-08-27). 경보는 부저로만 한다.
 
 
+# 라즈베리파이 스로틀 비트 (vcgencmd get_throttled 반환값)
+THROTTLE_BITS = {
+    0: ("under_voltage", "저전압"),
+    1: ("freq_capped", "주파수 제한"),
+    2: ("throttled", "스로틀링"),
+    3: ("soft_temp_limit", "온도 제한"),
+}
+
+
+def _read_first_line(path):
+    try:
+        with open(path, "r") as f:
+            return f.readline().strip()
+    except Exception:
+        return None
+
+
+def read_pi_health():
+    """온도·스로틀·CPU·메모리를 sysfs에서 읽는다.
+
+    vcgencmd를 부르면 프로세스를 띄우느라 수십 ms가 든다. 이 엔드포인트는 웹이
+    주기적으로 부르므로 커널이 이미 노출한 파일만 읽어 비용을 거의 0으로 둔다.
+    """
+    health = {"ok": True}
+
+    # 온도 (millidegree C)
+    raw = _read_first_line("/sys/class/thermal/thermal_zone0/temp")
+    health["temp_c"] = round(int(raw) / 1000.0, 1) if raw and raw.isdigit() else None
+
+    # 스로틀 상태 비트맵
+    raw = _read_first_line("/sys/devices/platform/soc/soc:firmware/get_throttled")
+    flags, active = None, []
+    if raw:
+        try:
+            flags = int(raw, 16) if raw.startswith("0x") else int(raw)
+        except ValueError:
+            flags = None
+    if flags is not None:
+        for bit, (key, label) in THROTTLE_BITS.items():
+            if flags & (1 << bit):
+                active.append({"key": key, "label": label})
+    health["throttle_flags"] = flags
+    health["throttled_now"] = active          # 지금 걸려 있는 것만. 이력 비트(16~19)는 뺀다.
+
+    # CPU 클럭 (kHz -> MHz)
+    raw = _read_first_line("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
+    health["cpu_mhz"] = round(int(raw) / 1000.0) if raw and raw.isdigit() else None
+
+    # 로드 애버리지 -> 코어 수로 나눠 백분율
+    try:
+        load1 = os.getloadavg()[0]
+        cores = os.cpu_count() or 1
+        health["load_pct"] = round(load1 / cores * 100)
+    except Exception:
+        health["load_pct"] = None
+
+    # 메모리 (MemAvailable 기준 사용률)
+    total = avail = None
+    try:
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    total = int(line.split()[1])
+                elif line.startswith("MemAvailable:"):
+                    avail = int(line.split()[1])
+                if total is not None and avail is not None:
+                    break
+    except Exception:
+        pass
+    if total:
+        health["mem_used_pct"] = round((total - (avail or 0)) / total * 100)
+        health["mem_total_mb"] = round(total / 1024)
+    else:
+        health["mem_used_pct"] = None
+        health["mem_total_mb"] = None
+
+    # 가동 시간
+    raw = _read_first_line("/proc/uptime")
+    try:
+        health["uptime_sec"] = int(float(raw.split()[0])) if raw else None
+    except Exception:
+        health["uptime_sec"] = None
+
+    return health
+
+
 def set_camera_angle_callback(cb):
     """서보 각도 변경 콜백 등록 (RealHAL.set_camera_angle 연동)."""
     global _camera_angle_callback
@@ -475,6 +585,16 @@ def set_guide_callbacks(start=None, status=None, finish=None):
     _guide_start_callback = start
     _guide_status_callback = status
     _guide_finish_callback = finish
+
+
+def camera_has_viewers():
+    """일반 카메라 스트림(/stream)을 지금 보고 있는 사람이 있는가."""
+    return _buffer.has_viewers()
+
+
+def ai_has_viewers():
+    """AI 오버레이 스트림(/ai/stream)을 지금 보고 있는 사람이 있는가."""
+    return _ai_buffer.has_viewers()
 
 
 def set_camera_frame(jpeg_bytes: bytes):

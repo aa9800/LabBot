@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LabBot – 연구실 물품 대여관리 시스템</title>
-  <link rel="stylesheet" href="css/style.css?v=20260828-obstacle-avoidance" />
+  <link rel="stylesheet" href="css/style.css?v=20260830-health" />
 </head>
 <body data-page="admin">
   <header class="navbar">
@@ -244,6 +244,16 @@
           </div>
           <span class="badge badge-st-open" id="robotModeBadge"><span class="badge-dot"></span>-</span>
         </div>
+
+        <!-- 🩺 로봇 하드웨어 상태: 온도·스로틀·CPU·메모리. 과열로 서보 명령이 밀리는
+             일이 있어서(2026-08-30, 82.9°C) 화면에 상시 보이게 뒀다. -->
+        <div class="robot-health-bar" id="robotHealthBar" aria-live="polite">
+          <span class="robot-health-chip" id="healthTemp" title="CPU 온도">🌡️ <strong>--</strong></span>
+          <span class="robot-health-chip" id="healthCpu" title="CPU 부하 / 동작 클럭">🧠 CPU <strong>--</strong></span>
+          <span class="robot-health-chip" id="healthMem" title="메모리 사용률">💾 RAM <strong>--</strong></span>
+          <span class="robot-health-chip" id="healthUptime" title="라즈베리파이가 부팅된 뒤 지난 시간. 0으로 돌아갔다면 로봇이 재시작된 것.">⏱️ 가동 <strong>--</strong></span>
+          <span class="robot-health-chip is-warn" id="healthThrottle" style="display: none;">⚠️ <strong>--</strong></span>
+        </div>
         <div class="robot-console-layout">
           <div class="robot-joystick-col">
             <div class="robot-joystick-base" id="robotJoystickBase" role="application" aria-label="로봇 주행 조이스틱">
@@ -302,15 +312,32 @@
             </div>
             <div class="camera-presets">
               <button type="button" class="cam-preset-btn" data-pan="90" data-tilt="90">정면</button>
-              <button type="button" class="cam-preset-btn" data-pan="90" data-tilt="45">바닥/라인</button>
-              <button type="button" class="cam-preset-btn" data-pan="90" data-tilt="135">상단선반</button>
+              <!-- 실측(2026-08-30): 틸트 각도가 작을수록 카메라가 위를 본다.
+                   프리셋 두 개가 서로 반대로 들어가 있어서 값을 맞바꿨다. -->
+              <button type="button" class="cam-preset-btn" data-pan="90" data-tilt="135">바닥/라인</button>
+              <button type="button" class="cam-preset-btn" data-pan="90" data-tilt="45">상단선반</button>
             </div>
             <div class="robot-joystick-readout">
               <span>팬 <span class="mono" id="robotCamPanVal">90</span>°</span>
               <span>틸트 <span class="mono" id="robotCamTiltVal">90</span>°</span>
+              <small class="robot-joystick-hint">D패드 클릭 · 방향키로도 조작</small>
+              <div class="robot-keyboard-feedback" id="robotCamKeyboardFeedback" aria-live="polite">
+                <div class="robot-keyboard-status">
+                  <span class="robot-keyboard-status-dot"></span>
+                  <strong id="robotCamKeyboardStatus">입력 대기</strong>
+                </div>
+                <div class="robot-keyboard-keys" aria-label="키보드 카메라 입력 상태">
+                  <kbd data-cam-key="arrowup">↑</kbd>
+                  <kbd data-cam-key="arrowleft">←</kbd>
+                  <kbd data-cam-key="arrowdown">↓</kbd>
+                  <kbd data-cam-key="arrowright">→</kbd>
+                </div>
+                <small>화살표 = 카메라</small>
+              </div>
             </div>
           </div>
         </div>
+
         <!-- 🛞 주행 및 로봇 제어 패널 -->
         <div class="ai-guard-panel">
           <div class="ai-guard-header" style="border-bottom: none; padding-bottom: 0; margin-bottom: 0;">
@@ -571,7 +598,7 @@
   <script src="js/items-data.js"></script>
   <script src="js/rentals.js"></script>
   <script src="js/safety-data.js?v=20260828-lab-safety2"></script>
-  <script src="js/robot-console-data.js?v=20260828-night-guard"></script>
+  <script src="js/robot-console-data.js?v=20260830-health"></script>
   <script src="js/audit-data.js"></script>
   <script src="js/damage-data.js"></script>
   <script src="js/stock-adjustments-data.js"></script>
@@ -579,6 +606,6 @@
   <script src="js/restock-data.js"></script>
   <script src="js/chat-data.js"></script>
   <script src="js/user-admin-data.js"></script>
-  <script src="js/admin.js?v=20260828-night-guard"></script>
+  <script src="js/admin.js?v=20260830-health"></script>
 </body>
 </html>

@@ -104,8 +104,9 @@ class RealHAL:
         self.cam_pan = 90
         self.cam_tilt = 90
         try:
-            self.car.Ctrl_Servo(1, 90)
-            self.car.Ctrl_Servo(2, 90)
+            # 둘 다 90도(중앙)라 순서는 무관하지만, 채널 의미는 SERVO_PAN/TILT를 따른다.
+            self.car.Ctrl_Servo(self.SERVO_TILT, 90)
+            self.car.Ctrl_Servo(self.SERVO_PAN, 90)
         except Exception:
             pass
 
@@ -117,6 +118,11 @@ class RealHAL:
         self._obstacle_classifier = None
         self.frame_broker = FrameBroker()
         self._motion_lock = threading.Lock()
+        # 모터와 서보가 같은 I2C 버스로 야붐 MCU에 붙어 있다. 제어 루프(20Hz)와
+        # 웹의 카메라 명령이 서로 다른 스레드에서 동시에 쓰면 MCU가 PWM을 흔들어
+        # 서보가 부르르 떤다. 모든 I2C 명령을 이 락으로 한 줄로 세운다.
+        self._i2c_lock = threading.Lock()
+        self._is_stopped = False   # 이미 멈춰 있으면 정지 명령을 또 보내지 않는다
         self._motion_prev_gray = None
         self._camera_thread = None
         self._camera_stop = threading.Event()
@@ -163,20 +169,35 @@ class RealHAL:
             self._camera_thread = threading.Thread(target=self._camera_loop, daemon=True)
             self._camera_thread.start()
 
+    # 아무도 스트림을 안 볼 때도 /snapshot은 최신 그림을 줘야 하므로 완전히 멈추지는
+    # 않고 이 간격으로만 인코딩한다(초당 2장).
+    IDLE_ENCODE_INTERVAL_S = 0.5
+
     def _camera_loop(self):
         """항상 돌아가는 카메라 캡처 루프 — capture_array()의 하드웨어 블로킹(33.3ms)에 정확히 동기화된 무진동 30fps."""
+        last_encode = 0.0
         while not self._camera_stop.is_set():
             try:
                 frame = self._picam2.capture_array()
                 if self._cv2 is not None and self._stream_server is not None:
                     # picamera2의 RGB 출력을 OpenCV가 기대하는 BGR로 변환 (손이 파란색/초록색으로 보이는 스머프 색상 왜곡 해결)
                     bgr_frame = self._cv2.cvtColor(frame, self._cv2.COLOR_RGB2BGR)
+                    # AI·QR·움직임 감지는 항상 최신 프레임이 필요하다. 이건 참조만
+                    # 넘기는 것이라 사실상 공짜다.
                     self.frame_broker.publish(bgr_frame)
-                    # 품질 50 — 초고속 인코딩 및 자연스러운 색상 송출
-                    _, jpeg = self._cv2.imencode(
-                        ".jpg", bgr_frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 50, int(self._cv2.IMWRITE_JPEG_OPTIMIZE), 0]
-                    )
-                    self._stream_server.set_camera_frame(jpeg.tobytes())
+
+                    # JPEG 인코딩은 이 루프에서 제일 비싼 일이다. 보는 사람이 없으면
+                    # 만들어봐야 그대로 버려지므로 초당 2장으로 떨어뜨린다. 관리자
+                    # 화면을 열면 즉시 30fps로 돌아온다.
+                    now = time.time()
+                    if (self._stream_server.camera_has_viewers()
+                            or now - last_encode >= self.IDLE_ENCODE_INTERVAL_S):
+                        last_encode = now
+                        # 품질 50 — 초고속 인코딩 및 자연스러운 색상 송출
+                        _, jpeg = self._cv2.imencode(
+                            ".jpg", bgr_frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 50, int(self._cv2.IMWRITE_JPEG_OPTIMIZE), 0]
+                        )
+                        self._stream_server.set_camera_frame(jpeg.tobytes())
             except Exception as e:
                 print(f"[RealHAL] 카메라 캡처 실패: {e}")
                 time.sleep(0.2)  # 에러 시 CPU 폭주 방지 대기
@@ -209,14 +230,20 @@ class RealHAL:
         time.sleep(0.000015)
         GPIO.output(TRIG_PIN, GPIO.LOW)
 
+        # 아래 두 루프는 에코 핀을 쉬지 않고 읽는 바쁜 대기다. 그대로 두면 측정하는
+        # 내내 GIL을 붙잡아 다른 스레드(웹의 서보 명령을 처리하는 HTTP 핸들러)가
+        # 굶는다. 그러면 명령이 제때 안 나가고 뭉쳐서 도착해 카메라가 부르르 떤다.
+        # sleep(0)은 지연을 거의 안 주면서 GIL만 놓아준다 — 측정 정확도는 그대로다.
         t_send = time.time()
         while not GPIO.input(ECHO_PIN):
             if time.time() - t_send > ECHO_TIMEOUT_S:
                 return NO_OBSTACLE_CM
+            time.sleep(0)
         t1 = time.time()
         while GPIO.input(ECHO_PIN):
             if time.time() - t1 > ECHO_TIMEOUT_S:
                 return NO_OBSTACLE_CM
+            time.sleep(0)
         t2 = time.time()
         return ((t2 - t1) * SOUND_SPEED_M_S / 2) * 100
 
@@ -318,29 +345,69 @@ class RealHAL:
         right = speed - turn
         left = max(-MOTOR_SPEED_LIMIT, min(MOTOR_SPEED_LIMIT, left))
         right = max(-MOTOR_SPEED_LIMIT, min(MOTOR_SPEED_LIMIT, right))
-        self.car.Control_Car(int(left), int(right))
+        with self._i2c_lock:
+            self.car.Control_Car(int(left), int(right))
+        self._is_stopped = (int(left) == 0 and int(right) == 0)
 
     def stop(self):
+        """정지. 이미 멈춰 있으면 I2C에 아무것도 보내지 않는다.
+
+        제어 루프는 임무가 없을 때 매 틱(20Hz) stop()을 부른다. 예전에는 그때마다
+        Car_Stop()이 I2C로 나가서, 초당 20번의 불필요한 전송이 서보 명령과 뒤엉켜
+        카메라가 떨렸다. 상태가 바뀔 때만 실제로 보낸다.
+        """
         self.last_speed = 0.0
         self.last_turn = 0.0
-        self.car.Car_Stop()
+        if self._is_stopped:
+            return
+        with self._i2c_lock:
+            self.car.Car_Stop()
+        self._is_stopped = True
+
+    # 이 개체의 서보 배선은 야붐 기본 안내(S1=팬, S2=틸트)와 다르다.
+    # 2026-08-30 실측(채널 1~4를 하나씩 단독으로 돌려서 확인):
+    #   채널 1 -> 상하(틸트)로 움직임
+    #   채널 2 -> 아무 반응 없음 (연결된 서보 없음)
+    #   채널 3 -> 아무 반응 없음
+    #   채널 4 -> 좌우(팬)로 움직임
+    # 예전에는 팬을 2번으로 보내고 있어서 "명령은 나가는데 안 움직인다"였다.
+    # 배선을 바꾸는 대신 여기서 번호를 맞춰준다 — 호출부(웹·D패드·화살표 키)는
+    # 그대로 pan/tilt 의미로 쓰면 된다.
+    SERVO_PAN = 4   # 좌우
+    SERVO_TILT = 1  # 상하
+
+    # 틸트는 거치대가 먼저 걸려서 끝까지 돌리면 서보가 스톨(윙 소리만 나고 정지)한다.
+    # 팬은 기구 간섭이 없어 전 범위를 쓴다.
+    TILT_MIN, TILT_MAX = 35, 145
+    PAN_MIN, PAN_MAX = 0, 180
+
+    # 카메라 모듈이 거꾸로 달려 있어 캡처를 180도 회전(hflip+vflip)시켜 쓴다.
+    # 그래서 서보를 왼쪽으로 돌리면 화면 속 장면은 반대로 흐른다 — 웹에서 왼쪽
+    # 화살표를 눌렀는데 오른쪽으로 도는 것처럼 보였다. 화면(=사용자가 보는 기준)에
+    # 맞추기 위해 서보로 나가는 각도만 뒤집는다. 웹/텔레메트리가 쓰는 논리 각도
+    # (pan 작을수록 화면상 왼쪽)는 그대로 유지된다.
+    PAN_INVERT = True
 
     def set_camera_angle(self, pan=None, tilt=None):
         """카메라 2축 팬/틸트 서보 각도 조절 (0~180도, 중앙 90도).
-        Servo 1: Pan (좌우, 0~180도)
-        Servo 2: Tilt (상하, 0~180도)
+
+        pan  = 좌우 (실제 서보 채널은 SERVO_PAN)
+        tilt = 상하 (실제 서보 채널은 SERVO_TILT)
         """
         if pan is not None:
-            pan = max(0, min(180, int(pan)))
+            pan = max(self.PAN_MIN, min(self.PAN_MAX, int(pan)))
+            hw_pan = (180 - pan) if self.PAN_INVERT else pan
             try:
-                self.car.Ctrl_Servo(1, pan)
+                with self._i2c_lock:
+                    self.car.Ctrl_Servo(self.SERVO_PAN, hw_pan)
             except Exception as e:
                 print(f"[RealHAL] Pan 서보 제어 실패: {e}")
             self.cam_pan = pan
         if tilt is not None:
-            tilt = max(0, min(180, int(tilt)))
+            tilt = max(self.TILT_MIN, min(self.TILT_MAX, int(tilt)))
             try:
-                self.car.Ctrl_Servo(2, tilt)
+                with self._i2c_lock:
+                    self.car.Ctrl_Servo(self.SERVO_TILT, tilt)
             except Exception as e:
                 print(f"[RealHAL] Tilt 서보 제어 실패: {e}")
             self.cam_tilt = tilt

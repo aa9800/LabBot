@@ -1455,19 +1455,59 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
   const camKeysHeld = new Map();  // key -> setInterval 핸들
 
+  // 주행 쪽 WASD 표시등과 같은 방식으로, 지금 어떤 화살표가 눌렸는지 화면에 보여준다.
+  const camFeedbackEl = document.getElementById("robotCamKeyboardFeedback");
+  const camStatusEl = document.getElementById("robotCamKeyboardStatus");
+  const camKeyEls = document.querySelectorAll("[data-cam-key]");
+  const CAM_DIRECTION_LABEL = { up: "위로", down: "아래로", left: "왼쪽", right: "오른쪽" };
+  let camFeedbackTimer = null;
+
+  function renderCamFeedback(message = "입력 대기", tone = "idle") {
+    if (!camFeedbackEl) return;
+    camKeyEls.forEach((el) => {
+      el.classList.toggle("is-active", camKeysHeld.has(el.dataset.camKey));
+    });
+    camStatusEl.textContent = message;
+    camFeedbackEl.classList.toggle("is-active", tone === "active");
+    camFeedbackEl.classList.toggle("is-blocked", tone === "blocked");
+  }
+
+  function showTemporaryCamFeedback(message, tone, duration = 900) {
+    if (camFeedbackTimer) clearTimeout(camFeedbackTimer);
+    renderCamFeedback(message, tone);
+    camFeedbackTimer = setTimeout(() => {
+      camFeedbackTimer = null;
+      if (camKeysHeld.size === 0) renderCamFeedback();
+    }, duration);
+  }
+
+  // 여러 방향키를 같이 눌렀을 때도 "위로 + 왼쪽"처럼 다 보이게 한다.
+  function camActiveLabel() {
+    const parts = Array.from(camKeysHeld.keys(), (k) => CAM_DIRECTION_LABEL[CAM_KEY_MAP[k]]);
+    return parts.length ? `입력 중 · ${parts.join(" + ")}` : "입력 대기";
+  }
+
   function camKeyStop(key) {
     const timer = camKeysHeld.get(key);
     if (timer) clearInterval(timer);
     camKeysHeld.delete(key);
     const btn = document.querySelector(`[data-cam="${CAM_KEY_MAP[key]}"]`);
     if (btn) btn.classList.remove("is-active");
+    if (camKeysHeld.size === 0) renderCamFeedback();
+    else renderCamFeedback(camActiveLabel(), "active");
   }
 
   window.addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
     if (!(key in CAM_KEY_MAP)) return;
-    if (!robotControlAllowed()) return;
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    if (!robotControlAllowed()) {
+      showTemporaryCamFeedback("입력 비활성 · 로봇 콘솔 탭을 여세요", "blocked");
+      return;
+    }
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
+      showTemporaryCamFeedback("입력창 선택됨 · 카메라키 비활성", "blocked");
+      return;
+    }
     e.preventDefault();           // 화살표로 페이지가 스크롤되는 것을 막는다
     if (camKeysHeld.has(key)) return;  // 키 반복(auto-repeat)으로 타이머가 쌓이지 않게
 
@@ -1476,6 +1516,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (btn) btn.classList.add("is-active");   // D패드 버튼도 같이 눌린 것처럼 보이게
     camStep(direction);                        // 누르자마자 한 번 즉시 반응
     camKeysHeld.set(key, setInterval(() => camStep(direction), CAM_REPEAT_MS));
+    if (camFeedbackTimer) { clearTimeout(camFeedbackTimer); camFeedbackTimer = null; }
+    renderCamFeedback(camActiveLabel(), "active");
   });
 
   window.addEventListener("keyup", (e) => {
@@ -1486,7 +1528,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 탭 전환 등으로 keyup을 놓치면 카메라가 계속 돌아간다 — 창을 벗어나면 전부 정지.
   window.addEventListener("blur", () => {
     Array.from(camKeysHeld.keys()).forEach(camKeyStop);
+    renderCamFeedback("창 포커스 없음 · 카메라 정지", "blocked");
   });
+
+  window.addEventListener("focus", () => {
+    if (camKeysHeld.size === 0) renderCamFeedback();
+  });
+
+  renderCamFeedback();
 
   camDpadButtons.forEach((btn) => {
     btn.addEventListener("pointerdown", () => {
@@ -1586,6 +1635,73 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch {}
   }
   setInterval(updateHudTelemetry, 1000);
+
+  // 🩺 로봇 하드웨어 상태 바 — 온도/CPU/메모리/가동시간 + 스로틀 경고.
+  // 텔레메트리(1초)보다 훨씬 느리게 돈다. 이 값들은 초 단위로 안 바뀌고,
+  // 약한 와이파이에서 폴링을 늘리면 조작 명령이 밀린다.
+  const healthEls = {
+    bar: document.getElementById("robotHealthBar"),
+    temp: document.getElementById("healthTemp"),
+    cpu: document.getElementById("healthCpu"),
+    mem: document.getElementById("healthMem"),
+    uptime: document.getElementById("healthUptime"),
+    throttle: document.getElementById("healthThrottle"),
+  };
+
+  function formatUptime(sec) {
+    if (typeof sec !== "number") return "--";
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (d > 0) return `${d}일 ${h}시간`;
+    if (h > 0) return `${h}시간 ${m}분`;
+    return `${m}분`;
+  }
+
+  function setChip(el, text, cls = null) {
+    if (!el) return;
+    el.querySelector("strong").textContent = text;
+    el.classList.remove("is-warm", "is-hot", "is-offline");
+    if (cls) el.classList.add(cls);
+  }
+
+  async function updateRobotHealth() {
+    if (!healthEls.bar) return;
+    const h = await window.LabBotRobotConsole.fetchRobotHealth();
+    if (!h) {
+      // 로봇이 꺼졌거나 와이파이가 끊긴 상태 — 옛날 숫자를 그대로 두면 오해를 부른다.
+      ["temp", "cpu", "mem", "uptime"].forEach((k) => setChip(healthEls[k], "--", "is-offline"));
+      healthEls.throttle.style.display = "none";
+      return;
+    }
+
+    // 온도: Pi 5는 80도에서 소프트 온도 제한이 걸려 클럭이 떨어진다.
+    const t = h.temp_c;
+    setChip(healthEls.temp, t == null ? "--" : `${t}°C`,
+      t == null ? "is-offline" : t >= 75 ? "is-hot" : t >= 65 ? "is-warm" : null);
+
+    const load = h.load_pct;
+    const mhz = h.cpu_mhz;
+    setChip(healthEls.cpu,
+      load == null ? "--" : `${load}%${mhz ? ` · ${(mhz / 1000).toFixed(1)}GHz` : ""}`,
+      load == null ? "is-offline" : load >= 90 ? "is-hot" : load >= 70 ? "is-warm" : null);
+
+    const mem = h.mem_used_pct;
+    setChip(healthEls.mem,
+      mem == null ? "--" : `${mem}%${h.mem_total_mb ? ` / ${(h.mem_total_mb / 1024).toFixed(1)}GB` : ""}`,
+      mem == null ? "is-offline" : mem >= 90 ? "is-hot" : mem >= 75 ? "is-warm" : null);
+
+    setChip(healthEls.uptime, formatUptime(h.uptime_sec), h.uptime_sec == null ? "is-offline" : null);
+
+    // 지금 걸려 있는 스로틀만 보여준다(이력 비트는 제외). 없으면 칩 자체를 숨긴다.
+    const active = Array.isArray(h.throttled_now) ? h.throttled_now : [];
+    if (active.length) {
+      healthEls.throttle.style.display = "";
+      healthEls.throttle.querySelector("strong").textContent = active.map((f) => f.label).join(" · ");
+    } else {
+      healthEls.throttle.style.display = "none";
+    }
+  }
 
   // 키보드 원격 운전 단축키 (WASD / 방향키 / Space 긴급정지)
   const activeKeyboardKeys = new Set();
@@ -1726,6 +1842,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     refreshRobotCamera();
     refreshRobotModeBadge();
     setInterval(refreshRobotModeBadge, 2000);
+    updateRobotHealth();
+    setInterval(updateRobotHealth, 10000);
 
     // 카메라 각도 초기값을 화면 기본값(90/90)이 아니라 실제 로봇 마지막 상태로 맞춘다.
     // cam_pan/cam_tilt 컬럼이 아직 없으면(마이그레이션 전) 여기만 실패하고 화면 기본값

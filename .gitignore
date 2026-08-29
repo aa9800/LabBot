@@ -63,3 +63,10 @@ robot-sim/live_isaac_fpv.jpg
 robot-sim/test_render_view.jpg
 robot-sim/isaac_project/lab_scene_*.png
 test_wh.jpg
+
+# NCNN 변환 산출물 — 가중치에서 언제든 다시 만들 수 있다
+# (주의: 이 파일은 패턴 줄 끝의 주석을 지원하지 않는다. 주석은 반드시 별도 줄에)
+yolo11n_ncnn_model/
+
+# Roboflow 데이터셋 후보 조회 결과 — 조회할 때마다 달라지는 임시 파일
+robot-sim/rf_candidates.json

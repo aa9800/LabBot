@@ -233,19 +233,77 @@ async function setRobotCommand({ mode, speed = 0, turn = 0, cam_pan, cam_tilt })
 }
 
 // 카메라 각도 조절 함수
-async function setCameraAngle({ cam_pan, cam_tilt }) {
-  const targetIp = _cachedLocalIp || _defaultIpForMode();
-  const params = {};
-  if (cam_pan !== undefined) params.pan = cam_pan;
-  if (cam_tilt !== undefined) params.tilt = cam_tilt;
-  const applied = await sendDirectCommand(targetIp, "/camera", params);
+// 화살표 키를 누르고 있으면 카메라 명령이 초당 8번 이상 나간다. 그걸 그대로
+// HTTP로 다 흘리면 약한 와이파이에서 요청이 밀려 쌓이고, 서보는 뒤늦게 도착한
+// 옛날 각도들을 순서대로 따라가느라 "부르르 떨면서 아주 느리게" 움직인다.
+// 그래서 (1) 요청은 항상 한 번에 하나만 날아가게 하고, (2) 그 사이 들어온 입력은
+// 마지막 값 하나로 합쳐서 보낸다. 중간 각도를 건너뛰어도 서보가 알아서 그리로
+// 부드럽게 돌기 때문에 오히려 움직임이 매끄러워진다.
+let _camInFlight = false;
+let _camPending = null;
+let _camLastApplied = null;
 
-  // 2. Supabase DB 상태 동기화
-  const payload = {};
-  if (cam_pan !== undefined) payload.cam_pan = cam_pan;
-  if (cam_tilt !== undefined) payload.cam_tilt = cam_tilt;
-  syncRobotState(payload);
-  return applied;
+async function setCameraAngle({ cam_pan, cam_tilt }) {
+  if (_camInFlight) {
+    // 앞 요청이 아직 안 끝났다 — 최신 목표만 남겨두고 즉시 반환한다.
+    _camPending = { ...(_camPending || {}), ...(cam_pan !== undefined ? { cam_pan } : {}), ...(cam_tilt !== undefined ? { cam_tilt } : {}) };
+    return _camLastApplied;
+  }
+
+  _camInFlight = true;
+  try {
+    const targetIp = _cachedLocalIp || _defaultIpForMode();
+    const params = {};
+    if (cam_pan !== undefined) params.pan = cam_pan;
+    if (cam_tilt !== undefined) params.tilt = cam_tilt;
+    const applied = await sendDirectCommand(targetIp, "/camera", params);
+    _camLastApplied = applied;
+
+    // DB 기록은 로봇 구동과 별개다. 조이스틱과 같은 방식으로 최신 값만 4Hz로 합친다.
+    const payload = {};
+    if (cam_pan !== undefined) payload.cam_pan = cam_pan;
+    if (cam_tilt !== undefined) payload.cam_tilt = cam_tilt;
+    syncCameraStateThrottled(payload);
+    return applied;
+  } finally {
+    _camInFlight = false;
+    if (_camPending) {
+      const next = _camPending;
+      _camPending = null;
+      // 밀려 있던 최신 목표를 이어서 보낸다(꼬리 호출). 실패해도 조작을 막지 않는다.
+      setCameraAngle(next).catch(() => {});
+    }
+  }
+}
+
+// 카메라 각도 DB 기록 스로틀 — 주행용과 타이머를 나눠 서로를 밀어내지 않게 한다.
+let _pendingCamState = null;
+let _camSyncTimer = null;
+let _lastCamSyncAt = 0;
+
+function syncCameraStateThrottled(payload) {
+  _pendingCamState = { ...(_pendingCamState || {}), ...payload };
+  if (_camSyncTimer) return;
+  const delay = Math.max(0, 400 - (Date.now() - _lastCamSyncAt));
+  _camSyncTimer = setTimeout(() => {
+    _camSyncTimer = null;
+    const latest = _pendingCamState;
+    _pendingCamState = null;
+    if (!latest) return;
+    _lastCamSyncAt = Date.now();
+    syncRobotState(latest);
+  }, delay);
+}
+
+// 라즈베리파이 하드웨어 상태(온도·스로틀·CPU·메모리). 관리자 화면 상단에 상시 표시한다.
+async function fetchRobotHealth(timeoutMs = 2000) {
+  const targetIp = _cachedLocalIp || _defaultIpForMode();
+  if (!targetIp) return null;
+  try {
+    return await sendDirectCommand(targetIp, "/health", {}, timeoutMs);
+  } catch {
+    return null;   // 로봇이 꺼져 있거나 와이파이가 끊긴 것 — 호출부에서 "연결 없음"으로 표시
+  }
 }
 
 async function fetchTelemetry(timeoutMs = 1000) {
@@ -485,6 +543,7 @@ window.LabBotRobotConsole = {
   triggerRemoteBuzzer,
   setRobotCommand,
   setCameraAngle,
+  fetchRobotHealth,
   setTargetMode,
   getTargetMode,
 };

@@ -11,6 +11,7 @@ FrameBroker, NCNN 추론 워커, 임무/야간경비 엔진과 RealHAL의 생명
 import datetime
 import os
 import signal
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -29,6 +30,12 @@ from dataclasses import asdict as _asdict
 
 import event_queue
 import stream_server
+
+# 파이썬은 기본적으로 한 스레드가 5ms 동안 GIL을 쥐고 있다가 넘긴다. 이 프로세스는
+# 제어 루프(초음파 측정) · AI 추론 · 웹 명령을 받는 HTTP 핸들러가 한 프로세스에서
+# 같이 도는데, 5ms는 서보 명령이 밀려 카메라가 떨릴 만큼 길다. 1ms로 줄여 명령
+# 스레드가 더 자주 끼어들 수 있게 한다.
+sys.setswitchinterval(0.001)
 
 TICK_SECONDS = 0.05  # 20Hz — 실물 초음파 측정(최대 0.03초 x 2)이 있어서 60Hz보다 낮춤
 TELEMETRY_LOG_EVERY = 20  # 약 1초마다 텔레메트리 기록
@@ -156,6 +163,10 @@ def main():
             except Exception as person_exc:
                 print(f"[labkeeper] 사람 전용 모델 없음 — 커스텀 모델의 person을 그대로 씀: {person_exc}")
 
+            # 아무도 AI 스트림을 안 볼 때 오버레이를 만드는 최소 간격(초).
+            AI_IDLE_DRAW_INTERVAL_S = 1.0
+            ai_last_draw = {"at": 0.0}
+
             def on_ai_result(snapshot, source_frame):
                 # 커스텀 모델 결과에서 person은 버린다 — 오탐이 3배라 신뢰할 수 없다.
                 # 물품 탐지만 남기고, 사람은 아래에서 순정 모델로 다시 판정한다.
@@ -174,16 +185,25 @@ def main():
                     # 순정 모델이 없으면 어쩔 수 없이 커스텀의 person을 쓴다.
                     detections.extend(d for d in snapshot.detections if d.class_name == "person")
 
-                annotated = draw_detections(source_frame, detections)
-                # AI 스트림은 초당 10장뿐이라(일반 스트림 30fps의 1/3) 품질을 올려도
-                # 대역폭에 여유가 있다. 55는 확대한 화면에서 압축 깨짐이 눈에 띄었다.
-                ok, jpeg = cv2.imencode(
-                    ".jpg", annotated,
-                    [int(cv2.IMWRITE_JPEG_QUALITY), 85, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
-                )
-                jpeg_bytes = jpeg.tobytes() if ok else None
-                if jpeg_bytes:
-                    stream_server.set_ai_frame(jpeg_bytes)
+                # 박스를 그려 넣는 일(2배 확대 + 고품질 JPEG)은 이 루프에서 제일
+                # 비싸다. 그런데 /ai/stream을 아무도 안 보고 있으면 그대로 버려진다.
+                # 보는 사람이 있을 때만 그리고, 없으면 /ai/snapshot이 너무 낡지
+                # 않게 1초에 한 장만 만든다. 탐지 자체(아래 ai_corrected)는 경비
+                # 판단에 쓰이므로 항상 갱신한다.
+                now_draw = time.time()
+                if (stream_server.ai_has_viewers()
+                        or now_draw - ai_last_draw["at"] >= AI_IDLE_DRAW_INTERVAL_S):
+                    ai_last_draw["at"] = now_draw
+                    annotated = draw_detections(source_frame, detections)
+                    # AI 스트림은 초당 몇 장뿐이라(일반 스트림 30fps보다 훨씬 낮음)
+                    # 품질을 올려도 대역폭에 여유가 있다. 55는 확대한 화면에서
+                    # 압축 깨짐이 눈에 띄었다.
+                    ok, jpeg = cv2.imencode(
+                        ".jpg", annotated,
+                        [int(cv2.IMWRITE_JPEG_QUALITY), 85, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
+                    )
+                    if ok:
+                        stream_server.set_ai_frame(jpeg.tobytes())
 
                 ai_corrected["detections"] = [_asdict(d) for d in detections]
 
