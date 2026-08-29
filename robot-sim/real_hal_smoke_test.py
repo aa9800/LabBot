@@ -95,11 +95,12 @@ def main():
     hal.set_motion(70, 0)
     assert calls["control_car"][-1] == (70, 70), calls["control_car"][-1]
 
-    # 2) 우회전(turn 양수): left = speed-turn(=-20), right = speed+turn(=160 -> 100으로 클램프)
+    # 2) 우회전(turn 양수): 왼쪽 바퀴를 빠르게, 오른쪽 바퀴를 느리게 돌린다.
+    # controller.py/IsaacHAL의 공통 계약(turn < 0 좌회전, turn > 0 우회전)과 같다.
     hal.set_motion(70, 90)
     left, right = calls["control_car"][-1]
-    assert left == -20, (left, right)
-    assert right == real_hal.MOTOR_SPEED_LIMIT, (left, right)
+    assert left == real_hal.MOTOR_SPEED_LIMIT, (left, right)
+    assert right == -20, (left, right)
 
     # 3) 클램프 상한: 큰 speed+turn도 100을 절대 안 넘는다
     hal.set_motion(100, 100)
@@ -119,6 +120,9 @@ def main():
     #    바로 통과하고 "while GPIO.input" 루프에서 타임아웃 -> NO_OBSTACLE_CM이어야 한다.
     distance = hal.read_ultrasonic()
     assert distance == real_hal.NO_OBSTACLE_CM, distance
+
+    # 7) 카메라가 꺼진 테스트 환경에서는 사람으로 오인하지 않고 일반 물체로 분류한다.
+    assert hal.classify_obstacle() == "object"
 
     print("REAL_HAL_SMOKE_TEST_OK — 모터 믹싱/클램프/정지/인터페이스 형태 전부 통과")
 

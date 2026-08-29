@@ -1,5 +1,13 @@
 """Isaac 대형 랩 맵용 경량 웨이포인트 순찰 제어기."""
 import math
+import os
+import sys
+
+_ROBOT_SIM_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROBOT_SIM_ROOT not in sys.path:
+    sys.path.insert(0, _ROBOT_SIM_ROOT)
+
+from obstacle_avoidance import ObstacleAvoider
 
 
 def _wrap_angle(angle):
@@ -19,9 +27,16 @@ class WaypointPatrolController:
         self._scanned_marker = None
         self._scan_elapsed = 0.0
         self._obstacle_active = False
-        self._clear_elapsed = 0.0
+        self._avoider = ObstacleAvoider(
+            hal,
+            on_obstacle=on_obstacle,
+            on_cleared=on_obstacle_cleared,
+        )
         self.guide_task = None
         self.guide_waypoint_index = 0
+
+    def avoidance_status(self):
+        return self._avoider.status()
 
     def start_guide(self, task):
         """순찰을 잠시 멈추고 물품/반납대 안내 경로를 시작한다."""
@@ -71,24 +86,10 @@ class WaypointPatrolController:
 
     def tick(self, dt):
         distance_cm = self.hal.read_ultrasonic()
-        if distance_cm < 40.0 or (self._obstacle_active and distance_cm < 50.0):
-            self.hal.stop()
-            self._clear_elapsed = 0.0
-            if not self._obstacle_active:
-                self._obstacle_active = True
-                if self.on_obstacle:
-                    self.on_obstacle(distance_cm)
+        if self._avoider.tick(dt, distance_cm):
+            self._obstacle_active = self._avoider.active
             return
-
-        if self._obstacle_active:
-            self._clear_elapsed += dt
-            self.hal.stop()
-            if self._clear_elapsed < 1.5:
-                return
-            self._obstacle_active = False
-            self._clear_elapsed = 0.0
-            if self.on_obstacle_cleared:
-                self.on_obstacle_cleared()
+        self._obstacle_active = False
 
         if self.guide_task:
             if self.guide_task["status"] == "arrived":

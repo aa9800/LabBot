@@ -1,4 +1,4 @@
-"""LabKeeper 전용 Isaac 장면/4WD/카메라를 짧게 검증하고 PNG를 남긴다."""
+"""LabBot 전용 Isaac 장면/4WD/카메라를 짧게 검증하고 PNG를 남긴다."""
 import os
 import sys
 
@@ -37,7 +37,7 @@ def _save_rgb(path, rgba):
 
 def main():
     quality_name, _ = configure_rtx_quality(os.environ.get("LABKEEPER_RENDER_QUALITY", "high"))
-    print(f"[LabKeeper smoke] RTX render preset={quality_name}")
+    print(f"[LabBot smoke] RTX render preset={quality_name}")
     world = World(stage_units_in_meters=1.0)
     stage = omni.usd.get_context().get_stage()
     light = UsdLux.DomeLight.Define(stage, "/World/SmokeDome")
@@ -53,8 +53,8 @@ def main():
     camera.initialize()
     camera.set_focal_length(1.2)
     camera.set_world_pose(
-        position=np.array([13.5, -16.5, 14.5]),
-        orientation=_look_at_quaternion((13.5, -16.5, 14.5), (0.0, 3.0, 0.70)),
+        position=np.array([13.5, -10.5, 18.5]),
+        orientation=_look_at_quaternion((13.5, -10.5, 18.5), (0.0, 7.0, 0.70)),
         camera_axes="usd",
     )
     for _ in range(12):
@@ -80,15 +80,15 @@ def main():
 
     camera.set_focal_length(2.2)
     camera.set_world_pose(
-        position=np.array([6.0, -9.25, 3.15]),
-        orientation=_look_at_quaternion((6.0, -9.25, 3.15), (0.0, -5.4, 1.00)),
+        position=np.array([6.45, 8.65, 3.15]),
+        orientation=_look_at_quaternion((6.45, 8.65, 3.15), (4.35, 11.05, 1.00)),
         camera_axes="usd",
     )
     for _ in range(12):
         world.step(render=True)
-    rental = camera.get_rgba()
-    rental_path = os.path.join(PROJECT_DIR, "lab_scene_rental.png")
-    _save_rgb(rental_path, rental)
+    storage = camera.get_rgba()
+    storage_path = os.path.join(PROJECT_DIR, "lab_scene_storage.png")
+    _save_rgb(storage_path, storage)
 
     camera.set_focal_length(2.2)
     camera.set_world_pose(
@@ -104,8 +104,8 @@ def main():
 
     camera.set_focal_length(2.8)
     camera.set_world_pose(
-        position=np.array([0.25, -4.20, 1.78]),
-        orientation=_look_at_quaternion((0.25, -4.20, 1.78), (-3.55, -5.55, 1.40)),
+        position=np.array([0.25, -1.45, 1.78]),
+        orientation=_look_at_quaternion((0.25, -1.45, 1.78), (3.55, 4.55, 1.18)),
         camera_axes="usd",
     )
     for _ in range(18):
@@ -115,7 +115,7 @@ def main():
     _save_rgb(equipment_path, equipment)
     print(
         f"LAB_SCENE_SMOKE_TEST_OK overview={overview_path} interior={interior_path} "
-        f"rental={rental_path} partitions={partitions_path} equipment={equipment_path}"
+        f"storage={storage_path} partitions={partitions_path} equipment={equipment_path}"
     )
 
 

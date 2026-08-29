@@ -565,3 +565,487 @@
   50% { top: 90%; }
   100% { top: 10%; }
 }
+
+.info-value-mono {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.info-value-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   SIM 좌표 기반 운영 조감도
+   기존 2.5D 장식 화면 대신 guide_targets.json의 구역·체크포인트 구조를 읽기 쉬운
+   평면 운영도로 표현한다. 아래 선택자는 새 렌더러 전용이라 기존 대여/DB 코드와 분리된다.
+   ========================================================================== */
+
+.lab-viewport-card {
+  min-height: 640px;
+  background: #f3f4f1;
+  border-color: var(--border);
+}
+
+.lab-viewport-osd {
+  top: 14px;
+  left: 18px;
+}
+
+.osd-badge {
+  color: #31572c;
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #c8d7c3;
+  box-shadow: 0 4px 16px rgba(30, 40, 28, 0.08);
+}
+
+.lab-canvas-container {
+  height: 640px;
+  background: #f3f4f1;
+  color: #20241f;
+}
+
+.overview-map,
+.room-detail-map {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #f5f6f3;
+}
+
+.overview-map { padding: 72px 28px 28px; }
+
+.overview-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(46, 61, 43, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(46, 61, 43, 0.045) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+
+.overview-map-title {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  display: flex;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 2px;
+  color: #798078;
+  font-family: var(--font-mono);
+}
+
+.overview-map-title b {
+  color: #344133;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+}
+
+.overview-map-title span { font-size: 0.61rem; }
+
+.overview-zone {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #d2d6cf;
+  border-radius: 5px;
+  color: #767d75;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.overview-zone:hover,
+.overview-zone.is-target {
+  z-index: 2;
+  background: #fbfcfa;
+  border-color: #6d8e65;
+  transform: translateY(-2px);
+}
+
+.overview-zone-code {
+  color: #a1a7a0;
+  font-size: 0.58rem;
+  letter-spacing: 0.22em;
+}
+
+.overview-zone strong {
+  color: #394238;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.overview-zone > span:not(.overview-zone-code) {
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+}
+
+.overview-zone small {
+  margin-top: 7px;
+  color: #adb2ac;
+  font-size: 0.56rem;
+}
+
+.overview-item {
+  position: absolute;
+  z-index: 12;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  appearance: none;
+  background: #fff;
+  border: 1px solid var(--item-color);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 7px rgba(22, 27, 21, 0.15);
+}
+
+.overview-item span {
+  position: absolute;
+  inset: 4px;
+  background: var(--item-color);
+  border-radius: 50%;
+}
+
+.overview-item em {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  padding: 2px 4px;
+  transform: translateX(-50%);
+  color: #626961;
+  background: rgba(255, 255, 255, 0.9);
+  font: normal 0.52rem/1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.overview-item:hover,
+.overview-item.is-selected {
+  outline: 4px solid color-mix(in srgb, var(--item-color) 18%, transparent);
+}
+
+.overview-route {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.overview-route polyline {
+  fill: none;
+  stroke: #4f7942;
+  stroke-width: 0.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 180;
+  animation: draw-overview-route 1.1s ease both;
+}
+
+.overview-checkpoint circle:first-child {
+  fill: #fff;
+  stroke: #182018;
+  stroke-width: 0.45;
+  vector-effect: non-scaling-stroke;
+}
+
+.overview-checkpoint circle:nth-child(2) { fill: #4f7942; }
+
+.overview-checkpoint text {
+  fill: #535b52;
+  font: 2px var(--font-mono);
+}
+
+@keyframes draw-overview-route {
+  from { stroke-dashoffset: 180; }
+  to { stroke-dashoffset: 0; }
+}
+
+.overview-robot {
+  position: absolute;
+  z-index: 14;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 3px;
+  transform: translate(-50%, -50%);
+}
+
+.overview-robot span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #fff;
+  background: #557d4b;
+  border: 3px solid #dce8d9;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #7d9c75, 0 4px 14px rgba(38, 65, 32, 0.22);
+  font: 600 0.58rem var(--font-mono);
+}
+
+.overview-robot small {
+  color: #758073;
+  font: 0.52rem var(--font-mono);
+}
+
+.room-detail-map { padding: 74px 40px 44px; }
+
+.room-back-btn {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  z-index: 5;
+  padding: 7px 11px;
+  color: #596258;
+  background: #fff;
+  border: 1px solid #d4d8d2;
+  border-radius: 4px;
+  cursor: pointer;
+  font: 0.68rem var(--font-mono);
+}
+
+.room-detail-heading {
+  position: absolute;
+  top: 18px;
+  left: 22px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-mono);
+}
+
+.room-detail-heading span { color: #8a9289; font-size: 0.58rem; letter-spacing: 0.18em; }
+.room-detail-heading strong { color: #354035; font-size: 0.88rem; }
+.room-detail-heading small { color: #8d958c; font-size: 0.65rem; }
+
+.room-stations {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px 24px;
+  height: 100%;
+}
+
+.room-station {
+  display: flex;
+  min-height: 190px;
+  flex-direction: column;
+}
+
+.room-station header {
+  padding-bottom: 8px;
+  color: #a2a8a1;
+  font: 0.58rem var(--font-mono);
+  letter-spacing: 0.2em;
+  text-align: center;
+}
+
+.room-station > div {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #d2d6cf;
+  border-radius: 5px;
+}
+
+.station-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  color: #303730;
+  background: #fbfcfa;
+  border: 1px solid #dfe2dd;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.station-item:hover,
+.station-item.is-selected { border-color: var(--item-color); }
+
+.station-status {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  background: var(--item-color);
+  border-radius: 50%;
+}
+
+.station-item > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.station-item b { color: #687067; font: 0.55rem var(--font-mono); }
+.station-item small { overflow: hidden; font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
+.station-empty { margin: auto; color: #c0c4bf; font: 0.54rem var(--font-mono); text-align: center; }
+.room-robot { bottom: 7px; left: 50%; }
+
+/* Isaac build_lab_asset.py의 14×18m 실제 XY 평면. 모든 자식은 같은 월드 경계를
+   퍼센트로 투영하므로 가구, 물품 prim, 로봇 정지점이 한 좌표계에서 겹친다. */
+.physical-map {
+  inset: 28px 72px 28px;
+  padding: 0;
+  overflow: visible;
+  background: #f8f9f6;
+  border: 2px solid #555e54;
+  box-shadow: 0 10px 28px rgba(30, 38, 29, 0.08);
+}
+
+.physical-map .overview-grid { background-size: calc(100% / 14) calc(100% / 18); }
+
+.sim-floor-outline {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 5px #d8dbd5;
+}
+
+.sim-fixture,
+.sim-partition {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #667065;
+  background: #e5e8e2;
+  border: 1px solid #abb2a8;
+  font: 0.52rem/1.2 var(--font-mono);
+  text-align: center;
+}
+
+.sim-fixture span {
+  overflow: hidden;
+  padding: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sim-fixture-aisle {
+  z-index: 1;
+  color: #a0a79e;
+  background: rgba(224, 232, 219, 0.5);
+  border: 1px dashed #bdc8b9;
+  letter-spacing: 0.14em;
+  writing-mode: vertical-rl;
+}
+
+.sim-fixture-bench { background: #d9dcd7; border-color: #8f978d; }
+.sim-fixture-equipment { background: #e4e8ea; border-color: #9ca8ac; }
+.sim-fixture-storage { background: #ede8dc; border-color: #b8aa83; }
+.sim-fixture-cold { color: #4d6972; background: #e0edf0; border-color: #91afb7; }
+.sim-fixture-reagent { color: #705f39; background: #f0ead9; border-color: #b9a36e; }
+.sim-fixture-safety { color: #7a4d22; background: #f4e3c9; border-color: #c69b63; }
+
+.sim-partition {
+  z-index: 4;
+  min-width: 2px;
+  min-height: 2px;
+  background: #818981;
+  border: 0;
+}
+
+.physical-map .overview-item { z-index: 12; }
+
+.overview-storage {
+  position: absolute;
+  z-index: 11;
+  display: flex;
+  min-width: 58px;
+  padding: 5px 7px;
+  transform: translate(-50%, -50%);
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid rgba(23, 92, 66, 0.38);
+  border-radius: 7px;
+  background: rgba(245, 250, 246, 0.94);
+  color: #315b47;
+  box-shadow: 0 2px 7px rgba(26, 51, 39, 0.13);
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+
+.overview-storage b { font-size: 0.53rem; }
+.overview-storage span { font-size: 0.48rem; }
+.overview-storage em { color: #b45309; font-size: 0.43rem; font-style: normal; }
+.overview-storage:hover,
+.overview-storage.is-selected { border-color: #12a875; box-shadow: 0 0 0 3px rgba(18, 168, 117, 0.18); }
+
+.storage-inventory-list {
+  margin-bottom: 0.85rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.storage-inventory-list > strong { display: block; margin-bottom: 0.55rem; font-size: 0.78rem; }
+.storage-inventory-list > div { display: grid; max-height: 245px; gap: 0.35rem; overflow-y: auto; }
+.storage-inventory-item {
+  display: flex;
+  width: 100%;
+  padding: 0.52rem 0.6rem;
+  flex-direction: column;
+  gap: 0.18rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.storage-inventory-item:hover,
+.storage-inventory-item.is-selected { border-color: var(--accent); }
+.storage-inventory-item span { font-size: 0.73rem; font-weight: 600; }
+.storage-inventory-item small { color: var(--text-muted); font-size: 0.65rem; }
+.physical-map .overview-route { z-index: 9; }
+.physical-map .overview-robot { z-index: 15; }
+
+.sim-axis {
+  position: absolute;
+  color: #7f877e;
+  font: 0.58rem var(--font-mono);
+  letter-spacing: 0.08em;
+}
+
+.sim-axis-x { right: 0; bottom: -20px; }
+.sim-axis-y {
+  top: 0;
+  left: -26px;
+  transform: rotate(-90deg) translateX(-100%);
+  transform-origin: top left;
+}
+
+.physical-map .overview-map-title {
+  top: -23px;
+  right: 0;
+}
+
+.physical-map .overview-checkpoint text { font-size: 1.8px; }
+
+@media (max-width: 760px) {
+  .lab-viewport-card,
+  .lab-canvas-container { min-height: 720px; height: 720px; }
+  .overview-map { overflow: auto; min-width: 720px; }
+  .room-detail-map { overflow: auto; padding-inline: 18px; }
+  .room-stations { grid-template-columns: repeat(2, minmax(180px, 1fr)); height: auto; }
+  .room-station { min-height: 150px; }
+  .physical-map { min-width: 620px; inset-inline: 46px; }
+}

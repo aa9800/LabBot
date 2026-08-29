@@ -1,4 +1,4 @@
-"""LabKeeper 통합 비전 데이터셋 빌더.
+"""LabBot 통합 비전 데이터셋 빌더.
 Roboflow Universe 및 시뮬레이션 합성 데이터를 하나의 YOLO 포맷 데이터셋으로 통합합니다.
 """
 import os

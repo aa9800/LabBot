@@ -38,6 +38,7 @@ for _s in (sys.stdout, sys.stderr):
         _s.reconfigure(encoding="utf-8", errors="replace")
 
 from notify_supabase import (
+    fetch_item_locations,
     fetch_items,
     record_audit_scan,
     report_local_ip,
@@ -67,6 +68,21 @@ def _get(path, timeout=HTTP_TIMEOUT):
         with urllib.request.urlopen(f"{BASE}{path}", timeout=timeout) as resp:
             return resp.read()
     except (urllib.error.URLError, OSError):
+        return None
+
+
+def _post_json(path, payload, timeout=HTTP_TIMEOUT):
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        f"{BASE}{path}",
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
         return None
 
 
@@ -155,6 +171,22 @@ def main():
                 for it in items:
                     items_by_location.setdefault(it.get("location"), []).append(it)
                 print(f"[relay] 물품 {len(items)}개 갱신")
+            item_locations = fetch_item_locations()
+            if item_locations:
+                cache_result = _post_json(
+                    "/config/item-locations",
+                    {
+                        "revision": f"supabase-{int(now)}",
+                        "items": item_locations,
+                    },
+                )
+                if cache_result:
+                    print(
+                        f"[relay] 로봇 로컬 물품 위치 캐시 "
+                        f"{cache_result.get('item_count', len(item_locations))}건 동기화"
+                    )
+                else:
+                    print("[relay] ⚠️ 로봇 물품 위치 캐시 동기화 실패 — 다음 주기에 재시도")
             last_items_refresh = now
 
         # 2) 이벤트 큐 비우기

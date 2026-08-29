@@ -64,8 +64,8 @@ def main():
     guide.start_guide({
         "task_id": "test-guide",
         "item_name": "마이크로피펫 세트",
-        "shelf_code": "A-01",
-        "waypoints": [(0.0, -1.0), (0.0, -4.0), (-2.6, -5.2)],
+        "shelf_code": "LAB-G04",
+        "waypoints": [(0.0, 4.0), (1.8, 4.0), (2.6, 5.55)],
     })
     for _ in range(60 * 60):
         guide.tick(DT)
@@ -73,13 +73,13 @@ def main():
             break
     if not arrived:
         raise AssertionError(f"물품 안내 목적지 미도착: {guide.guide_status()}")
-    if math.hypot(guide_hal.x + 2.6, guide_hal.y + 5.2) > 0.28:
+    if math.hypot(guide_hal.x - 2.6, guide_hal.y - 5.55) > 0.28:
         raise AssertionError("물품 안내 정차 좌표 오차 초과")
     guide.finish_guide()
     if guide.guide_status()["status"] != "idle":
         raise AssertionError("안내 완료 뒤 순찰 모드로 복귀하지 못함")
 
-    print(f"WAYPOINT_CONTROLLER_TEST_OK max_error={max_error:.3f}m guide=A-01 position=({guide_hal.x:.2f},{guide_hal.y:.2f})")
+    print(f"WAYPOINT_CONTROLLER_TEST_OK max_error={max_error:.3f}m guide=LAB-G04 position=({guide_hal.x:.2f},{guide_hal.y:.2f})")
 
 
 if __name__ == "__main__":

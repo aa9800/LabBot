@@ -4,8 +4,8 @@
 
 ## 구성
 
-- 10개 구역: 오픈형 일반실험실, 기기실-1/2, 세포배양실, 시약/냉장/냉동/소모품 보관실, 안전장비함, 대여·반납실
-- 14 x 26 m 확장 평면, 보안 유리 경계와 출입 리더, 대여 선반 A/B, 반납 데스크, 충전 도크
+- 9개 구역: 오픈형 일반실험실, 기기실-1/2, 세포배양실, 시약/냉장/냉동/소모품 보관실, 안전장비구역
+- 14 x 18 m 연구실 평면, 보안 유리 경계와 출입 리더, 실제 실험대·보관 선반·로봇 이동 통로
 - 실제형 모듈 실험대·하부장·싱크·서비스 포트와 1.8 m 중앙 이동 통로
 - NVIDIA Isaac 6.0 Hospital SimReady의 카트·의자·캐비닛·병·폐기물통을 인스턴스로 혼합
 - 대표 물품만 3D로 표시하고 `scene_object_id -> virtual_lab_objects.item_id -> items.id`로 실제 재고를 조회
@@ -13,6 +13,8 @@
 - QR은 특정 장소에 고정하지 않고, 사용자가 물품을 로봇 카메라 앞에 보여 주는 순간 가상/실물 모두 대여·반납 확정
 - 4륜 스키드 스티어 Raspbot, 실측 바퀴 지름 6.5 cm·트랙 폭 13.5 cm
 - 웹에서 실물/Isaac 타깃 전환 후 주행·회전·Pan/Tilt·QR 스캔을 같은 UI로 제어
+- 동적 장애물과 USD 벽·파티션·고정 가구를 구분해 감지하고, 공통 상태기계로 좌우 공간을 스캔한 뒤 기존 웨이포인트로 복귀
+- 웹 가상실험실의 `/lab_preview`는 로봇 FPV와 분리된 1280×720 RTX 카메라로 현재 USD 장면을 직접 렌더링
 - 마지막 수동 명령 후 1초가 지나면 자동 정지하는 deadman 적용
 
 ## 실행
@@ -49,6 +51,6 @@ $env:LABKEEPER_SIMREADY_DETAILS='0'
 & 'C:\Users\a9800\isaac_clean\venv\Scripts\python.exe' '.\robot-sim\isaac_project\lab_scene_smoke_test.py'
 ```
 
-Supabase SQL Editor에서 `docs/labbot_schema.sql`의 32번 섹션을 적용해야 가상 스캔 RPC가 활성화된다. 이어서 33번 섹션을 적용하면 모든 DB 물품의 가상 바인딩, 선반 좌표와 `robot_guide_tasks` 이력이 활성화된다. QR 원문은 브라우저나 USD에 저장하지 않는다.
+기존 Supabase에 위치 상세 컬럼이 없다면 SQL Editor에서 `docs/migration_2026-08-29_physical_ai_item_locations.sql`을 적용한다. QR 원문은 브라우저나 USD에 저장하지 않는다.
 
-물품별 목적지는 `scene/guide_targets.json`에서 관리한다. 대표 3D 물품은 개별 좌표를 사용하고 나머지 재고는 DB의 `item_type`과 `location`에 따라 가장 가까운 대여 선반 또는 제한 구역 안내 지점으로 연결된다.
+물품별 가상 목적지는 `scene/guide_targets.json`에서 관리한다. 대표 3D 물품은 개별 좌표를 사용하고 나머지 재고는 DB의 `item_type`과 `location`에 따라 실제 실험실 보관 구역의 기본 안내 지점으로 연결된다. 실물 바닥 주행 경로는 별도 캘리브레이션이 끝나기 전까지 자동 모터 명령으로 실행하지 않는다.

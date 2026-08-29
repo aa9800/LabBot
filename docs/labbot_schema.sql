@@ -1,7 +1,7 @@
 -- =============================================================
 -- LabBot Supabase 스키마
 -- LabKeeper에서 검증한 데이터 모델을 그대로 옮긴 것.
--- (자세한 설명은 LabBot_기능요구사항.html 02장 참고)
+-- (자세한 설명은 docs/LABKEEPER_MASTER_BLUEPRINT.md 02장 참고)
 --
 -- 사용법: Supabase 대시보드 > SQL Editor에 이 파일 전체를 붙여넣고 Run.
 -- 순서대로 실행되므로 통째로 한 번에 돌리면 됩니다.
@@ -162,10 +162,11 @@ drop policy if exists "profiles_update_own" on profiles;
 create policy "profiles_update_own" on profiles
   for update using (id = auth.uid());
 
--- items: 로그인한 사람은 전부 조회, 등록/수정/삭제는 관리자만
+-- items: 공개 카탈로그이므로 누구나 조회, 등록/수정/삭제는 관리자만
+-- QR 비밀값은 item_qr_codes로 분리되어 아래 공개 조회에 포함되지 않는다.
 drop policy if exists "items_select_all" on items;
 create policy "items_select_all" on items
-  for select using (auth.role() = 'authenticated');
+  for select to anon, authenticated using (true);
 drop policy if exists "items_admin_write" on items;
 create policy "items_admin_write" on items
   for all using (is_admin()) with check (is_admin());
@@ -1656,7 +1657,7 @@ alter table virtual_lab_objects enable row level security;
 
 drop policy if exists "virtual_lab_objects_select_all" on virtual_lab_objects;
 create policy "virtual_lab_objects_select_all" on virtual_lab_objects
-  for select using (auth.role() = 'authenticated');
+  for select to anon, authenticated using (enabled = true);
 
 drop policy if exists "virtual_lab_objects_admin_write" on virtual_lab_objects;
 create policy "virtual_lab_objects_admin_write" on virtual_lab_objects

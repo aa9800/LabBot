@@ -1,4 +1,4 @@
-"""LabKeeper USD 장면을 실제 렌더링해 YOLO 합성 학습 데이터를 만든다."""
+"""LabBot USD 장면을 실제 렌더링해 YOLO 합성 학습 데이터를 만든다."""
 import math
 import random
 import sys

@@ -1,4 +1,4 @@
-"""LabKeeper 실감형 대학 생명공학 연구실 3D 디지털 트윈 월드 매니저 (NVIDIA Isaac Sim).
+"""LabBot 실감형 대학 생명공학 연구실 3D 디지털 트윈 월드 매니저 (NVIDIA Isaac Sim).
 
 고정 환경 에셋:
 - isaac_project/assets/labkeeper_lab_v2.usda (방안 2 기반 PBR 연구실 장면)
@@ -39,8 +39,6 @@ with open(GUIDE_TARGETS_PATH, "r", encoding="utf-8") as f:
 
 def resolve_guide_target(item_name="", scene_object_id="", mode="pickup", location="", category=""):
     """DB 물품명/scene_object_id를 실제 로봇 정차 경로로 변환한다."""
-    if mode == "return":
-        return dict(GUIDE_TARGETS["rental_room"]["return_station"])
     normalized_name = (item_name or "").casefold()
     for target in GUIDE_TARGETS["targets"]:
         if scene_object_id and target["scene_object_id"] == scene_object_id:
@@ -109,9 +107,6 @@ def build_lab_environment(stage, items=None):
             ("/World/SimReadyDetails/TrashCan", "SM_TrashCan.usd", (5.45, 8.05, 0.0), 0.78, 0.0),
             ("/World/SimReadyDetails/ReagentBottleSetA", "SM_PillBottleSet_01a.usd", (-0.35, 15.02, 0.94), 0.92, 0.0),
             ("/World/SimReadyDetails/ReagentBottleSetB", "SM_PillBottleSet_01b.usd", (0.25, 15.02, 0.94), 0.92, 0.0),
-            ("/World/SimReadyDetails/RentalUtilityCart", "SM_Cart_01a.usd", (-2.65, -4.05, 0.0), 0.64, 90.0),
-            ("/World/SimReadyDetails/RentalDeskChair", "SM_Chair_01a.usd", (3.55, -9.18, 0.0), 0.72, 0.0),
-            ("/World/SimReadyDetails/RentalTrashCan", "SM_TrashCan.usd", (6.20, -9.25, 0.0), 0.72, 0.0),
         )
         for prim_path, filename, position, scale, rotate_z in detail_specs:
             _add_simready_detail(stage, prim_path, f"{hospital_props}/{filename}", position, scale, rotate_z)

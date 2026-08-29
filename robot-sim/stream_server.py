@@ -56,6 +56,8 @@ class FrameBuffer:
 
 
 _buffer = FrameBuffer()
+_ai_buffer = FrameBuffer()
+_lab_preview_buffer = FrameBuffer()
 
 
 class StreamingHandler(BaseHTTPRequestHandler):
@@ -79,10 +81,31 @@ class StreamingHandler(BaseHTTPRequestHandler):
         # CORS 프리플라이트 요청 허용 (Private Network Access 포함)
         self.send_response(200)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS, HEAD")
-        self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, HEAD")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Private-Network", "true")
         self.end_headers()
+
+    def do_POST(self):
+        try:
+            req_path = self.path.split("?")[0]
+            if req_path != "/config/item-locations":
+                self.send_error(404, "Not Found")
+                return
+            if _item_locations_update_callback is None:
+                self._send_json_error(501, "물품 위치 캐시 동기화를 지원하지 않습니다.")
+                return
+            content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length <= 0 or content_length > 512 * 1024:
+                self._send_json_error(413, "물품 위치 데이터 크기가 올바르지 않습니다.")
+                return
+            payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            result = _item_locations_update_callback(payload)
+            self._send_json(200, {"status": "ok", **(result or {})})
+        except (ValueError, KeyError, json.JSONDecodeError) as exc:
+            self._send_json_error(400, str(exc))
+        except Exception as exc:
+            self._send_json_error(500, f"물품 위치 캐시 갱신 실패: {exc}")
 
     def do_GET(self):
         try:
@@ -94,7 +117,12 @@ class StreamingHandler(BaseHTTPRequestHandler):
 
     def _handle_get(self):
         req_path = self.path.split("?")[0]
-        if req_path == "/stream":
+        if req_path in ("/stream", "/ai/stream", "/lab_preview"):
+            selected_buffer = (
+                _ai_buffer if req_path == "/ai/stream"
+                else _lab_preview_buffer if req_path == "/lab_preview"
+                else _buffer
+            )
             self.send_response(200)
             self.send_header("Age", "0")
             self.send_header("Cache-Control", "no-cache, private, no-store, must-revalidate")
@@ -106,7 +134,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
             client_version = 0
             try:
                 while True:
-                    frame, client_version = _buffer.wait_for_new_frame(client_version, timeout=0.5)
+                    frame, client_version = selected_buffer.wait_for_new_frame(client_version, timeout=0.5)
                     if frame:
                         chunk = (
                             b"--FRAME\r\n"
@@ -118,8 +146,8 @@ class StreamingHandler(BaseHTTPRequestHandler):
                         self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
                 pass
-        elif req_path.startswith("/snapshot"):
-            frame = _buffer.get_latest()
+        elif req_path.startswith("/snapshot") or req_path == "/ai/snapshot":
+            frame = (_ai_buffer if req_path == "/ai/snapshot" else _buffer).get_latest()
             if frame:
                 self.send_response(200)
                 self.send_header("Content-Type", "image/jpeg")
@@ -182,6 +210,55 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             data = _telemetry_provider() if _telemetry_provider is not None else {}
             self.wfile.write(json.dumps(data).encode("utf-8"))
+        elif req_path == "/ai/status":
+            data = _ai_status_provider() if _ai_status_provider is not None else {
+                "running": False,
+                "mode": "unavailable",
+                "error": "AI 추론 엔진이 등록되지 않았습니다.",
+            }
+            self._send_json(200, data)
+        elif req_path == "/checkout/verify":
+            if _checkout_verify_callback is None:
+                self._send_json(200, {"verdict": "unavailable", "reason": "AI 검증 엔진 미등록"})
+                return
+            parsed = urlparse(self.path)
+            qs = parse_qs(parsed.query)
+            params = {key: values[0] for key, values in qs.items()}
+            self._send_json(200, _checkout_verify_callback(params))
+        elif req_path == "/config/item-locations/status":
+            result = _item_locations_status_callback() if _item_locations_status_callback else {
+                "status": "unsupported"
+            }
+            self._send_json(200, result)
+        elif req_path == "/guard/status":
+            result = _guard_status_callback() if _guard_status_callback else {"status": "unsupported"}
+            self._send_json(200, result)
+        elif req_path == "/guard/config":
+            if _guard_config_callback is None:
+                self._send_json_error(501, "야간 경비 설정을 지원하지 않습니다.")
+                return
+            parsed = urlparse(self.path)
+            raw = {key: values[0] for key, values in parse_qs(parsed.query).items()}
+            values = {}
+            for key, value in raw.items():
+                if key in {"enabled", "force_night"}:
+                    values[key] = str(value).lower() in {"1", "true", "yes", "on"}
+                elif key in {"start_hour", "end_hour"}:
+                    values[key] = int(value)
+                elif key == "patrol_interval_minutes":
+                    values[key] = float(value)
+            self._send_json(200, _guard_config_callback(**values))
+        elif req_path == "/guard/trigger":
+            if _guard_trigger_callback is None:
+                self._send_json_error(501, "야간 경비 트리거를 지원하지 않습니다.")
+                return
+            parsed = urlparse(self.path)
+            raw = {key: values[0] for key, values in parse_qs(parsed.query).items()}
+            result = _guard_trigger_callback(
+                raw.get("source", "web"),
+                str(raw.get("person", "0")).lower() in {"1", "true", "yes", "on"},
+            )
+            self._send_json(200, result)
         elif req_path.startswith("/scan_qr"):
             # 웹 버튼 클릭 시 온디맨드 1회 QR 스캔 실행
             code = None
@@ -319,6 +396,13 @@ _buzzer_callback = None
 _guide_start_callback = None
 _guide_status_callback = None
 _guide_finish_callback = None
+_ai_status_provider = None
+_checkout_verify_callback = None
+_item_locations_update_callback = None
+_item_locations_status_callback = None
+_guard_status_callback = None
+_guard_config_callback = None
+_guard_trigger_callback = None
 
 
 def set_buzzer_callback(cb):
@@ -358,6 +442,33 @@ def set_telemetry_provider(fn):
     _telemetry_provider = fn
 
 
+def set_ai_status_provider(fn):
+    """라즈봇 로컬 AI 엔진 상태 제공 함수를 등록한다."""
+    global _ai_status_provider
+    _ai_status_provider = fn
+
+
+def set_checkout_verify_callback(fn):
+    """로봇 내부 최신 AI 결과로 대여 물품 구성을 확인하는 콜백."""
+    global _checkout_verify_callback
+    _checkout_verify_callback = fn
+
+
+def set_item_location_callbacks(update=None, status=None):
+    """PC relay가 DB 위치 정보를 로봇의 로컬 캐시에 동기화하는 콜백."""
+    global _item_locations_update_callback, _item_locations_status_callback
+    _item_locations_update_callback = update
+    _item_locations_status_callback = status
+
+
+def set_guard_callbacks(status=None, configure=None, trigger=None):
+    """주야간 경비 상태기계의 조회·설정·테스트 트리거를 등록한다."""
+    global _guard_status_callback, _guard_config_callback, _guard_trigger_callback
+    _guard_status_callback = status
+    _guard_config_callback = configure
+    _guard_trigger_callback = trigger
+
+
 def set_guide_callbacks(start=None, status=None, finish=None):
     """물품 안내 시작/상태/종료 콜백을 등록한다."""
     global _guide_start_callback, _guide_status_callback, _guide_finish_callback
@@ -369,6 +480,16 @@ def set_guide_callbacks(start=None, status=None, finish=None):
 def set_camera_frame(jpeg_bytes: bytes):
     """카메라 루프에서 새 프레임이 인코딩될 때마다 호출하여 버퍼를 갱신하고 클라이언트를 깨운다."""
     _buffer.update(jpeg_bytes)
+
+
+def set_ai_frame(jpeg_bytes: bytes):
+    """객체 박스가 그려진 AI 프리뷰를 원본 스트림과 별도 버퍼에 보관한다."""
+    _ai_buffer.update(jpeg_bytes)
+
+
+def set_lab_preview_frame(jpeg_bytes: bytes):
+    """Isaac 실험실 고정 카메라 프레임을 로봇 FPV와 분리된 버퍼에 저장한다."""
+    _lab_preview_buffer.update(jpeg_bytes)
 
 
 def get_latest_frame() -> bytes:
@@ -407,7 +528,7 @@ if __name__ == "__main__":
                 img[:] = (25, 30, 38)
                 cv2.putText(
                     img,
-                    "LabKeeper Live",
+                    "LabBot Live",
                     (40, 90),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.9,

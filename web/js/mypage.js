@@ -267,6 +267,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         navStatus.textContent = `도착했습니다 · ${exactLocation}에 물품이 있습니다. 물품을 꺼낸 뒤 로봇 카메라에 QR을 보여주세요.`;
       } else if (status.status === "navigating") {
         navStatus.textContent = `로봇을 따라가세요 · 목적지: ${exactLocation} · 이동 ${status.waypoint_index + 1}/${status.waypoint_count}`;
+      } else if (status.status === "awaiting_route_calibration") {
+        navStatus.textContent = `물품 위치: ${exactLocation} · 실물 로봇 경로는 현장 캘리브레이션 대기 중입니다. QR은 현재 위치에서 바로 보여줘도 됩니다.`;
+      } else if (status.status === "awaiting_route_executor") {
+        navStatus.textContent = `물품 위치: ${exactLocation} · 검증된 실물 경로 실행기가 아직 연결되지 않아 로봇은 안전 정지 상태입니다. QR은 현재 위치에서 바로 보여줘도 됩니다.`;
       } else if (status.status === "idle") {
         navStatus.textContent = "안내 대기 중";
       }

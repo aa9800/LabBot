@@ -1,0 +1,19 @@
+[Unit]
+Description=LabKeeper Raspberry Pi 5 Physical AI
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/labkeeper
+Environment=PYTHONUNBUFFERED=1
+Environment=LABKEEPER_AI_ACTUATION=0
+Environment=LABKEEPER_AI_TARGET_FPS=10
+ExecStart=/home/pi/labkeeper-edge-venv/bin/python -u /home/pi/labkeeper/run_real.py
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

@@ -175,6 +175,87 @@ const VIRTUAL_LAB_ENVIRONMENT_PROPS = [
   { type: "clean_bench", name: "BSC 생물안전작업대", position: { x: 22, y: 25 }, width: 10, height: 12 }
 ];
 
+// robot-sim/isaac_project/scene/guide_targets.json의 실제 이동 좌표를 웹 조감도 좌표로
+// 정규화한 데이터다. 웹이 임의의 길을 그리지 않고 시뮬레이터와 같은 체크포인트를
+// 사용하도록 sceneObjectId별 목적지와 경유점을 함께 보관한다.
+const VIRTUAL_LAB_GUIDE_ROUTES = {
+  "eq-pipette-01": [[0, 0], [0, 4], [1.8, 4], [2.6, 5.55]],
+  "con-tips-01": [[0, 0], [0, 4], [1.8, 4], [1.8, 10]],
+  "eq-centrifuge-01": [[0, 0], [0, 4], [1.8, 4], [2.6, 2.35]],
+  "eq-scale-01": [[0, 0], [0, 4], [-1.8, 4], [-2.6, 5.72]],
+  "eq-microscope-01": [[0, 0], [0, 4], [-1.8, 4], [-2.35, 2.1]],
+  "eq-pcr-01": [[0, 0], [0, 4], [-1.8, 4], [-1.8, 10]],
+  "eq-phmeter-01": [[0, 0], [0, 4], [-1.8, 4], [-1.8, 12.4], [0, 13.6]],
+  "eq-freezer-01": [[0, 0], [0, 4], [1.8, 4], [1.8, 12.4], [1.8, 14.6]],
+  "reagent-ethanol-01": [[0, 0], [0, 4], [-1.8, 4], [-1.8, 12.4], [0, 13.6]],
+  "saf-extinguisher-01": [[0, 0]]
+};
+
+// build_lab_asset.py와 object_bindings.json에서 가져온 실제 Isaac 월드 XY 좌표.
+// route의 마지막 점은 로봇 정지점이고, 아래 좌표는 물품 prim이 놓인 위치라 서로 다르다.
+const VIRTUAL_LAB_OBJECT_WORLD_POSITIONS = {
+  "eq-pipette-01": [3.64, 5.55],
+  "con-tips-01": [3.30, 6.65],
+  "eq-centrifuge-01": [3.66, 2.35],
+  "eq-scale-01": [-3.65, 5.72],
+  "eq-phmeter-01": [-1.28, 15.25],
+  "eq-microscope-01": [-3.62, 2.10],
+  "eq-pcr-01": [-5.55, 10.65],
+  "eq-freezer-01": [5.02, 12.82],
+  "reagent-ethanol-01": [6.18, 14.93],
+  "saf-extinguisher-01": [5.95, -1.25],
+  "saf-biohazard-01": [4.55, -1.18]
+};
+
+// Isaac 장면의 14m × 18m 바닥과 주요 충돌 가구를 위에서 본 직사각형으로 투영한다.
+const VIRTUAL_LAB_SIM_GEOMETRY = {
+  bounds: { minX: -7, maxX: 7, minY: -2, maxY: 16 },
+  fixtures: [
+    { id: "corridor", label: "ROBOT AISLE", x: 0, y: 7, w: 4.75, h: 17.4, type: "aisle" },
+    { id: "island-west", label: "Island West", x: -3.65, y: 4.25, w: 1.25, h: 7.4, type: "bench" },
+    { id: "island-east", label: "Island East", x: 3.65, y: 4.25, w: 1.25, h: 7.4, type: "bench" },
+    { id: "wall-west", label: "West Wall Bench", x: -6.25, y: 4.15, w: 0.72, h: 8, type: "bench" },
+    { id: "wall-east", label: "East Wall Bench", x: 6.25, y: 4.15, w: 0.72, h: 8, type: "bench" },
+    { id: "inst-1", label: "Instrument Bench 1", x: -4.65, y: 10.65, w: 3.3, h: 0.72, type: "equipment" },
+    { id: "inst-2", label: "Instrument Bench 2", x: -4.65, y: 12.65, w: 3.3, h: 0.72, type: "equipment" },
+    { id: "cell-bsc", label: "BSC", x: -4.55, y: 14.85, w: 2.65, h: 0.78, type: "equipment" },
+    { id: "consumables-1", label: "Consumables 1", x: 3.45, y: 11.06, w: 1.42, h: 0.56, type: "storage" },
+    { id: "consumables-2", label: "Consumables 2", x: 5.25, y: 11.06, w: 1.42, h: 0.56, type: "storage" },
+    { id: "fridge", label: "4℃", x: 3.65, y: 12.82, w: 1.08, h: 0.82, type: "cold" },
+    { id: "freezer-1", label: "-80℃ 1", x: 5.02, y: 12.82, w: 1.08, h: 0.82, type: "cold" },
+    { id: "freezer-2", label: "-80℃ 2", x: 6.15, y: 12.82, w: 1.08, h: 0.82, type: "cold" },
+    { id: "reagent", label: "Reagent Desk", x: 0, y: 15.28, w: 3.8, h: 0.78, type: "reagent" },
+    { id: "flammable", label: "Flammable", x: 6.18, y: 14.93, w: 0.85, h: 0.72, type: "safety" },
+    { id: "ppe", label: "PPE", x: -6.20, y: -0.75, w: 0.88, h: 0.66, type: "safety" }
+  ],
+  partitions: [
+    { x: -2.48, y: 10.23, w: 0.10, h: 2.42 }, { x: 2.48, y: 10.23, w: 0.10, h: 2.42 },
+    { x: -2.48, y: 12.70, w: 0.10, h: 2.28 }, { x: 2.48, y: 12.70, w: 0.10, h: 2.28 },
+    { x: -2.48, y: 14.94, w: 0.10, h: 1.96 }, { x: 2.48, y: 14.94, w: 0.10, h: 1.96 },
+    { x: -4.73, y: 11.50, w: 4.40, h: 0.12 }, { x: 4.73, y: 11.50, w: 4.40, h: 0.12 },
+    { x: -4.73, y: 13.90, w: 4.40, h: 0.12 }, { x: 4.73, y: 13.90, w: 4.40, h: 0.12 }
+  ]
+};
+
+// Isaac Sim 실험실의 기능 구역을 2D 운영 조감도로 단순화한 배치다. 좌표는 화면상의
+// 퍼센트이며 재고나 물품명은 포함하지 않는다. 실제 물품은 Supabase와 위 객체 매핑에서
+// 계속 가져온다.
+const VIRTUAL_LAB_ROOM_LAYOUTS = [
+  { id: "기기실-1", code: "ZONE A", label: "분석 · PCR", x: 2, y: 3, w: 30, h: 28 },
+  { id: "시약보관실", code: "ZONE B", label: "시약 조제 · 보관", x: 34, y: 3, w: 30, h: 28 },
+  { id: "냉동보관실", code: "ZONE C", label: "-80℃ / -20℃", x: 66, y: 3, w: 32, h: 28 },
+  { id: "일반실험실", code: "ZONE D", label: "중앙 실험대", x: 2, y: 35, w: 38, h: 28 },
+  { id: "기기실-2", code: "ZONE E", label: "원심 · 계측", x: 42, y: 35, w: 30, h: 28 },
+  { id: "세포배양실", code: "ZONE F", label: "BSC · 배양", x: 74, y: 35, w: 24, h: 28 },
+  { id: "소모품보관실", code: "ZONE G", label: "소모품 선반", x: 2, y: 67, w: 30, h: 28 },
+  { id: "냉장보관실", code: "ZONE H", label: "4℃ 냉장", x: 34, y: 67, w: 30, h: 28 },
+  { id: "안전장비함", code: "ZONE I", label: "안전장비 · Raspbot Dock", x: 66, y: 67, w: 32, h: 28 }
+];
+
 window.VIRTUAL_LAB_ROOMS = VIRTUAL_LAB_ROOMS;
 window.VIRTUAL_LAB_OBJECTS = VIRTUAL_LAB_OBJECTS;
 window.VIRTUAL_LAB_ENVIRONMENT_PROPS = VIRTUAL_LAB_ENVIRONMENT_PROPS;
+window.VIRTUAL_LAB_GUIDE_ROUTES = VIRTUAL_LAB_GUIDE_ROUTES;
+window.VIRTUAL_LAB_ROOM_LAYOUTS = VIRTUAL_LAB_ROOM_LAYOUTS;
+window.VIRTUAL_LAB_OBJECT_WORLD_POSITIONS = VIRTUAL_LAB_OBJECT_WORLD_POSITIONS;
+window.VIRTUAL_LAB_SIM_GEOMETRY = VIRTUAL_LAB_SIM_GEOMETRY;

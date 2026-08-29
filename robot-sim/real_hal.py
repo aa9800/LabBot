@@ -39,6 +39,7 @@ import time
 
 import RPi.GPIO as GPIO
 import YB_Pcb_Car
+from frame_broker import FrameBroker
 
 # ── 초음파 ──────────────────────────────────────────────────────────
 TRIG_PIN = 16
@@ -113,8 +114,10 @@ class RealHAL:
         self._cv2 = None
         self._stream_server = None
         self._hog = None
-        self._latest_frame = None
-        self._frame_lock = threading.Lock()
+        self._obstacle_classifier = None
+        self.frame_broker = FrameBroker()
+        self._motion_lock = threading.Lock()
+        self._motion_prev_gray = None
         self._camera_thread = None
         self._camera_stop = threading.Event()
         self._last_qr_time = 0.0
@@ -165,11 +168,10 @@ class RealHAL:
         while not self._camera_stop.is_set():
             try:
                 frame = self._picam2.capture_array()
-                with self._frame_lock:
-                    self._latest_frame = frame
                 if self._cv2 is not None and self._stream_server is not None:
                     # picamera2의 RGB 출력을 OpenCV가 기대하는 BGR로 변환 (손이 파란색/초록색으로 보이는 스머프 색상 왜곡 해결)
                     bgr_frame = self._cv2.cvtColor(frame, self._cv2.COLOR_RGB2BGR)
+                    self.frame_broker.publish(bgr_frame)
                     # 품질 50 — 초고속 인코딩 및 자연스러운 색상 송출
                     _, jpeg = self._cv2.imencode(
                         ".jpg", bgr_frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 50, int(self._cv2.IMWRITE_JPEG_OPTIMIZE), 0]
@@ -185,8 +187,8 @@ class RealHAL:
         """백그라운드 카메라 스레드가 가장 최근에 캡처해둔 프레임을 안전하게 돌려준다(QR 디코딩/스냅샷용)."""
         if self._picam2 is None:
             return None
-        with self._frame_lock:
-            return self._latest_frame.copy() if self._latest_frame is not None else None
+        snapshot = self.frame_broker.latest(copy=True)
+        return snapshot.frame if snapshot is not None else None
 
     def read_line_sensors(self):
         """(left, mid_left, mid_right, right) — True면 그 센서가 지금 선 위에 있다는 뜻.
@@ -257,6 +259,56 @@ class RealHAL:
         except Exception as e:
             print(f"[RealHAL] 사람 감지 실패: {e}")
             return False
+
+    def detect_motion(self):
+        """야간 정차 감시용 저비용 움직임 감지.
+
+        160x120 회색조 프레임만 비교하므로 HOG 사람 검출보다 훨씬 가볍다. 카메라가
+        움직이는 주행 중에는 호출하지 않고, 야간 정차 상태에서만 run_real.py가
+        약 2Hz로 호출한다.
+        """
+        frame = self.capture_frame()
+        if frame is None or self._cv2 is None:
+            return False
+        try:
+            gray = self._cv2.cvtColor(frame, self._cv2.COLOR_BGR2GRAY)
+            gray = self._cv2.resize(gray, (160, 120), interpolation=self._cv2.INTER_AREA)
+            gray = self._cv2.GaussianBlur(gray, (7, 7), 0)
+            with self._motion_lock:
+                previous = self._motion_prev_gray
+                self._motion_prev_gray = gray
+            if previous is None:
+                return False
+            diff = self._cv2.absdiff(previous, gray)
+            _, mask = self._cv2.threshold(diff, 24, 255, self._cv2.THRESH_BINARY)
+            changed_ratio = self._cv2.countNonZero(mask) / float(mask.size)
+            return changed_ratio >= 0.025
+        except Exception as e:
+            print(f"[RealHAL] 움직임 감지 실패: {e}")
+            return False
+
+    def reset_motion_baseline(self):
+        """주행/카메라 조작 뒤 첫 프레임을 움직임으로 오인하지 않게 기준을 버린다."""
+        with self._motion_lock:
+            self._motion_prev_gray = None
+
+    def classify_obstacle(self):
+        """우회 직전 카메라로 사람 여부만 구분한다.
+
+        현재 장비에는 전방 초음파 하나뿐이라 물체의 정확한 종류를 안정적으로 분류할
+        수는 없다. 대신 사람은 가까이 우회하지 않고 통과할 때까지 정지시키고, 나머지
+        물체만 저속 좌우 스캔 우회 대상으로 분류한다.
+        """
+        if callable(self._obstacle_classifier):
+            try:
+                return self._obstacle_classifier()
+            except Exception as error:
+                print(f"[RealHAL] AI 장애물 분류 실패, HOG fallback 사용: {error}")
+        return "person" if self.detect_person() else "object"
+
+    def set_obstacle_classifier(self, classifier):
+        """통합 Edge AI의 최신 결과를 장애물 종류 판단에 연결한다."""
+        self._obstacle_classifier = classifier
 
     def set_motion(self, speed, turn):
         """아케이드 믹싱(모듈 docstring 참고) 후 클램프해서 Control_Car로 보낸다."""

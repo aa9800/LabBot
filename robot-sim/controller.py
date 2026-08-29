@@ -3,6 +3,9 @@
 HAL(hal 인자)에만 의존하고 pygame이나 GPIO를 직접 건드리지 않는다.
 그래서 SimHAL로 연습한 이 파일을 나중에 RealHAL로 그대로 바꿔 끼울 수 있다.
 """
+from obstacle_avoidance import ObstacleAvoider
+
+
 SPEED = 100.0
 TURN_GAIN = 100.0
 OBSTACLE_STOP_DISTANCE = 40
@@ -22,32 +25,24 @@ class PatrolController:
         self._scanned_marker = None
         self._scan_elapsed = 0.0
         self._obstacle_active = False
-        self._clear_elapsed = 0.0
+        self._avoider = ObstacleAvoider(
+            hal,
+            on_obstacle=on_obstacle,
+            on_cleared=on_obstacle_cleared,
+            stop_distance_cm=OBSTACLE_STOP_DISTANCE,
+            clear_distance_cm=OBSTACLE_CLEAR_DISTANCE,
+        )
 
-    def tick(self, dt):
+    def avoidance_status(self):
+        return self._avoider.status()
+
+    def tick(self, dt, distance_cm=None):
         """dt: 이번 틱에 흐른 시뮬레이션 시간(초). 실제 시계가 아니라 이 값 기준으로만 판단한다."""
-        distance = self.hal.read_ultrasonic()
-        if distance < OBSTACLE_STOP_DISTANCE or (
-            self._obstacle_active and distance < OBSTACLE_CLEAR_DISTANCE
-        ):
-            self.hal.stop()
-            self._clear_elapsed = 0.0
-            if not self._obstacle_active:
-                self._obstacle_active = True
-                if self.on_obstacle:
-                    self.on_obstacle(distance)
+        distance = self.hal.read_ultrasonic() if distance_cm is None else distance_cm
+        if self._avoider.tick(dt, distance):
+            self._obstacle_active = self._avoider.active
             return
-
-        if self._obstacle_active:
-            # 장애물이 사라져도 1.5초 동안 완전히 안전한지 지속 확인 후 출발
-            self._clear_elapsed += dt
-            if self._clear_elapsed < 1.5:
-                self.hal.stop()
-                return
-            self._obstacle_active = False
-            self._clear_elapsed = 0.0
-            if self.on_obstacle_cleared:
-                self.on_obstacle_cleared()
+        self._obstacle_active = False
 
         qr = self.hal.try_read_qr()
         if qr:

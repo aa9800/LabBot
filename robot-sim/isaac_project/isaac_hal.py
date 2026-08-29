@@ -2,7 +2,7 @@ import math
 import os
 import numpy as np
 import cv2
-from pxr import UsdGeom
+from pxr import Usd, UsdGeom, UsdPhysics
 from lab_world import LAB_TRACK_POINTS_M, LAB_ZONES
 
 LINE_SENSOR_SPAN = 0.08
@@ -17,6 +17,8 @@ SPEED_SCALE = 0.007
 ANGULAR_SPEED_SCALE = 0.024
 
 NO_OBSTACLE_CM = 999.0
+ULTRASONIC_MAX_M = 3.0
+ROBOT_CLEARANCE_M = 0.11
 FPV_WIDTH = int(os.environ.get("LABKEEPER_FPV_WIDTH", "960"))
 FPV_HEIGHT = int(os.environ.get("LABKEEPER_FPV_HEIGHT", "540"))
 
@@ -40,6 +42,29 @@ def _distance_to_track(point):
     )
 
 
+def _ray_aabb_distance(origin_x, origin_y, direction_x, direction_y, bounds, max_distance):
+    """2D 전방 광선과 축 정렬 충돌 경계의 첫 교차 거리(m)를 반환한다."""
+    min_x, min_y, max_x, max_y = bounds
+    near, far = 0.0, float(max_distance)
+    for origin, direction, lower, upper in (
+        (origin_x, direction_x, min_x, max_x),
+        (origin_y, direction_y, min_y, max_y),
+    ):
+        if abs(direction) < 1e-8:
+            if origin < lower or origin > upper:
+                return None
+            continue
+        first = (lower - origin) / direction
+        second = (upper - origin) / direction
+        if first > second:
+            first, second = second, first
+        near = max(near, first)
+        far = min(far, second)
+        if near > far:
+            return None
+    return near if 0.0 <= near <= max_distance else None
+
+
 class IsaacHAL:
     def __init__(self, stage, jetbot_articulation, obstacle_prim_path, checkpoints=None, camera=None):
         """
@@ -59,6 +84,8 @@ class IsaacHAL:
         self.cam_pan = 90
         self.cam_tilt = 90
         self._last_valid_frame = np.zeros((FPV_HEIGHT, FPV_WIDTH, 3), dtype=np.uint8)
+        self._cached_dist = NO_OBSTACLE_CM
+        self._cached_obstacle_kind = "none"
 
         dof_names = self.robot.dof_names
         self._left_indices = [
@@ -70,6 +97,59 @@ class IsaacHAL:
             for name in ("right_front_wheel_joint", "right_rear_wheel_joint")
         ]
         self._n_dof = len(dof_names)
+        self._static_colliders = self._build_static_collider_cache()
+        print(f"[IsaacHAL] 고정 구조물 초음파 맵 {len(self._static_colliders)}개 로드")
+
+    def _build_static_collider_cache(self):
+        """USD CollisionAPI가 붙은 벽·파티션·가구를 2D 센서 경계로 캐시한다.
+
+        바닥과 로봇보다 높은 상판은 전방 초음파/차체 충돌 대상에서 제외한다. 매 틱 USD를
+        순회하지 않고 시작 시 한 번만 계산하므로 RTX 렌더링 반응성을 해치지 않는다.
+        """
+        cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_])
+        colliders = []
+        for prim in self.stage.Traverse():
+            path = str(prim.GetPath())
+            if path == self.obstacle_prim_path or path.startswith("/World/Raspbot"):
+                continue
+            try:
+                if not prim.HasAPI(UsdPhysics.CollisionAPI):
+                    continue
+                aligned = cache.ComputeWorldBound(prim).ComputeAlignedBox()
+                lower, upper = aligned.GetMin(), aligned.GetMax()
+                min_z, max_z = float(lower[2]), float(upper[2])
+                # Raspbot 본체/초음파가 차지하는 높이와 겹치는 구조물만 감지한다.
+                if max_z < 0.025 or min_z > 0.36:
+                    continue
+                lower_path = path.casefold()
+                kind = "static_wall" if any(
+                    token in lower_path
+                    for token in ("wall", "partition", "divider", "door", "glass", "jamb", "architecture")
+                ) else "static_fixture"
+                colliders.append({
+                    "path": path,
+                    "kind": kind,
+                    "bounds": (
+                        float(lower[0]) - ROBOT_CLEARANCE_M,
+                        float(lower[1]) - ROBOT_CLEARANCE_M,
+                        float(upper[0]) + ROBOT_CLEARANCE_M,
+                        float(upper[1]) + ROBOT_CLEARANCE_M,
+                    ),
+                })
+            except Exception:
+                continue
+        return colliders
+
+    def _static_obstacle_ahead(self, rx, ry, fx, fy):
+        nearest = None
+        for collider in self._static_colliders:
+            distance = _ray_aabb_distance(
+                rx, ry, fx, fy, collider["bounds"], ULTRASONIC_MAX_M
+            )
+            if distance is None or (nearest and distance >= nearest[0]):
+                continue
+            nearest = (distance, collider["kind"], collider["path"])
+        return nearest
 
     def update_tick_cache(self):
         """메인 시뮬레이션 스레드에서만 호출하여 PhysX 상태를 캐시한다 (스레드 충돌 방지)."""
@@ -83,26 +163,38 @@ class IsaacHAL:
         except Exception:
             pass
 
-        # 초음파 거리 캐시
+        # 초음파 거리 캐시: 이동 상자뿐 아니라 USD 벽·파티션·고정 가구까지 같은 센서로 판정.
         try:
+            rx, ry, fx, fy = self._position_and_heading()
+            candidates = []
             obs_prim = self.stage.GetPrimAtPath(self.obstacle_prim_path)
-            if not obs_prim.IsValid():
-                self._cached_dist = NO_OBSTACLE_CM
-            else:
+            if obs_prim.IsValid():
                 xformable = UsdGeom.Xformable(obs_prim)
                 world_xf = xformable.ComputeLocalToWorldTransform(0)
                 obs_pos = world_xf.ExtractTranslation()
                 ox, oy = float(obs_pos[0]), float(obs_pos[1])
-                rx, ry, fx, fy = self._position_and_heading()
                 dx, dy = ox - rx, oy - ry
                 fwd_dist = dx * fx + dy * fy
                 lat_dist = abs(-dx * fy + dy * fx)
-                if fwd_dist > 0.03 and fwd_dist < 3.0 and lat_dist < 0.25:
-                    self._cached_dist = fwd_dist * 100.0
-                else:
-                    self._cached_dist = NO_OBSTACLE_CM
+                if 0.03 < fwd_dist < ULTRASONIC_MAX_M and lat_dist < 0.25:
+                    candidates.append((fwd_dist, "movable_object", self.obstacle_prim_path))
+
+            static_hit = self._static_obstacle_ahead(rx, ry, fx, fy)
+            if static_hit:
+                candidates.append(static_hit)
+
+            if candidates:
+                distance_m, kind, path = min(candidates, key=lambda hit: hit[0])
+                self._cached_dist = distance_m * 100.0
+                self._cached_obstacle_kind = kind
+                self._cached_obstacle_path = path
+            else:
+                self._cached_dist = NO_OBSTACLE_CM
+                self._cached_obstacle_kind = "none"
+                self._cached_obstacle_path = ""
         except Exception:
             self._cached_dist = NO_OBSTACLE_CM
+            self._cached_obstacle_kind = "none"
 
     def _position_and_heading(self):
         if hasattr(self, "_cached_pose") and self._cached_pose is not None:
@@ -134,6 +226,17 @@ class IsaacHAL:
         if hasattr(self, "_cached_dist") and self._cached_dist is not None:
             return self._cached_dist
         return NO_OBSTACLE_CM
+
+    def classify_obstacle(self):
+        """우회기와 안전 엔진이 벽을 이동 물체 사고로 오인하지 않도록 종류를 제공한다."""
+        return self._cached_obstacle_kind
+
+    def obstacle_context(self):
+        return {
+            "kind": self._cached_obstacle_kind,
+            "path": getattr(self, "_cached_obstacle_path", ""),
+            "distance_cm": self.read_ultrasonic(),
+        }
 
     def try_read_qr(self):
         """로봇이 9개 보관 구역 체크포인트 반경 내에 진입했을 때 구역명 반환."""
@@ -240,5 +343,6 @@ class IsaacHAL:
         cv2.putText(bgr, f"ZONE: {zone_label}", (12, FPV_HEIGHT - 18), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 220, 255), 1, cv2.LINE_AA)
 
         if dist < 50.0:
-            cv2.putText(bgr, f"OBSTACLE {dist:.0f}cm", (FPV_WIDTH - 210, 24), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), 1, cv2.LINE_AA)
+            kind = self._cached_obstacle_kind.replace("static_", "").upper()
+            cv2.putText(bgr, f"{kind} {dist:.0f}cm", (FPV_WIDTH - 230, 24), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), 1, cv2.LINE_AA)
         return bgr

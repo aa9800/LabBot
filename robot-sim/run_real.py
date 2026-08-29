@@ -1,12 +1,7 @@
-"""실제 Raspbot(라즈베리파이5)에서 실행하는 진입점.
+"""실제 Raspberry Pi 5 Raspbot에서 실행하는 Physical AI 진입점.
 
-controller.py(PatrolController)와 notify_supabase.py는 손대지 않고 그대로 재사용,
-HAL만 RealHAL로 바꿔 끼운다.
-
-실행 위치: 이 파일과 controller.py, notify_supabase.py, real_hal.py, run_logger.py,
-.env를 전부 로봇의 같은 폴더에 올려두고 로봇에서 직접 `python3 run_real.py`로 실행한다.
-(로봇에는 아직 안 올렸음 — 로봇이 실제 홈 Wi-Fi에 붙어서 Supabase에 닿을 수 있게 된
-다음에 올리는 게 맞다. 지금은 코드만 준비해두는 단계.)
+FrameBroker, NCNN 추론 워커, 임무/야간경비 엔진과 RealHAL의 생명주기를 한 곳에서
+관리한다. 네트워크나 AI가 실패해도 20 Hz 안전 제어와 수동 정지는 독립적으로 유지한다.
 
 조작(터미널에서 Ctrl+C로 종료 외에는 무인 자동 순찰):
   - 웹 Robot Console에서 수동조작으로 바꾸면 Isaac Sim과 동일하게 반응한다
@@ -15,11 +10,17 @@ HAL만 RealHAL로 바꿔 끼운다.
 """
 import datetime
 import os
+import signal
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import cv2
+
 from controller import PatrolController, OBSTACLE_STOP_DISTANCE
+from edge_inference import EdgeInferenceWorker, NcnnYoloBackend, draw_detections
+from mission_engine import ItemLocationCache, MissionEngine
+from night_guard import NightGuardScheduler
 # 로봇에서는 Supabase를 직접 부르지 않는다(인터넷 없음) — get_my_local_ip만 로컬 함수라 쓴다.
 from notify_supabase import get_my_local_ip
 from real_hal import RealHAL
@@ -32,6 +33,13 @@ TELEMETRY_LOG_EVERY = 20  # 약 1초마다 텔레메트리 기록
 MANUAL_COMMAND_MAX_AGE_SECONDS = 3.0  # dead-man switch 기준
 
 _ROBOT_SIM_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def _env_bool(name, default):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _command_age_seconds(command):
@@ -61,6 +69,14 @@ def main():
     command_lock = threading.Lock()
 
     hal = RealHAL(enable_camera=True)
+    shutdown_requested = threading.Event()
+
+    def request_shutdown(signum, _frame):
+        print(f"[labkeeper] 종료 신호 {signum} 수신 — 안전 정지합니다")
+        shutdown_requested.set()
+
+    signal.signal(signal.SIGINT, request_shutdown)
+    signal.signal(signal.SIGTERM, request_shutdown)
     stream_server.set_camera_angle_callback(hal.set_camera_angle)
     stream_server.set_buzzer_callback(hal.trigger_buzzer)
     # 주의: set_drive_callback / set_qr_scan_callback은 여기서 등록하지 않는다.
@@ -78,6 +94,261 @@ def main():
     # 나머지는 이 캐시를 읽는다. 20Hz로 갱신되니 신선도는 충분하다.
     distance_cache = {"cm": 999.0, "at": 0.0}
 
+    # 단일 YOLO11n NCNN 모델은 로봇 안에서 직접 실행한다. Shadow Mode에서는
+    # 감지 결과를 기록/표시만 하고 모터·부저를 자동으로 움직이지 않는다.
+    ai_worker = None
+    ai_runtime_status = {
+        "running": False,
+        "mode": "disabled",
+        "backend": "ncnn",
+        "model_scope": "lab-items+person",
+    }
+    ai_last_person_event = {"at": 0.0}
+    ai_person_cooldown = float(os.environ.get("LABKEEPER_AI_PERSON_COOLDOWN", "20"))
+    ai_model_dir = os.environ.get(
+        "LABKEEPER_AI_MODEL_DIR",
+        os.path.join(
+            _ROBOT_SIM_ROOT,
+            "ai_vision",
+            "models",
+            "edge",
+            "lab_guardian_physical_ai_ncnn",
+        ),
+    )
+
+    if _env_bool("LABKEEPER_AI_ENABLED", True):
+        try:
+            ai_backend = NcnnYoloBackend.from_manifest(
+                ai_model_dir,
+                confidence=float(os.environ.get("LABKEEPER_AI_CONFIDENCE", "0.40")),
+                num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "2")),
+            )
+
+            def on_ai_result(snapshot, source_frame):
+                annotated = draw_detections(source_frame, snapshot.detections)
+                ok, jpeg = cv2.imencode(
+                    ".jpg", annotated,
+                    [int(cv2.IMWRITE_JPEG_QUALITY), 55, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
+                )
+                jpeg_bytes = jpeg.tobytes() if ok else None
+                if jpeg_bytes:
+                    stream_server.set_ai_frame(jpeg_bytes)
+
+                people = [item for item in snapshot.detections if item.class_name == "person"]
+                now = time.time()
+                if people and now - ai_last_person_event["at"] >= ai_person_cooldown:
+                    ai_last_person_event["at"] = now
+                    confidence = max(item.confidence for item in people)
+                    print(f"[labkeeper] AI Shadow 사람 관찰 ({confidence:.0%})")
+                    run_log.write(
+                        "ai_person_observed",
+                        confidence=round(confidence, 4),
+                        mode="shadow",
+                    )
+                    event_queue.push(
+                        "safety_event",
+                        {
+                            "rule_id": "SR-03-SHADOW",
+                            "severity": "MEDIUM",
+                            "note": f"라즈봇 로컬 AI Shadow Mode 사람 관찰 ({confidence:.0%})",
+                            "source": "real-raspbot-edge-ai",
+                            "shadow_mode": True,
+                        },
+                        snapshot_bytes=jpeg_bytes,
+                    )
+
+            ai_worker = EdgeInferenceWorker(
+                hal.capture_frame,
+                ai_backend,
+                target_fps=float(os.environ.get("LABKEEPER_AI_TARGET_FPS", "12")),
+                result_callback=on_ai_result,
+            )
+            ai_worker.start()
+            ai_runtime_status.update({"mode": "shadow", "model_dir": ai_model_dir})
+            print(f"[labkeeper] 로컬 Physical AI 시작: NCNN Shadow Mode / {ai_model_dir}")
+        except Exception as exc:
+            ai_runtime_status.update({"mode": "unavailable", "error": f"{type(exc).__name__}: {exc}"})
+            print(f"[labkeeper] 로컬 Physical AI 비활성: {ai_runtime_status['error']}")
+
+    def get_ai_status():
+        if ai_worker is None:
+            return {"status": "error", **ai_runtime_status}
+        worker_status = ai_worker.status()
+        latest = worker_status.get("latest") or {}
+        class_names_kr = {
+            "microscope": "현미경",
+            "centrifuge": "원심분리기",
+            "pipette": "피펫",
+            "beaker": "비커",
+            "flask": "플라스크",
+            "reagent_bottle": "시약병",
+            "fire_extinguisher": "소화기",
+            "spill_kit": "유출 대응 키트",
+            "flammable_cabinet": "인화성 물질 캐비닛",
+            "biohazard_bin": "생물학적 폐기물통",
+            "person": "사람",
+        }
+        detections = [
+            {
+                **detection,
+                "name_kr": class_names_kr.get(detection["class_name"], detection["class_name"]),
+                "confidence_percent": round(detection["confidence"] * 100),
+                "type": "PERSON" if detection["class_name"] == "person" else "OBJECT",
+            }
+            for detection in latest.get("detections", [])
+        ]
+        return {
+            "status": "ok" if worker_status.get("running") and not worker_status.get("error") else "error",
+            **ai_runtime_status,
+            **worker_status,
+            "detections": detections,
+            "guard_action": "SHADOW_PERSON_VISIBLE" if any(
+                item["class_name"] == "person" for item in detections
+            ) else "SHADOW_MONITORING",
+        }
+
+    stream_server.set_ai_status_provider(get_ai_status)
+
+    location_cache = ItemLocationCache(
+        os.environ.get(
+            "LABKEEPER_ITEM_CACHE",
+            os.path.join(_ROBOT_SIM_ROOT, "config", "item_location_cache.json"),
+        )
+    )
+    mission_engine = MissionEngine(location_cache)
+
+    def on_item_locations_update(payload):
+        result = location_cache.replace(payload.get("items"), payload.get("revision"))
+        run_log.write("item_location_cache_updated", **result)
+        return result
+
+    stream_server.set_item_location_callbacks(
+        update=on_item_locations_update,
+        status=location_cache.status,
+    )
+
+    def on_guide_start(params):
+        result = mission_engine.start(
+            request_id=params.get("request_id") or params.get("loan_id"),
+            item_id=params.get("item_id"),
+            mission_type=params.get("mission_type") or params.get("mode") or "pickup",
+        )
+        run_log.write(
+            "guide_requested",
+            request_id=result["request_id"],
+            item_id=result["item_id"],
+            status=result["status"],
+            direct_from_previous=result["direct_from_previous"],
+        )
+        return result
+
+    def on_guide_finish(status):
+        result = mission_engine.finish(status)
+        run_log.write("guide_finished", status=status, item_id=result.get("item_id"))
+        return result
+
+    stream_server.set_guide_callbacks(
+        start=on_guide_start,
+        status=mission_engine.status,
+        finish=on_guide_finish,
+    )
+
+    detection_class_by_keyword = {
+        "현미경": "microscope",
+        "원심": "centrifuge",
+        "피펫": "pipette",
+        "비커": "beaker",
+        "플라스크": "flask",
+        "시약": "reagent_bottle",
+        "에탄올": "reagent_bottle",
+        "소화기": "fire_extinguisher",
+        "유출": "spill_kit",
+        "인화": "flammable_cabinet",
+        "폐기물": "biohazard_bin",
+    }
+
+    def verify_checkout(params):
+        if ai_worker is None:
+            return {"verdict": "unavailable", "reason": "로봇 내부 AI 엔진을 사용할 수 없습니다."}
+        snapshot = ai_worker.latest()
+        if snapshot is None or time.time() - snapshot.timestamp > 1.0:
+            return {"verdict": "inconclusive", "reason": "최신 AI 프레임이 없습니다."}
+        item = location_cache.resolve(params.get("item_id")) if params.get("item_id") else None
+        expected_name = (item or {}).get("item_name", "")
+        expected_class = next(
+            (class_name for keyword, class_name in detection_class_by_keyword.items() if keyword in expected_name),
+            None,
+        )
+        visible_items = [
+            detection for detection in snapshot.detections
+            if detection.class_name != "person" and detection.confidence >= 0.45
+        ]
+        rendered = [
+            {
+                "class_name": detection.class_name,
+                "confidence": round(detection.confidence, 4),
+            }
+            for detection in visible_items
+        ]
+        if expected_class is None:
+            return {
+                "verdict": "inconclusive",
+                "reason": "이 물품은 현재 11종 통합 모델의 개별 클래스와 매핑되지 않습니다.",
+                "detected_items": rendered,
+            }
+        expected = [item for item in visible_items if item.class_name == expected_class]
+        unexpected = [item for item in visible_items if item.class_name != expected_class]
+        if unexpected:
+            return {
+                "verdict": "blocked",
+                "reason": "예약 물품 외 다른 물품이 함께 감지됐습니다.",
+                "expected_class": expected_class,
+                "detected_items": rendered,
+            }
+        if not expected:
+            return {
+                "verdict": "inconclusive",
+                "reason": "예약 물품을 카메라 중앙에서 확인하지 못했습니다.",
+                "expected_class": expected_class,
+                "detected_items": rendered,
+            }
+        return {
+            "verdict": "clear",
+            "reason": "예약 물품 한 종류만 확인했습니다. 최종 대여 처리는 QR로 검증합니다.",
+            "expected_class": expected_class,
+            "detected_items": rendered,
+        }
+
+    stream_server.set_checkout_verify_callback(verify_checkout)
+
+    def classify_obstacle_from_edge_ai():
+        if ai_worker is None:
+            return "object"
+        snapshot = ai_worker.latest()
+        if snapshot is None or time.time() - snapshot.timestamp > 0.75:
+            return "object"
+        for detection in snapshot.detections:
+            if detection.class_name != "person" or detection.confidence < 0.40:
+                continue
+            x1, _y1, x2, _y2 = detection.box
+            center_x = (x1 + x2) / 2.0
+            if 64 <= center_x <= 256:
+                return "person"
+        return "object"
+
+    hal.set_obstacle_classifier(classify_obstacle_from_edge_ai)
+
+    night_guard = NightGuardScheduler()
+    stream_server.set_guard_callbacks(
+        status=night_guard.status,
+        configure=night_guard.configure,
+        trigger=night_guard.trigger,
+    )
+    allow_ai_actuation = _env_bool("LABKEEPER_AI_ACTUATION", False)
+    latest_guard = night_guard.status()
+    last_guard_transition_id = latest_guard["transition_id"]
+    control_source = {"value": "manual"}
+
     def measure_distance():
         """제어 루프 전용 — 실제로 센서를 쏘고 캐시를 갱신한다."""
         d = hal.read_ultrasonic()
@@ -92,6 +363,7 @@ def main():
     def get_telemetry():
         with command_lock:
             cur_mode = command.get("mode", "manual")
+        mission = mission_engine.status()
         return {
             "distance_cm": round(cached_distance(), 1),
             "mode": cur_mode,
@@ -99,6 +371,17 @@ def main():
             "turn": hal.last_turn,
             "cam_pan": getattr(hal, "cam_pan", 90),
             "cam_tilt": getattr(hal, "cam_tilt", 90),
+            "ai": {
+                "mode": get_ai_status().get("mode", "unavailable"),
+                "fps": get_ai_status().get("actual_fps", 0.0),
+            },
+            "mission": {
+                "status": mission.get("status", "idle"),
+                "item_id": mission.get("item_id"),
+                "shelf_code": mission.get("shelf_code"),
+            },
+            "night_guard": night_guard.status(),
+            "control_source": control_source["value"],
         }
 
     stream_server.set_telemetry_provider(get_telemetry)
@@ -117,35 +400,6 @@ def main():
         return code
 
     stream_server.set_qr_scan_callback(on_manual_qr_scan)
-
-    last_person_alert_time = 0.0
-    PERSON_CHECK_EVERY = 40  # 약 2초마다 체크 — HOG 연산이 무거워서 매 틱마다는 안 돌림
-    PERSON_ALERT_COOLDOWN = 20.0  # 사람이 계속 있어도 알림은 20초에 최대 1회만
-    person_check_running = threading.Event()  # 이전 체크가 아직 안 끝났으면 겹쳐서 또 제출하지 않기 위한 플래그
-
-    def check_person():
-        nonlocal last_person_alert_time
-        try:
-            if not hal.detect_person():
-                return
-            now = time.time()
-            if (now - last_person_alert_time) < PERSON_ALERT_COOLDOWN:
-                return
-            last_person_alert_time = now
-            print("[labkeeper] 🧍 사람 감지 — SR-03 안전이벤트 큐 적재")
-            run_log.write("person_detected", rule_id="SR-03")
-            event_queue.push(
-                "safety_event",
-                {
-                    "rule_id": "SR-03",
-                    "severity": "HIGH",
-                    "note": "실물 Raspbot 순찰 중 카메라 기반 사람 감지(HOG)",
-                    "source": "real-raspbot",
-                },
-                snapshot_bytes=stream_server.get_latest_frame(),
-            )
-        finally:
-            person_check_running.clear()
 
     last_obstacle_alert_time = 0.0
     OBSTACLE_ALERT_COOLDOWN = 15.0  # 장애물이 계속 있어도 알림 전송은 15초에 최대 1회만 단발 수행
@@ -212,7 +466,7 @@ def main():
     stream_server.set_drive_callback(on_direct_drive)
 
     try:
-        while True:
+        while not shutdown_requested.is_set():
             loop_start = time.time()
             tick += 1
 
@@ -224,6 +478,7 @@ def main():
 
             # 수동 조작 시 3초 데드맨 스위치 감시
             if cur_mode == "manual":
+                control_source["value"] = "manual"
                 distance = measure_distance()  # 센서를 실제로 쏘는 유일한 지점
                 stale = (time.time() - cmd_time) > MANUAL_COMMAND_MAX_AGE_SECONDS
                 if stale:
@@ -233,17 +488,45 @@ def main():
                 else:
                     hal.set_motion(cur_speed, cur_turn)
             else:
-                # 자동 순찰은 PatrolController가 자체적으로 hal.read_ultrasonic()을
-                # 호출하므로, 그 결과를 캐시에 반영해 텔레메트리도 최신값을 보게 한다.
-                patrol.tick(TICK_SECONDS)
-                measure_distance()
+                distance = measure_distance()
+                ai_person = False
+                if allow_ai_actuation and ai_worker is not None:
+                    latest_ai = ai_worker.latest()
+                    ai_person = bool(
+                        latest_ai
+                        and time.time() - latest_ai.timestamp <= 0.75
+                        and any(
+                            item.class_name == "person" and item.confidence >= 0.45
+                            for item in latest_ai.detections
+                        )
+                    )
+                stationary_guard = latest_guard.get("state") in {"standby", "verifying"}
+                motion = tick % 10 == 0 and stationary_guard and hal.detect_motion()
+                latest_guard = night_guard.update(
+                    sonar_cm=distance,
+                    motion=motion,
+                    person=ai_person,
+                )
+                if latest_guard["transition_id"] != last_guard_transition_id:
+                    last_guard_transition_id = latest_guard["transition_id"]
+                    run_log.write(
+                        "night_guard_transition",
+                        state=latest_guard["state"],
+                        reason=latest_guard.get("reason", ""),
+                    )
+                if mission_engine.should_drive():
+                    control_source["value"] = "item_guide"
+                    patrol.tick(TICK_SECONDS, distance)
+                elif latest_guard.get("active") and latest_guard.get("should_move"):
+                    control_source["value"] = "night_guard"
+                    patrol.tick(TICK_SECONDS, distance)
+                else:
+                    # 주간 기본은 대여 보조 대기다. 임무 없이 상시 순찰하지 않는다.
+                    control_source["value"] = "rental_assist_idle"
+                    hal.stop()
 
             # 주기 스냅샷은 큐에 넣지 않는다 — 중계기가 /snapshot을 직접 긁어가는 게
             # 훨씬 싸다(항상 최신 한 장만 필요한데 큐에 넣으면 메모리만 잡아먹는다).
-
-            if tick % PERSON_CHECK_EVERY == 0 and not person_check_running.is_set():
-                person_check_running.set()
-                db_executor.submit(check_person)
 
             if tick % TELEMETRY_LOG_EVERY == 0:
                 run_log.write(
@@ -255,9 +538,9 @@ def main():
 
             elapsed = time.time() - loop_start
             time.sleep(max(0.0, TICK_SECONDS - elapsed))
-    except KeyboardInterrupt:
-        print("[labkeeper] Ctrl+C — 정지하고 종료합니다")
     finally:
+        if ai_worker is not None:
+            ai_worker.stop()
         hal.cleanup()
         run_log.close()
         db_executor.shutdown(wait=False)

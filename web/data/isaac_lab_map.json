@@ -1,0 +1,2303 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-29T09:36:27.480490+00:00",
+  "source": {
+    "asset": "robot-sim/isaac_project/assets/labkeeper_lab_v2.usda",
+    "asset_sha256": "5bf3761d55897d8fd1d4b5aa1c59de4d6662e80f26c9f1a2b5442913ee864a36",
+    "coordinate_system": "Isaac world XY in meters; web top view inverts Y only"
+  },
+  "world": {
+    "min_x": -7.0,
+    "max_x": 7.0,
+    "min_y": -2.0,
+    "max_y": 16.0,
+    "floor_bbox": {
+      "min": [
+        -7.0,
+        -2.0,
+        -0.12
+      ],
+      "max": [
+        7.0,
+        16.0,
+        -0.0
+      ],
+      "center": [
+        0.0,
+        7.0,
+        -0.06
+      ],
+      "size": [
+        14.0,
+        18.0,
+        0.12
+      ]
+    }
+  },
+  "fixtures": [
+    {
+      "prim_path": "/World/CleanCorridor",
+      "label": "Robot Aisle",
+      "type": "aisle",
+      "bbox": {
+        "min": [
+          -2.375,
+          -1.7,
+          -0.0
+        ],
+        "max": [
+          2.375,
+          15.7,
+          0.016
+        ],
+        "center": [
+          0.0,
+          7.0,
+          0.008
+        ],
+        "size": [
+          4.75,
+          17.4,
+          0.016
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/MainBench/IslandWest",
+      "label": "Island West",
+      "type": "bench",
+      "bbox": {
+        "min": [
+          -4.275,
+          0.55,
+          0.06
+        ],
+        "max": [
+          -3.025,
+          7.95,
+          1.42
+        ],
+        "center": [
+          -3.65,
+          4.25,
+          0.74
+        ],
+        "size": [
+          1.25,
+          7.4,
+          1.36
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/MainBench/IslandEast",
+      "label": "Island East",
+      "type": "bench",
+      "bbox": {
+        "min": [
+          3.025,
+          0.55,
+          0.06
+        ],
+        "max": [
+          4.275,
+          7.95,
+          1.42
+        ],
+        "center": [
+          3.65,
+          4.25,
+          0.74
+        ],
+        "size": [
+          1.25,
+          7.4,
+          1.36
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/MainBench/WestWallBench",
+      "label": "West Wall Bench",
+      "type": "bench",
+      "bbox": {
+        "min": [
+          -6.61,
+          0.15,
+          0.06
+        ],
+        "max": [
+          -5.89,
+          8.15,
+          1.42
+        ],
+        "center": [
+          -6.25,
+          4.15,
+          0.74
+        ],
+        "size": [
+          0.72,
+          8.0,
+          1.36
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/MainBench/EastWallBench",
+      "label": "East Wall Bench",
+      "type": "bench",
+      "bbox": {
+        "min": [
+          5.89,
+          0.15,
+          0.06
+        ],
+        "max": [
+          6.61,
+          8.15,
+          1.42
+        ],
+        "center": [
+          6.25,
+          4.15,
+          0.74
+        ],
+        "size": [
+          0.72,
+          8.0,
+          1.36
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/West/InstrumentBench1",
+      "label": "Instrument Bench 1",
+      "type": "equipment",
+      "bbox": {
+        "min": [
+          -6.3,
+          10.29,
+          0.06
+        ],
+        "max": [
+          -3.0,
+          11.01,
+          1.42
+        ],
+        "center": [
+          -4.65,
+          10.65,
+          0.74
+        ],
+        "size": [
+          3.3,
+          0.72,
+          1.36
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/West/InstrumentBench2",
+      "label": "Instrument Bench 2",
+      "type": "equipment",
+      "bbox": {
+        "min": [
+          -6.3,
+          12.29,
+          0.06
+        ],
+        "max": [
+          -3.0,
+          13.01,
+          1.42
+        ],
+        "center": [
+          -4.65,
+          12.65,
+          0.74
+        ],
+        "size": [
+          3.3,
+          0.72,
+          1.36
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/West/Cell_BSC_Base",
+      "label": "BSC",
+      "type": "equipment",
+      "bbox": {
+        "min": [
+          -5.875,
+          14.46,
+          -0.0
+        ],
+        "max": [
+          -3.225,
+          15.24,
+          1.2
+        ],
+        "center": [
+          -4.55,
+          14.85,
+          0.6
+        ],
+        "size": [
+          2.65,
+          0.78,
+          1.2
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/West/CO2Incubator",
+      "label": "CO2 Incubator",
+      "type": "equipment",
+      "bbox": {
+        "min": [
+          -6.54,
+          14.4752,
+          -0.0
+        ],
+        "max": [
+          -5.76,
+          15.26,
+          2.18
+        ],
+        "center": [
+          -6.15,
+          14.8676,
+          1.09
+        ],
+        "size": [
+          0.78,
+          0.7848,
+          2.18
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/East/Consumables_Shelf",
+      "label": "Consumables 1",
+      "type": "storage",
+      "bbox": {
+        "min": [
+          2.74,
+          10.78,
+          -0.0
+        ],
+        "max": [
+          4.16,
+          11.34,
+          2.29
+        ],
+        "center": [
+          3.45,
+          11.06,
+          1.145
+        ],
+        "size": [
+          1.42,
+          0.56,
+          2.29
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/East/Consumables_Shelf_1",
+      "label": "Consumables 2",
+      "type": "storage",
+      "bbox": {
+        "min": [
+          4.54,
+          10.78,
+          -0.0
+        ],
+        "max": [
+          5.96,
+          11.34,
+          2.29
+        ],
+        "center": [
+          5.25,
+          11.06,
+          1.145
+        ],
+        "size": [
+          1.42,
+          0.56,
+          2.29
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/East/Fridge_4C",
+      "label": "4C Fridge",
+      "type": "cold",
+      "bbox": {
+        "min": [
+          3.11,
+          12.3849,
+          0.0
+        ],
+        "max": [
+          4.19,
+          13.23,
+          2.35
+        ],
+        "center": [
+          3.65,
+          12.8074,
+          1.175
+        ],
+        "size": [
+          1.08,
+          0.8451,
+          2.35
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/East/Freezer_80C_1",
+      "label": "-80C Freezer 1",
+      "type": "cold",
+      "bbox": {
+        "min": [
+          4.48,
+          12.3849,
+          0.0
+        ],
+        "max": [
+          5.56,
+          13.23,
+          2.35
+        ],
+        "center": [
+          5.02,
+          12.8074,
+          1.175
+        ],
+        "size": [
+          1.08,
+          0.8451,
+          2.35
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/East/Freezer_80C_2",
+      "label": "-80C Freezer 2",
+      "type": "cold",
+      "bbox": {
+        "min": [
+          5.61,
+          12.3849,
+          0.0
+        ],
+        "max": [
+          6.69,
+          13.23,
+          2.35
+        ],
+        "center": [
+          6.15,
+          12.8074,
+          1.175
+        ],
+        "size": [
+          1.08,
+          0.8451,
+          2.35
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/North/Reagent_Desk",
+      "label": "Reagent Desk",
+      "type": "reagent",
+      "bbox": {
+        "min": [
+          -1.9,
+          14.89,
+          0.06
+        ],
+        "max": [
+          1.9,
+          15.67,
+          1.42
+        ],
+        "center": [
+          0.0,
+          15.28,
+          0.74
+        ],
+        "size": [
+          3.8,
+          0.78,
+          1.36
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Safety/FlammableCabinet",
+      "label": "Flammable Cabinet",
+      "type": "safety",
+      "bbox": {
+        "min": [
+          5.755,
+          14.5454,
+          0.0
+        ],
+        "max": [
+          6.605,
+          15.29,
+          2.05
+        ],
+        "center": [
+          6.18,
+          14.9177,
+          1.025
+        ],
+        "size": [
+          0.85,
+          0.7446,
+          2.05
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Safety/PPECabinet",
+      "label": "PPE Cabinet",
+      "type": "safety",
+      "bbox": {
+        "min": [
+          -6.64,
+          -1.1043,
+          0.0
+        ],
+        "max": [
+          -5.76,
+          -0.42,
+          2.08
+        ],
+        "center": [
+          -6.2,
+          -0.7621,
+          1.04
+        ],
+        "size": [
+          0.88,
+          0.6843,
+          2.08
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Safety/FireExtinguisher",
+      "label": "Fire Extinguisher",
+      "type": "safety",
+      "bbox": {
+        "min": [
+          5.8,
+          -1.4,
+          0.03
+        ],
+        "max": [
+          6.1,
+          -1.1,
+          0.75
+        ],
+        "center": [
+          5.95,
+          -1.25,
+          0.39
+        ],
+        "size": [
+          0.3,
+          0.3,
+          0.72
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Safety/SpillKit",
+      "label": "Spill Kit",
+      "type": "safety",
+      "bbox": {
+        "min": [
+          4.97,
+          -1.584,
+          0.11
+        ],
+        "max": [
+          5.53,
+          -1.29,
+          0.82
+        ],
+        "center": [
+          5.25,
+          -1.437,
+          0.465
+        ],
+        "size": [
+          0.56,
+          0.294,
+          0.71
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Safety/EyeWash",
+      "label": "Eye Wash",
+      "type": "safety",
+      "bbox": {
+        "min": [
+          -4.69,
+          -1.65,
+          0.79
+        ],
+        "max": [
+          -4.11,
+          -1.29,
+          0.97
+        ],
+        "center": [
+          -4.4,
+          -1.47,
+          0.88
+        ],
+        "size": [
+          0.58,
+          0.36,
+          0.18
+        ]
+      }
+    }
+  ],
+  "architecture": [
+    {
+      "prim_path": "/World/Architecture/WestWall",
+      "label": "WestWall",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          -7.08,
+          -2.0,
+          -0.0
+        ],
+        "max": [
+          -6.92,
+          16.0,
+          3.2
+        ],
+        "center": [
+          -7.0,
+          7.0,
+          1.6
+        ],
+        "size": [
+          0.16,
+          18.0,
+          3.2
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/EastWall",
+      "label": "EastWall",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          6.92,
+          -2.0,
+          -0.0
+        ],
+        "max": [
+          7.08,
+          16.0,
+          3.2
+        ],
+        "center": [
+          7.0,
+          7.0,
+          1.6
+        ],
+        "size": [
+          0.16,
+          18.0,
+          3.2
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/SouthWallL",
+      "label": "SouthWallL",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          -7.0,
+          -2.08,
+          -0.0
+        ],
+        "max": [
+          -1.7,
+          -1.92,
+          3.2
+        ],
+        "center": [
+          -4.35,
+          -2.0,
+          1.6
+        ],
+        "size": [
+          5.3,
+          0.16,
+          3.2
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/SouthWallR",
+      "label": "SouthWallR",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          1.7,
+          -2.08,
+          -0.0
+        ],
+        "max": [
+          7.0,
+          -1.92,
+          3.2
+        ],
+        "center": [
+          4.35,
+          -2.0,
+          1.6
+        ],
+        "size": [
+          5.3,
+          0.16,
+          3.2
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/NorthWall",
+      "label": "NorthWall",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          -7.0,
+          15.92,
+          -0.0
+        ],
+        "max": [
+          7.0,
+          16.08,
+          3.2
+        ],
+        "center": [
+          0.0,
+          16.0,
+          1.6
+        ],
+        "size": [
+          14.0,
+          0.16,
+          3.2
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/EntryJamb_0",
+      "label": "EntryJamb_0",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          -1.78,
+          -2.1,
+          -0.0
+        ],
+        "max": [
+          -1.66,
+          -1.9,
+          2.7
+        ],
+        "center": [
+          -1.72,
+          -2.0,
+          1.35
+        ],
+        "size": [
+          0.12,
+          0.2,
+          2.7
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/EntryJamb_1",
+      "label": "EntryJamb_1",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          1.66,
+          -2.1,
+          -0.0
+        ],
+        "max": [
+          1.78,
+          -1.9,
+          2.7
+        ],
+        "center": [
+          1.72,
+          -2.0,
+          1.35
+        ],
+        "size": [
+          0.12,
+          0.2,
+          2.7
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/WestDivider_0",
+      "label": "WestDivider_0",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          -6.93,
+          11.44,
+          -0.0
+        ],
+        "max": [
+          -2.53,
+          11.56,
+          3.2
+        ],
+        "center": [
+          -4.73,
+          11.5,
+          1.6
+        ],
+        "size": [
+          4.4,
+          0.12,
+          3.2
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/EastDivider_0",
+      "label": "EastDivider_0",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          2.53,
+          11.44,
+          -0.0
+        ],
+        "max": [
+          6.93,
+          11.56,
+          3.2
+        ],
+        "center": [
+          4.73,
+          11.5,
+          1.6
+        ],
+        "size": [
+          4.4,
+          0.12,
+          3.2
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/WestDivider_1",
+      "label": "WestDivider_1",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          -6.93,
+          13.84,
+          -0.0
+        ],
+        "max": [
+          -2.53,
+          13.96,
+          3.2
+        ],
+        "center": [
+          -4.73,
+          13.9,
+          1.6
+        ],
+        "size": [
+          4.4,
+          0.12,
+          3.2
+        ]
+      }
+    },
+    {
+      "prim_path": "/World/Architecture/EastDivider_1",
+      "label": "EastDivider_1",
+      "type": "wall",
+      "bbox": {
+        "min": [
+          2.53,
+          13.84,
+          -0.0
+        ],
+        "max": [
+          6.93,
+          13.96,
+          3.2
+        ],
+        "center": [
+          4.73,
+          13.9,
+          1.6
+        ],
+        "size": [
+          4.4,
+          0.12,
+          3.2
+        ]
+      }
+    }
+  ],
+  "zones": [
+    {
+      "name": "일반실험실",
+      "category": "EQUIPMENT",
+      "checkpoint": {
+        "x": 0.0,
+        "y": 4.0,
+        "radius": 0.6
+      },
+      "pos": [
+        0.0,
+        4.0,
+        0.0
+      ],
+      "color": [
+        0.2,
+        0.45,
+        0.75
+      ]
+    },
+    {
+      "name": "기기실-1",
+      "category": "EQUIPMENT",
+      "checkpoint": {
+        "x": -1.8,
+        "y": 10.0,
+        "radius": 0.6
+      },
+      "pos": [
+        -4.7,
+        10.6,
+        0.0
+      ],
+      "color": [
+        0.15,
+        0.55,
+        0.85
+      ]
+    },
+    {
+      "name": "기기실-2",
+      "category": "EQUIPMENT",
+      "checkpoint": {
+        "x": -1.8,
+        "y": 12.4,
+        "radius": 0.6
+      },
+      "pos": [
+        -4.7,
+        12.6,
+        0.0
+      ],
+      "color": [
+        0.1,
+        0.65,
+        0.75
+      ]
+    },
+    {
+      "name": "세포배양실",
+      "category": "EQUIPMENT",
+      "checkpoint": {
+        "x": -1.8,
+        "y": 14.6,
+        "radius": 0.6
+      },
+      "pos": [
+        -4.7,
+        14.8,
+        0.0
+      ],
+      "color": [
+        0.15,
+        0.7,
+        0.4
+      ]
+    },
+    {
+      "name": "시약보관실",
+      "category": "REAGENT",
+      "checkpoint": {
+        "x": 0.0,
+        "y": 13.6,
+        "radius": 0.6
+      },
+      "pos": [
+        0.0,
+        15.0,
+        0.0
+      ],
+      "color": [
+        0.92,
+        0.65,
+        0.1
+      ]
+    },
+    {
+      "name": "냉동보관실",
+      "category": "REAGENT",
+      "checkpoint": {
+        "x": 1.8,
+        "y": 14.6,
+        "radius": 0.6
+      },
+      "pos": [
+        5.1,
+        12.8,
+        0.0
+      ],
+      "color": [
+        0.55,
+        0.3,
+        0.85
+      ]
+    },
+    {
+      "name": "냉장보관실",
+      "category": "REAGENT",
+      "checkpoint": {
+        "x": 1.8,
+        "y": 12.4,
+        "radius": 0.6
+      },
+      "pos": [
+        3.7,
+        12.8,
+        0.0
+      ],
+      "color": [
+        0.25,
+        0.75,
+        0.95
+      ]
+    },
+    {
+      "name": "소모품보관실",
+      "category": "CONSUMABLE",
+      "checkpoint": {
+        "x": 1.8,
+        "y": 10.0,
+        "radius": 0.6
+      },
+      "pos": [
+        4.4,
+        10.8,
+        0.0
+      ],
+      "color": [
+        0.9,
+        0.75,
+        0.25
+      ]
+    },
+    {
+      "name": "안전장비함",
+      "category": "SAFETY",
+      "checkpoint": {
+        "x": 0.0,
+        "y": 0.0,
+        "radius": 0.6
+      },
+      "pos": [
+        0.0,
+        -1.2,
+        0.0
+      ],
+      "color": [
+        0.88,
+        0.15,
+        0.15
+      ]
+    }
+  ],
+  "track_points": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      4.0
+    ],
+    [
+      -1.8,
+      4.0
+    ],
+    [
+      -1.8,
+      10.0
+    ],
+    [
+      -1.8,
+      12.4
+    ],
+    [
+      -1.8,
+      14.6
+    ],
+    [
+      0.0,
+      13.6
+    ],
+    [
+      1.8,
+      14.6
+    ],
+    [
+      1.8,
+      12.4
+    ],
+    [
+      1.8,
+      10.0
+    ],
+    [
+      1.8,
+      4.0
+    ],
+    [
+      0.0,
+      4.0
+    ],
+    [
+      0.0,
+      0.0
+    ]
+  ],
+  "mapped_objects": [
+    {
+      "scene_object_id": "eq-pipette-01",
+      "item_query": "마이크로피펫",
+      "room": "일반실험실",
+      "display_mode": "grouped",
+      "prim_path": "/World/MainBench/PipetteStand",
+      "bbox": {
+        "min": [
+          3.45,
+          5.46,
+          0.98
+        ],
+        "max": [
+          3.83,
+          5.64,
+          1.06
+        ],
+        "center": [
+          3.64,
+          5.55,
+          1.02
+        ],
+        "size": [
+          0.38,
+          0.18,
+          0.08
+        ]
+      },
+      "shelf_code": "LAB-G04",
+      "shelf_row": 2,
+      "shelf_slot": 1,
+      "location_detail": "LAB-G04 IslandEast 실험대 2번째 줄, 왼쪽 1번째 스탠드",
+      "robot_target": [
+        2.6,
+        5.55
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          2.6,
+          5.55
+        ]
+      ]
+    },
+    {
+      "scene_object_id": "con-tips-01",
+      "item_query": "피펫 팁",
+      "room": "소모품보관실",
+      "display_mode": "grouped",
+      "prim_path": "/World/MainBench/TipBox_0",
+      "bbox": {
+        "min": [
+          3.125,
+          6.479,
+          0.955
+        ],
+        "max": [
+          3.475,
+          6.815,
+          1.165
+        ],
+        "center": [
+          3.3,
+          6.647,
+          1.06
+        ],
+        "size": [
+          0.35,
+          0.336,
+          0.21
+        ]
+      },
+      "shelf_code": "LAB-CON-01",
+      "shelf_row": 2,
+      "shelf_slot": 3,
+      "location_detail": "LAB-CON-01 소모품 선반 2번째 줄, 왼쪽에서 3번째 바구니",
+      "robot_target": [
+        1.8,
+        10.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          1.8,
+          10.0
+        ]
+      ]
+    },
+    {
+      "scene_object_id": "eq-centrifuge-01",
+      "item_query": "마이크로 원심분리기",
+      "room": "일반실험실",
+      "display_mode": "single",
+      "prim_path": "/World/MainBench/Centrifuge",
+      "bbox": {
+        "min": [
+          3.39,
+          2.0455,
+          0.94
+        ],
+        "max": [
+          3.93,
+          2.6275,
+          1.3725
+        ],
+        "center": [
+          3.66,
+          2.3365,
+          1.1562
+        ],
+        "size": [
+          0.54,
+          0.582,
+          0.4325
+        ]
+      },
+      "shelf_code": "LAB-G03",
+      "shelf_row": 1,
+      "shelf_slot": 1,
+      "location_detail": "LAB-G03 IslandEast 실험대 1번째 위치",
+      "robot_target": [
+        2.6,
+        2.35
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          2.6,
+          2.35
+        ]
+      ]
+    },
+    {
+      "scene_object_id": "eq-scale-01",
+      "item_query": "전자저울",
+      "room": "일반실험실",
+      "display_mode": "single",
+      "prim_path": "/World/MainBench/Scale",
+      "bbox": {
+        "min": [
+          -3.92,
+          5.4755,
+          0.9275
+        ],
+        "max": [
+          -3.38,
+          5.92,
+          1.1175
+        ],
+        "center": [
+          -3.65,
+          5.6978,
+          1.0225
+        ],
+        "size": [
+          0.54,
+          0.4445,
+          0.19
+        ]
+      },
+      "shelf_code": "LAB-G02",
+      "shelf_row": 2,
+      "shelf_slot": 2,
+      "location_detail": "LAB-G02 IslandWest 실험대 2번째 위치",
+      "robot_target": [
+        -2.6,
+        5.72
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -2.6,
+          5.72
+        ]
+      ]
+    },
+    {
+      "scene_object_id": "eq-phmeter-01",
+      "item_query": "pH meter",
+      "room": "시약보관실",
+      "display_mode": "single",
+      "prim_path": "/World/North/Reagent_Desk/PHMeter",
+      "bbox": {
+        "min": [
+          -1.4,
+          15.15,
+          0.93
+        ],
+        "max": [
+          -1.16,
+          15.35,
+          1.27
+        ],
+        "center": [
+          -1.28,
+          15.25,
+          1.1
+        ],
+        "size": [
+          0.24,
+          0.2,
+          0.34
+        ]
+      },
+      "shelf_code": "LAB-R01",
+      "shelf_row": null,
+      "shelf_slot": null,
+      "location_detail": null,
+      "robot_target": [
+        0.0,
+        13.6
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          12.4
+        ],
+        [
+          0.0,
+          13.6
+        ]
+      ]
+    },
+    {
+      "scene_object_id": "eq-microscope-01",
+      "item_query": "현미경",
+      "room": "기기실-1",
+      "display_mode": "single",
+      "prim_path": "/World/MainBench/MicroscopeBody",
+      "bbox": {
+        "min": [
+          -3.8325,
+          1.88,
+          0.94
+        ],
+        "max": [
+          -3.4075,
+          2.32,
+          1.708
+        ],
+        "center": [
+          -3.62,
+          2.1,
+          1.324
+        ],
+        "size": [
+          0.425,
+          0.44,
+          0.768
+        ]
+      },
+      "shelf_code": "LAB-G01",
+      "shelf_row": null,
+      "shelf_slot": null,
+      "location_detail": null,
+      "robot_target": [
+        -2.35,
+        2.1
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -2.35,
+          2.1
+        ]
+      ]
+    },
+    {
+      "scene_object_id": "eq-pcr-01",
+      "item_query": "PCR 장비",
+      "room": "기기실-1",
+      "display_mode": "single",
+      "prim_path": "/World/West/Inst1_PCR",
+      "bbox": {
+        "min": [
+          -5.89,
+          10.375,
+          0.93
+        ],
+        "max": [
+          -5.21,
+          10.925,
+          1.31
+        ],
+        "center": [
+          -5.55,
+          10.65,
+          1.12
+        ],
+        "size": [
+          0.68,
+          0.55,
+          0.38
+        ]
+      },
+      "shelf_code": "LAB-I01",
+      "shelf_row": null,
+      "shelf_slot": null,
+      "location_detail": null,
+      "robot_target": [
+        -1.8,
+        10.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          10.0
+        ]
+      ]
+    },
+    {
+      "scene_object_id": "eq-freezer-01",
+      "item_query": "초저온 냉동고",
+      "room": "냉동보관실",
+      "display_mode": "single",
+      "prim_path": "/World/East/Freezer_80C_1",
+      "bbox": {
+        "min": [
+          4.48,
+          12.3849,
+          0.0
+        ],
+        "max": [
+          5.56,
+          13.23,
+          2.35
+        ],
+        "center": [
+          5.02,
+          12.8074,
+          1.175
+        ],
+        "size": [
+          1.08,
+          0.8451,
+          2.35
+        ]
+      },
+      "shelf_code": "LAB-F01",
+      "shelf_row": null,
+      "shelf_slot": null,
+      "location_detail": null,
+      "robot_target": [
+        1.8,
+        14.6
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          1.8,
+          12.4
+        ],
+        [
+          1.8,
+          14.6
+        ]
+      ]
+    },
+    {
+      "scene_object_id": "reagent-ethanol-01",
+      "item_query": "무수 에탄올",
+      "room": "시약보관실",
+      "display_mode": "grouped",
+      "prim_path": "/World/Safety/FlammableCabinet",
+      "bbox": {
+        "min": [
+          5.755,
+          14.5454,
+          0.0
+        ],
+        "max": [
+          6.605,
+          15.29,
+          2.05
+        ],
+        "center": [
+          6.18,
+          14.9177,
+          1.025
+        ],
+        "size": [
+          0.85,
+          0.7446,
+          2.05
+        ]
+      },
+      "shelf_code": "LAB-R02",
+      "shelf_row": null,
+      "shelf_slot": null,
+      "location_detail": null,
+      "robot_target": [
+        0.0,
+        13.6
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          12.4
+        ],
+        [
+          0.0,
+          13.6
+        ]
+      ]
+    },
+    {
+      "scene_object_id": "saf-extinguisher-01",
+      "item_query": "소화기",
+      "room": "안전장비함",
+      "display_mode": "single",
+      "prim_path": "/World/Safety/FireExtinguisher",
+      "bbox": {
+        "min": [
+          5.8,
+          -1.4,
+          0.03
+        ],
+        "max": [
+          6.1,
+          -1.1,
+          0.75
+        ],
+        "center": [
+          5.95,
+          -1.25,
+          0.39
+        ],
+        "size": [
+          0.3,
+          0.3,
+          0.72
+        ]
+      },
+      "shelf_code": "LAB-S01",
+      "shelf_row": null,
+      "shelf_slot": null,
+      "location_detail": null,
+      "robot_target": [
+        0.0,
+        0.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ]
+    }
+  ],
+  "storage_locations": [
+    {
+      "location": "일반실험실",
+      "fixture_prim_path": "/World/MainBench/IslandEast",
+      "bbox": {
+        "min": [
+          3.025,
+          0.55,
+          0.06
+        ],
+        "max": [
+          4.275,
+          7.95,
+          1.42
+        ],
+        "center": [
+          3.65,
+          4.25,
+          0.74
+        ],
+        "size": [
+          1.25,
+          7.4,
+          1.36
+        ]
+      },
+      "shelf_code": "LAB-G00",
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "robot_target": [
+        0.0,
+        4.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ]
+      ]
+    },
+    {
+      "location": "기기실-1",
+      "fixture_prim_path": "/World/West/InstrumentBench1",
+      "bbox": {
+        "min": [
+          -6.3,
+          10.29,
+          0.06
+        ],
+        "max": [
+          -3.0,
+          11.01,
+          1.42
+        ],
+        "center": [
+          -4.65,
+          10.65,
+          0.74
+        ],
+        "size": [
+          3.3,
+          0.72,
+          1.36
+        ]
+      },
+      "shelf_code": "LAB-I01",
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "robot_target": [
+        -1.8,
+        10.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          10.0
+        ]
+      ]
+    },
+    {
+      "location": "기기실-2",
+      "fixture_prim_path": "/World/West/InstrumentBench2",
+      "bbox": {
+        "min": [
+          -6.3,
+          12.29,
+          0.06
+        ],
+        "max": [
+          -3.0,
+          13.01,
+          1.42
+        ],
+        "center": [
+          -4.65,
+          12.65,
+          0.74
+        ],
+        "size": [
+          3.3,
+          0.72,
+          1.36
+        ]
+      },
+      "shelf_code": "LAB-I02",
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "robot_target": [
+        -1.8,
+        12.4
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          12.4
+        ]
+      ]
+    },
+    {
+      "location": "세포배양실",
+      "fixture_prim_path": "/World/West/Cell_BSC_Base",
+      "bbox": {
+        "min": [
+          -5.875,
+          14.46,
+          -0.0
+        ],
+        "max": [
+          -3.225,
+          15.24,
+          1.2
+        ],
+        "center": [
+          -4.55,
+          14.85,
+          0.6
+        ],
+        "size": [
+          2.65,
+          0.78,
+          1.2
+        ]
+      },
+      "shelf_code": "LAB-C01",
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "robot_target": [
+        -1.8,
+        14.6
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          14.6
+        ]
+      ]
+    },
+    {
+      "location": "시약보관실",
+      "fixture_prim_path": "/World/North/Reagent_Desk",
+      "bbox": {
+        "min": [
+          -1.9,
+          14.89,
+          0.06
+        ],
+        "max": [
+          1.9,
+          15.67,
+          1.42
+        ],
+        "center": [
+          0.0,
+          15.28,
+          0.74
+        ],
+        "size": [
+          3.8,
+          0.78,
+          1.36
+        ]
+      },
+      "shelf_code": "LAB-R01",
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "robot_target": [
+        0.0,
+        13.6
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          12.4
+        ],
+        [
+          0.0,
+          13.6
+        ]
+      ]
+    },
+    {
+      "location": "냉동보관실",
+      "fixture_prim_path": "/World/East/Freezer_80C_1",
+      "bbox": {
+        "min": [
+          4.48,
+          12.3849,
+          0.0
+        ],
+        "max": [
+          5.56,
+          13.23,
+          2.35
+        ],
+        "center": [
+          5.02,
+          12.8074,
+          1.175
+        ],
+        "size": [
+          1.08,
+          0.8451,
+          2.35
+        ]
+      },
+      "shelf_code": "LAB-F01",
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "robot_target": [
+        1.8,
+        14.6
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          1.8,
+          14.6
+        ]
+      ]
+    },
+    {
+      "location": "냉장보관실",
+      "fixture_prim_path": "/World/East/Fridge_4C",
+      "bbox": {
+        "min": [
+          3.11,
+          12.3849,
+          0.0
+        ],
+        "max": [
+          4.19,
+          13.23,
+          2.35
+        ],
+        "center": [
+          3.65,
+          12.8074,
+          1.175
+        ],
+        "size": [
+          1.08,
+          0.8451,
+          2.35
+        ]
+      },
+      "shelf_code": "LAB-F02",
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "robot_target": [
+        1.8,
+        12.4
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          1.8,
+          12.4
+        ]
+      ]
+    },
+    {
+      "location": "소모품보관실",
+      "fixture_prim_path": "/World/East/Consumables_Shelf",
+      "bbox": {
+        "min": [
+          2.74,
+          10.78,
+          -0.0
+        ],
+        "max": [
+          4.16,
+          11.34,
+          2.29
+        ],
+        "center": [
+          3.45,
+          11.06,
+          1.145
+        ],
+        "size": [
+          1.42,
+          0.56,
+          2.29
+        ]
+      },
+      "shelf_code": "LAB-CON",
+      "zone_type": "lab_inventory",
+      "access_level": "authorized",
+      "robot_target": [
+        1.8,
+        10.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          1.8,
+          10.0
+        ]
+      ]
+    },
+    {
+      "location": "안전장비함",
+      "fixture_prim_path": "/World/Safety/PPECabinet",
+      "bbox": {
+        "min": [
+          -6.64,
+          -1.1043,
+          0.0
+        ],
+        "max": [
+          -5.76,
+          -0.42,
+          2.08
+        ],
+        "center": [
+          -6.2,
+          -0.7621,
+          1.04
+        ],
+        "size": [
+          0.88,
+          0.6843,
+          2.08
+        ]
+      },
+      "shelf_code": "LAB-S",
+      "zone_type": "lab_inventory",
+      "access_level": "authorized",
+      "robot_target": [
+        0.0,
+        0.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ]
+    }
+  ],
+  "location_defaults": {
+    "일반실험실": {
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "shelf_code": "LAB-G00",
+      "fixture_prim_path": "/World/MainBench/IslandEast",
+      "target": [
+        0.0,
+        4.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ]
+      ]
+    },
+    "기기실-1": {
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "shelf_code": "LAB-I01",
+      "fixture_prim_path": "/World/West/InstrumentBench1",
+      "target": [
+        -1.8,
+        10.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          10.0
+        ]
+      ]
+    },
+    "기기실-2": {
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "shelf_code": "LAB-I02",
+      "fixture_prim_path": "/World/West/InstrumentBench2",
+      "target": [
+        -1.8,
+        12.4
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          12.4
+        ]
+      ]
+    },
+    "세포배양실": {
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "shelf_code": "LAB-C01",
+      "fixture_prim_path": "/World/West/Cell_BSC_Base",
+      "target": [
+        -1.8,
+        14.6
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          14.6
+        ]
+      ]
+    },
+    "시약보관실": {
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "shelf_code": "LAB-R01",
+      "fixture_prim_path": "/World/North/Reagent_Desk",
+      "target": [
+        0.0,
+        13.6
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          -1.8,
+          4.0
+        ],
+        [
+          -1.8,
+          12.4
+        ],
+        [
+          0.0,
+          13.6
+        ]
+      ]
+    },
+    "냉동보관실": {
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "shelf_code": "LAB-F01",
+      "fixture_prim_path": "/World/East/Freezer_80C_1",
+      "target": [
+        1.8,
+        14.6
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          1.8,
+          14.6
+        ]
+      ]
+    },
+    "냉장보관실": {
+      "zone_type": "restricted_lab",
+      "access_level": "authorized",
+      "shelf_code": "LAB-F02",
+      "fixture_prim_path": "/World/East/Fridge_4C",
+      "target": [
+        1.8,
+        12.4
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          1.8,
+          12.4
+        ]
+      ]
+    },
+    "소모품보관실": {
+      "zone_type": "lab_inventory",
+      "access_level": "authorized",
+      "shelf_code": "LAB-CON",
+      "fixture_prim_path": "/World/East/Consumables_Shelf",
+      "target": [
+        1.8,
+        10.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          1.8,
+          10.0
+        ]
+      ]
+    },
+    "안전장비함": {
+      "zone_type": "lab_inventory",
+      "access_level": "authorized",
+      "shelf_code": "LAB-S",
+      "fixture_prim_path": "/World/Safety/PPECabinet",
+      "target": [
+        0.0,
+        0.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ]
+    }
+  },
+  "category_defaults": {
+    "CONSUMABLE": {
+      "zone_type": "lab_inventory",
+      "access_level": "authorized",
+      "shelf_code": "LAB-CON",
+      "location_detail": "소모품보관실 번호표가 붙은 바구니",
+      "target": [
+        1.8,
+        10.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          1.8,
+          4.0
+        ],
+        [
+          1.8,
+          10.0
+        ]
+      ]
+    },
+    "SAFETY": {
+      "zone_type": "lab_inventory",
+      "access_level": "authorized",
+      "shelf_code": "LAB-S",
+      "location_detail": "남쪽 출입구 안전장비 보관 위치",
+      "target": [
+        0.0,
+        0.0
+      ],
+      "route": [
+        [
+          0.0,
+          4.0
+        ],
+        [
+          0.0,
+          0.0
+        ]
+      ]
+    }
+  },
+  "validation": {
+    "missing_fixture_paths": [],
+    "missing_object_bindings": [],
+    "missing_storage_fixtures": []
+  }
+}

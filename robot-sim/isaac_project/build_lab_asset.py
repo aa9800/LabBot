@@ -1,4 +1,4 @@
-"""실제 대학 생명공학 연구실에 가까운 LabKeeper USD 장면 생성기."""
+"""실제 대학 생명공학 연구실에 가까운 LabBot USD 장면 생성기."""
 import math
 import os
 

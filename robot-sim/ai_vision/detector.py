@@ -1,4 +1,4 @@
-"""LabKeeper 실시간 객체 탐지 및 연구실 보안 순찰 AI 분석 엔진."""
+"""LabBot 실시간 객체 탐지 및 연구실 보안 순찰 AI 분석 엔진."""
 import os
 import cv2
 import numpy as np
@@ -26,9 +26,12 @@ class LabPatrolDetector:
         model_path: str = None,
         conf_thresh: float = DEFAULT_CONFIDENCE_THRESHOLD,
         iou_thresh: float = DEFAULT_IOU_THRESHOLD,
+        imgsz: int = 320,
+        enable_person_fallback: bool = True,
     ):
         self.conf_thresh = conf_thresh
         self.iou_thresh = iou_thresh
+        self.imgsz = int(imgsz)
 
         # 1. 모델 로드 (학습된 가중치 없으면 기본 yolo11n.pt 사용)
         if model_path is None or not os.path.exists(model_path):
@@ -42,9 +45,18 @@ class LabPatrolDetector:
         print(f"[LabPatrolDetector] Loading YOLO Model from: {chosen_path}")
         self.model = YOLO(chosen_path)
         self.person_model = None
-        if Path(chosen_path).resolve() != COCO_PERSON_MODEL_PATH.resolve():
+        model_names = getattr(self.model, "names", {})
+        if isinstance(model_names, dict):
+            model_class_names = {str(value) for value in model_names.values()}
+        else:
+            model_class_names = {str(value) for value in model_names}
+        has_person_class = "person" in model_class_names
+        if enable_person_fallback and not has_person_class:
             person_path = str(COCO_PERSON_MODEL_PATH) if COCO_PERSON_MODEL_PATH.exists() else "yolo11n.pt"
-            print(f"[LabPatrolDetector] Loading person detector from: {person_path}")
+            print(
+                "[LabPatrolDetector] Unified model has no person class; "
+                f"loading temporary fallback from: {person_path}"
+            )
             self.person_model = YOLO(person_path)
 
     def detect(self, bgr_frame: np.ndarray) -> List[Dict[str, Any]]:
@@ -56,6 +68,7 @@ class LabPatrolDetector:
             source=bgr_frame,
             conf=self.conf_thresh,
             iou=self.iou_thresh,
+            imgsz=self.imgsz,
             verbose=False,
         )
 
@@ -68,6 +81,7 @@ class LabPatrolDetector:
                 classes=[0],
                 conf=max(0.30, self.conf_thresh),
                 iou=self.iou_thresh,
+                imgsz=self.imgsz,
                 verbose=False,
             )
             detections.extend(self._convert_results(person_results, person_only=True))

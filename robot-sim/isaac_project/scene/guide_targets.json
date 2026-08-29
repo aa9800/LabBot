@@ -1,41 +1,25 @@
 {
   "schema_version": 1,
-  "rental_room": {
-    "name": "대여·반납실",
-    "zone_type": "rental",
-    "security_gate": [0.0, -1.0],
-    "lobby_hub": [0.0, -4.0],
-    "return_station": {
-      "label": "반납 확인대",
-      "shelf_code": "RETURN-01",
-      "shelf_row": 1,
-      "shelf_slot": 1,
-      "location_detail": "반납 데스크 상판의 QR 확인 구역",
-      "target": [2.6, -8.1],
-      "route": [[0.0, 4.0], [0.0, -1.0], [0.0, -4.0], [0.0, -7.6], [2.6, -8.1]]
-    },
-    "dock": [-1.55, -8.72]
-  },
   "category_defaults": {
-    "CONSUMABLE": {"zone_type":"rental","access_level":"public","shelf_code":"A-03","location_detail":"A-03 소모품 선반의 번호표가 붙은 바구니","target":[-2.6,-7.7],"route":[[0.0,4.0],[0.0,-1.0],[0.0,-4.0],[0.0,-7.5],[-2.6,-7.7]]},
-    "SAFETY": {"zone_type":"rental","access_level":"public","shelf_code":"B-03","location_detail":"B-03 안전용품 선반의 번호표가 붙은 바구니","target":[2.6,-7.7],"route":[[0.0,4.0],[0.0,-1.0],[0.0,-4.0],[0.0,-7.5],[2.6,-7.7]]}
+    "CONSUMABLE": {"zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-CON","location_detail":"소모품보관실 번호표가 붙은 바구니","target":[1.8,10.0],"route":[[0.0,4.0],[1.8,4.0],[1.8,10.0]]},
+    "SAFETY": {"zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-S","location_detail":"남쪽 출입구 안전장비 보관 위치","target":[0.0,0.0],"route":[[0.0,4.0],[0.0,0.0]]}
   },
   "location_defaults": {
-    "일반실험실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-G00","target":[0.0,4.0],"route":[[0.0,4.0]]},
-    "기기실-1": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-I01","target":[-1.8,10.0],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,10.0]]},
-    "기기실-2": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-I02","target":[-1.8,12.4],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,12.4]]},
-    "세포배양실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-C01","target":[-1.8,14.6],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,14.6]]},
-    "시약보관실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-R01","target":[0.0,13.6],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,12.4],[0.0,13.6]]},
-    "냉동보관실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-F01","target":[1.8,14.6],"route":[[0.0,4.0],[1.8,4.0],[1.8,14.6]]},
-    "냉장보관실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-F02","target":[1.8,12.4],"route":[[0.0,4.0],[1.8,4.0],[1.8,12.4]]},
-    "소모품보관실": {"zone_type":"rental","access_level":"public","shelf_code":"A-03","target":[-2.6,-7.7],"route":[[0.0,4.0],[0.0,-1.0],[0.0,-4.0],[0.0,-7.5],[-2.6,-7.7]]},
-    "안전장비함": {"zone_type":"rental","access_level":"public","shelf_code":"B-03","target":[2.6,-7.7],"route":[[0.0,4.0],[0.0,-1.0],[0.0,-4.0],[0.0,-7.5],[2.6,-7.7]]}
+    "일반실험실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-G00","fixture_prim_path":"/World/MainBench/IslandEast","target":[0.0,4.0],"route":[[0.0,4.0]]},
+    "기기실-1": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-I01","fixture_prim_path":"/World/West/InstrumentBench1","target":[-1.8,10.0],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,10.0]]},
+    "기기실-2": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-I02","fixture_prim_path":"/World/West/InstrumentBench2","target":[-1.8,12.4],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,12.4]]},
+    "세포배양실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-C01","fixture_prim_path":"/World/West/Cell_BSC_Base","target":[-1.8,14.6],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,14.6]]},
+    "시약보관실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-R01","fixture_prim_path":"/World/North/Reagent_Desk","target":[0.0,13.6],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,12.4],[0.0,13.6]]},
+    "냉동보관실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-F01","fixture_prim_path":"/World/East/Freezer_80C_1","target":[1.8,14.6],"route":[[0.0,4.0],[1.8,4.0],[1.8,14.6]]},
+    "냉장보관실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-F02","fixture_prim_path":"/World/East/Fridge_4C","target":[1.8,12.4],"route":[[0.0,4.0],[1.8,4.0],[1.8,12.4]]},
+    "소모품보관실": {"zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-CON","fixture_prim_path":"/World/East/Consumables_Shelf","target":[1.8,10.0],"route":[[0.0,4.0],[1.8,4.0],[1.8,10.0]]},
+    "안전장비함": {"zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-S","fixture_prim_path":"/World/Safety/PPECabinet","target":[0.0,0.0],"route":[[0.0,4.0],[0.0,0.0]]}
   },
   "targets": [
-    {"scene_object_id":"eq-pipette-01","item_query":"마이크로피펫","zone_type":"rental","access_level":"public","shelf_code":"A-01","shelf_row":2,"shelf_slot":1,"location_detail":"A-01 선반 2번째 줄, 왼쪽에서 1번째 칸","target":[-2.6,-5.2],"route":[[0.0,4.0],[0.0,-1.0],[0.0,-4.0],[-2.6,-5.2]]},
-    {"scene_object_id":"con-tips-01","item_query":"피펫 팁","zone_type":"rental","access_level":"public","shelf_code":"A-02","shelf_row":2,"shelf_slot":3,"location_detail":"A-02 선반 2번째 줄, 왼쪽에서 3번째 바구니","target":[-2.6,-6.5],"route":[[0.0,4.0],[0.0,-1.0],[0.0,-4.0],[-2.6,-6.5]]},
-    {"scene_object_id":"eq-centrifuge-01","item_query":"마이크로 원심분리기","zone_type":"rental","access_level":"public","shelf_code":"B-01","shelf_row":1,"shelf_slot":1,"location_detail":"B-01 선반 1번째 줄, 오른쪽에서 1번째 칸","target":[2.6,-5.2],"route":[[0.0,4.0],[0.0,-1.0],[0.0,-4.0],[2.6,-5.2]]},
-    {"scene_object_id":"eq-scale-01","item_query":"전자저울","zone_type":"rental","access_level":"public","shelf_code":"B-02","shelf_row":2,"shelf_slot":2,"location_detail":"B-02 선반 2번째 줄, 오른쪽에서 2번째 칸","target":[2.6,-6.5],"route":[[0.0,4.0],[0.0,-1.0],[0.0,-4.0],[2.6,-6.5]]},
+    {"scene_object_id":"eq-pipette-01","item_query":"마이크로피펫","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-G04","shelf_row":2,"shelf_slot":1,"location_detail":"LAB-G04 IslandEast 실험대 2번째 줄, 왼쪽 1번째 스탠드","target":[2.6,5.55],"route":[[0.0,4.0],[1.8,4.0],[2.6,5.55]]},
+    {"scene_object_id":"con-tips-01","item_query":"피펫 팁","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-CON-01","shelf_row":2,"shelf_slot":3,"location_detail":"LAB-CON-01 소모품 선반 2번째 줄, 왼쪽에서 3번째 바구니","target":[1.8,10.0],"route":[[0.0,4.0],[1.8,4.0],[1.8,10.0]]},
+    {"scene_object_id":"eq-centrifuge-01","item_query":"마이크로 원심분리기","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-G03","shelf_row":1,"shelf_slot":1,"location_detail":"LAB-G03 IslandEast 실험대 1번째 위치","target":[2.6,2.35],"route":[[0.0,4.0],[1.8,4.0],[2.6,2.35]]},
+    {"scene_object_id":"eq-scale-01","item_query":"전자저울","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-G02","shelf_row":2,"shelf_slot":2,"location_detail":"LAB-G02 IslandWest 실험대 2번째 위치","target":[-2.6,5.72],"route":[[0.0,4.0],[-1.8,4.0],[-2.6,5.72]]},
     {"scene_object_id":"eq-microscope-01","item_query":"현미경","zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-G01","target":[-2.35,2.1],"route":[[0.0,4.0],[-1.8,4.0],[-2.35,2.1]]},
     {"scene_object_id":"eq-pcr-01","item_query":"PCR 장비","zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-I01","target":[-1.8,10.0],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,10.0]]},
     {"scene_object_id":"eq-phmeter-01","item_query":"pH meter","zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-R01","target":[0.0,13.6],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,12.4],[0.0,13.6]]},

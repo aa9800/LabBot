@@ -1,4 +1,4 @@
-"""LabKeeper 실시간 AI 비전 가드 & 방범 관제 스트리밍 서버 (Port 8081).
+"""LabBot 실시간 AI 비전 가드 & 방범 관제 스트리밍 서버 (Port 8081).
 로봇 FPV 카메라 영상을 실시간으로 분석하여 AI 객체 탐지 바운딩 박스를 오버레이하고
 방범 침입자 추적, 부저/경광등 연동, 안전 규정 위반 자동 판정을 수행합니다.
 """
@@ -314,15 +314,20 @@ def _ai_processing_loop(detector: LabPatrolDetector, safety_engine: LabSafetyEng
         try:
             # 1. 텔레메트리 (거리 센서, 구역 위치) 조회
             obstacle_dist = 999.0
+            obstacle_kind = "unknown"
             current_zone = "연구실 복도"
+            scheduled_guard_active = False
             try:
-                t_req = urllib.request.Request(f"http://{ROBOT_IP}:8080/telemetry", headers={"User-Agent": "LabKeeper-AI"})
+                t_req = urllib.request.Request(f"http://{ROBOT_IP}:8080/telemetry", headers={"User-Agent": "LabBot-AI"})
                 with urllib.request.urlopen(t_req, timeout=0.3) as t_resp:
                     t_data = json.loads(t_resp.read().decode("utf-8"))
                     obstacle_dist = float(t_data.get("obstacle_cm", t_data.get("distance_cm", 999.0)))
+                    obstacle_kind = str(t_data.get("obstacle_kind", "unknown"))
                     current_zone = str(t_data.get("zone", "연구실 복도"))
+                    scheduled_guard_active = bool(t_data.get("night_guard", {}).get("active"))
             except Exception:
                 pass
+            guard_enabled = _intruder_guard_mode or scheduled_guard_active
 
             # ── 초음파 침입 트리거 (방범 모드에서만) ──
             if _intruder_guard_mode and obstacle_dist < 900:
@@ -351,7 +356,7 @@ def _ai_processing_loop(detector: LabPatrolDetector, safety_engine: LabSafetyEng
 
             # 2. 로봇 카메라 스냅샷 조회
             req = urllib.request.Request(
-                f"http://{ROBOT_IP}:8080/snapshot", headers={"User-Agent": "LabKeeper-AI"}
+                f"http://{ROBOT_IP}:8080/snapshot", headers={"User-Agent": "LabBot-AI"}
             )
             with urllib.request.urlopen(req, timeout=0.6) as resp:
                 raw_img = np.asarray(bytearray(resp.read()), dtype=np.uint8)
@@ -398,9 +403,9 @@ def _ai_processing_loop(detector: LabPatrolDetector, safety_engine: LabSafetyEng
                         person_box = d["box"]
                         break
 
-                if _intruder_guard_mode:
+                if guard_enabled:
                     track_cmd = tracker.compute_tracking_command(person_box, obstacle_dist)
-                    _last_guard_action = track_cmd["action"]
+                    _last_guard_action = f"조사 출동 요청 · {track_cmd['action']}"
                     if track_cmd["detected"]:
                         _buzzer_active = True
                         _siren_active = True
@@ -414,22 +419,25 @@ def _ai_processing_loop(detector: LabPatrolDetector, safety_engine: LabSafetyEng
                             _, snap_bytes = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
                             report_safety_event(
                                 rule_id="INTRUDER_DETECTED",
-                                severity="CRITICAL",
-                                note=f"🚨 [방범경보] 구역 [{current_zone}]에서 비인가 침입자가 감지되어 로봇이 추적 및 경보를 발동했습니다!",
+                                severity="HIGH",
+                                note=f"🚨 [방범경보] 구역 [{current_zone}]에서 사람이 감지되어 로봇 조사 출동을 요청했습니다.",
                                 source="guard-robot",
                                 snapshot_bytes=snap_bytes.tobytes(),
                             )
-                            _active_alerts.append({"time": time.time(), "text": "🚨 [방범] 침입자 발견! 부저 작동 및 자동 추적 중"})
+                            _active_alerts.append({"time": time.time(), "text": "🚨 [방범] 사람 감지 — 안전 조사 출동"})
     
                             # 부저/사이렌 물리적 발동
                             try:
                                 urllib.request.urlopen(f"http://{ROBOT_IP}:8080/buzzer", timeout=0.3)
                             except Exception:
                                 pass
-
-                        # 로봇 모터 제어 명령 (지속 전송)
+                        # AI가 모터를 직접 덮어쓰지 않는다. 공통 자율주행기가 출동해야
+                        # 장애물 회피·사람 정지·경로 복귀 안전 규칙이 그대로 적용된다.
                         try:
-                            urllib.request.urlopen(f"http://{ROBOT_IP}:8080/drive?mode=manual&speed={track_cmd['speed']}&turn={track_cmd['turn']}", timeout=0.3)
+                            urllib.request.urlopen(
+                                f"http://{ROBOT_IP}:8080/guard/trigger?source=ai-camera&person=1",
+                                timeout=0.3,
+                            )
                         except Exception:
                             pass
                 else:
@@ -441,6 +449,7 @@ def _ai_processing_loop(detector: LabPatrolDetector, safety_engine: LabSafetyEng
                         current_zone=current_zone,
                         detections=detections,
                         obstacle_dist_cm=obstacle_dist,
+                        obstacle_kind=obstacle_kind,
                     )
 
                     # 6. 안전 위반 발생 시 Supabase DB 로깅
@@ -468,7 +477,7 @@ def _ai_processing_loop(detector: LabPatrolDetector, safety_engine: LabSafetyEng
 
                 # 8. 방범 상태 & 부저/경광등 HUD 오버레이
                 h, w = annotated.shape[:2]
-                if _intruder_guard_mode:
+                if guard_enabled:
                     badge_color = (0, 0, 240) if person_box else (0, 165, 255)
                     cv2.rectangle(annotated, (w - 150, 8), (w - 8, 30), badge_color, -1)
                     cv2.putText(annotated, "GUARD MODE ON", (w - 142, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)

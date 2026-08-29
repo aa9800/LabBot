@@ -52,6 +52,14 @@ def is_configured():
     return _READY
 
 
+def _normalize_safety_severity(severity: str) -> str:
+    """DB 제약(HIGH/MEDIUM/LOW)에 맞춰 로봇 쪽 표현을 안전하게 정규화한다."""
+    normalized = str(severity or "MEDIUM").upper()
+    if normalized == "CRITICAL":
+        return "HIGH"
+    return normalized if normalized in {"HIGH", "MEDIUM", "LOW"} else "MEDIUM"
+
+
 def _headers():
     return {
         "apikey": SUPABASE_SECRET_KEY,
@@ -72,6 +80,91 @@ def fetch_items():
     except (urllib.error.URLError, OSError) as e:
         print(f"[notify_supabase] 물품 목록을 가져오지 못했습니다: {e}")
         return []
+
+
+def fetch_item_locations():
+    """로봇 오프라인 캐시에 필요한 공개 위치 필드만 가져온다(QR 값 제외)."""
+    if not _READY:
+        return []
+    enriched_fields = (
+        "scene_object_id,item_id,room,shelf_code,shelf_row,shelf_slot,"
+        "location_detail,nav_x,nav_y,nav_heading,enabled"
+    )
+
+    def _fetch_bindings(fields):
+        url = f"{SUPABASE_URL}/rest/v1/virtual_lab_objects?select={fields}&enabled=eq.true"
+        req = urllib.request.Request(url, headers=_headers(), method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    enriched = True
+    try:
+        bindings = _fetch_bindings(enriched_fields)
+    except urllib.error.HTTPError as error:
+        # 운영 DB에 상세 위치 migration이 아직 적용되지 않은 경우 기본 4개 컬럼으로
+        # 내려가고, 아래에서 items.location과 물품 번호로 전 항목 위치를 생성한다.
+        if error.code != 400:
+            print(f"[notify_supabase] 물품 위치 바인딩을 가져오지 못했습니다: {error}")
+            return []
+        enriched = False
+        try:
+            bindings = _fetch_bindings("scene_object_id,item_id,room,enabled")
+        except (urllib.error.URLError, OSError) as fallback_error:
+            print(f"[notify_supabase] 기본 물품 바인딩도 가져오지 못했습니다: {fallback_error}")
+            return []
+    except (urllib.error.URLError, OSError) as error:
+        print(f"[notify_supabase] 물품 위치 바인딩을 가져오지 못했습니다: {error}")
+        return []
+
+    all_items = fetch_items()
+    binding_by_item = {int(row["item_id"]): row for row in bindings}
+    room_profiles = {
+        "일반실험실": ("LAB-G", 0.0, 4.0),
+        "기기실-1": ("LAB-I1", -1.8, 10.0),
+        "기기실-2": ("LAB-I2", -1.8, 12.4),
+        "세포배양실": ("LAB-C", -1.8, 14.6),
+        "시약보관실": ("LAB-R", 0.0, 13.6),
+        "냉동보관실": ("LAB-F1", 1.8, 14.6),
+        "냉장보관실": ("LAB-F2", 1.8, 12.4),
+        "소모품보관실": ("LAB-CON", 3.0, 10.5),
+        "안전장비함": ("LAB-S", 0.0, 0.0),
+        "안전장비구역": ("LAB-S", 0.0, 0.0),
+    }
+    result = []
+    for item in all_items:
+        item_id = int(item["id"])
+        binding = binding_by_item.get(item_id, {})
+        db_room = str(item.get("location") or "일반실험실")
+        binding_room = str(binding.get("room") or "")
+        room = db_room if "대여" in binding_room or "반납" in binding_room else (binding_room or db_room)
+        prefix, nav_x, nav_y = room_profiles.get(room, ("LAB-ST", 0.0, 4.0))
+        shelf_row = binding.get("shelf_row") if enriched else None
+        shelf_slot = binding.get("shelf_slot") if enriched else None
+        shelf_row = int(shelf_row) if shelf_row is not None else ((item_id - 1) // 4) % 5 + 1
+        shelf_slot = int(shelf_slot) if shelf_slot is not None else ((item_id - 1) % 4) + 1
+        shelf_code = binding.get("shelf_code") if enriched else None
+        shelf_code = shelf_code or f"{prefix}-{((item_id - 1) // 20) + 1:02d}"
+        location_detail = binding.get("location_detail") if enriched else None
+        location_detail = location_detail or (
+            f"{room} {shelf_code} 선반 {shelf_row}번째 줄, "
+            f"왼쪽에서 {shelf_slot}번째 칸 (물품번호 {item_id})"
+        )
+        result.append({
+            "item_id": item_id,
+            "item_name": item.get("name") or f"물품 {item_id}",
+            "category": item.get("item_type") or item.get("category") or "",
+            "location": db_room,
+            "room": room,
+            "scene_object_id": binding.get("scene_object_id") or f"db-item-{item_id}",
+            "shelf_code": shelf_code,
+            "shelf_row": shelf_row,
+            "shelf_slot": shelf_slot,
+            "location_detail": location_detail,
+            "nav_x": binding.get("nav_x", nav_x) if enriched else nav_x,
+            "nav_y": binding.get("nav_y", nav_y) if enriched else nav_y,
+            "nav_heading": binding.get("nav_heading", 0) if enriched else 0,
+        })
+    return result
 
 
 def fetch_robot_command():
@@ -150,6 +243,7 @@ def report_safety_event(rule_id: str, severity: str = "MEDIUM", note: str = "", 
     """safety_events 테이블에 새 이벤트를 비동기로 기록한다 (메인 루프 0ms 지연)."""
     if not _READY:
         return False
+    severity = _normalize_safety_severity(severity)
 
     def _do_report():
         photo_url_note = ""
@@ -277,6 +371,7 @@ def report_safety_event_sync(rule_id: str, severity: str = "MEDIUM", note: str =
     """
     if not _READY:
         return False
+    severity = _normalize_safety_severity(severity)
 
     photo_note = ""
     if snapshot_bytes:

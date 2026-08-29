@@ -21,7 +21,8 @@ TARGET_CLASSES = [
     'fire_extinguisher',
     'spill_kit',
     'flammable_cabinet',
-    'biohazard_bin'
+    'biohazard_bin',
+    'person'
 ]
 
 CLASS_METADATA = {
@@ -35,6 +36,7 @@ CLASS_METADATA = {
     'spill_kit': {'name_kr': '스필키트 [방재]', 'color': (50, 150, 255), 'type': 'SAFETY'},
     'flammable_cabinet': {'name_kr': '인화성 보관함 [안전]', 'color': (0, 215, 255), 'type': 'SAFETY'},
     'biohazard_bin': {'name_kr': '생물 유해폐기물 [위험]', 'color': (200, 50, 200), 'type': 'SAFETY'},
+    'person': {'name_kr': '사람/침입자', 'color': (0, 0, 255), 'type': 'SECURITY'},
 }
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.40

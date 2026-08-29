@@ -505,15 +505,23 @@ h2 {
 /* ---------- 이용 방법 3단계 ---------- */
 
 .how-it-works {
-  padding: 8px 0 40px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 20px 24px;
+  padding: 26px;
+  margin-bottom: 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .section-title {
   font-size: 1.2rem;
   font-weight: 600;
-  margin: 0 0 20px;
+  margin: 0;
   color: var(--text-strong);
-  text-align: center;
+  text-align: left;
 }
 
 .step-icon {
@@ -537,9 +545,9 @@ h2 {
 /* 이용 방법 — 대여/반납은 서로 다른 흐름이라 버튼으로 골라 각 3단계만 보여준다. */
 .usage-toggle {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 8px;
-  margin-bottom: 22px;
+  margin: 0;
 }
 
 .usage-toggle-btn {
@@ -568,6 +576,9 @@ h2 {
 
 .usage-steps {
   display: none;
+  grid-column: 1 / -1;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-soft);
 }
 
 .usage-steps.active {
@@ -650,6 +661,21 @@ h2 {
 }
 
 @media (max-width: 560px) {
+  .how-it-works {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 20px 16px;
+  }
+
+  .usage-toggle {
+    justify-content: flex-start;
+  }
+
+  .usage-steps {
+    grid-column: 1;
+    padding-top: 16px;
+  }
+
   .step-tab {
     flex-direction: column;
     gap: 6px;

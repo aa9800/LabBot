@@ -1,4 +1,4 @@
-"""LabKeeper 야간 방범 순찰 & 침입자 감지/추적 (Intruder Tracking & Buzzer Alarm) 모듈."""
+"""LabBot 야간 방범 순찰 & 침입자 감지/추적 (Intruder Tracking & Buzzer Alarm) 모듈."""
 import time
 import cv2
 import numpy as np
