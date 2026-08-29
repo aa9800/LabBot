@@ -25,6 +25,8 @@ from night_guard import NightGuardScheduler
 from notify_supabase import get_my_local_ip
 from real_hal import RealHAL
 from run_logger import JsonlRunLogger
+from dataclasses import asdict as _asdict
+
 import event_queue
 import stream_server
 
@@ -104,6 +106,10 @@ def main():
         "model_scope": "lab-items+person",
     }
     ai_last_person_event = {"at": 0.0}
+    # on_ai_result가 사람을 순정 모델로 교체한 "보정 후" 결과. /ai/status가 이걸 읽어야
+    # 화면(박스)과 상태(목록)가 같은 내용을 말한다 — 안 그러면 스트림엔 없는 사람이
+    # 상태 목록에는 남아 있는 식으로 어긋난다.
+    ai_corrected = {"detections": None}
     ai_person_cooldown = float(os.environ.get("LABKEEPER_AI_PERSON_COOLDOWN", "20"))
     ai_model_dir = os.environ.get(
         "LABKEEPER_AI_MODEL_DIR",
@@ -116,6 +122,20 @@ def main():
         ),
     )
 
+    # 사람은 커스텀 모델이 아니라 COCO 순정 모델이 판정한다.
+    # 커스텀 모델은 사람 인스턴스 204개로만 파인튜닝돼서, 원래 COCO 6만여 장으로
+    # 학습돼 있던 사람 판별 경계가 뭉개졌다(catastrophic forgetting).
+    # 같은 검증셋 84장으로 측정한 결과:
+    #     커스텀  정밀도 0.356 / 재현율 0.696 / F1 0.471 / 오탐 29
+    #     순정    정밀도 0.640 / 재현율 0.696 / F1 0.667 / 오탐  9
+    # 찾는 능력(재현율)은 같은데 커스텀만 오탐이 3배 이상이라, 사람 판정만 순정에 맡긴다.
+    ai_person_model_dir = os.environ.get(
+        "LABKEEPER_AI_PERSON_MODEL_DIR",
+        os.path.join(
+            _ROBOT_SIM_ROOT, "ai_vision", "models", "edge", "person_coco_ncnn"
+        ),
+    )
+
     if _env_bool("LABKEEPER_AI_ENABLED", True):
         try:
             ai_backend = NcnnYoloBackend.from_manifest(
@@ -124,8 +144,37 @@ def main():
                 num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "2")),
             )
 
+            # 사람 전용 백엔드. 없으면(미배포 등) 조용히 비활성화하고 물품 탐지는 계속한다.
+            ai_person_backend = None
+            try:
+                ai_person_backend = NcnnYoloBackend.from_manifest(
+                    ai_person_model_dir,
+                    confidence=float(os.environ.get("LABKEEPER_AI_PERSON_CONFIDENCE", "0.40")),
+                    num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "2")),
+                )
+                print(f"[labkeeper] 사람 판정: COCO 순정 모델 / {ai_person_model_dir}")
+            except Exception as person_exc:
+                print(f"[labkeeper] 사람 전용 모델 없음 — 커스텀 모델의 person을 그대로 씀: {person_exc}")
+
             def on_ai_result(snapshot, source_frame):
-                annotated = draw_detections(source_frame, snapshot.detections)
+                # 커스텀 모델 결과에서 person은 버린다 — 오탐이 3배라 신뢰할 수 없다.
+                # 물품 탐지만 남기고, 사람은 아래에서 순정 모델로 다시 판정한다.
+                detections = [d for d in snapshot.detections if d.class_name != "person"]
+
+                if ai_person_backend is not None:
+                    try:
+                        detections.extend(
+                            d for d in ai_person_backend.detect(source_frame)
+                            if d.class_name == "person"
+                        )
+                    except Exception as person_err:
+                        # 사람 판정이 실패해도 물품 탐지와 스트림은 계속 살려둔다.
+                        print(f"[labkeeper] 사람 판정 실패(무시하고 계속): {person_err}")
+                else:
+                    # 순정 모델이 없으면 어쩔 수 없이 커스텀의 person을 쓴다.
+                    detections.extend(d for d in snapshot.detections if d.class_name == "person")
+
+                annotated = draw_detections(source_frame, detections)
                 ok, jpeg = cv2.imencode(
                     ".jpg", annotated,
                     [int(cv2.IMWRITE_JPEG_QUALITY), 55, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
@@ -134,7 +183,9 @@ def main():
                 if jpeg_bytes:
                     stream_server.set_ai_frame(jpeg_bytes)
 
-                people = [item for item in snapshot.detections if item.class_name == "person"]
+                ai_corrected["detections"] = [_asdict(d) for d in detections]
+
+                people = [item for item in detections if item.class_name == "person"]
                 now = time.time()
                 if people and now - ai_last_person_event["at"] >= ai_person_cooldown:
                     ai_last_person_event["at"] = now
@@ -175,6 +226,9 @@ def main():
             return {"status": "error", **ai_runtime_status}
         worker_status = ai_worker.status()
         latest = worker_status.get("latest") or {}
+        # 사람이 순정 모델로 교체된 뒤의 목록이 있으면 그걸 쓴다.
+        if ai_corrected["detections"] is not None:
+            latest = {**latest, "detections": ai_corrected["detections"]}
         class_names_kr = {
             "microscope": "현미경",
             "centrifuge": "원심분리기",
