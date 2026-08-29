@@ -3444,3 +3444,19 @@ tbody tr:hover td {
   100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 }
 
+
+/* AI 탐지 배지 — 로봇이 지금 무엇을 인식하고 있는지 HUD에 표시.
+   탐지가 있을 때만 강조되도록 기본/활성 두 단계로 나눈다. */
+.hud-ai-tag {
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-ai-tag.hud-ai-active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+  font-weight: 600;
+}

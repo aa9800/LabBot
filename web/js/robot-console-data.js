@@ -167,10 +167,12 @@ function getDirectStreamUrl(localIp, port = 8080) {
   return `http://${ip}:${port}/stream`;
 }
 
-function getAiVisionStreamUrl() {
-  // AI 관제 서버는 현재 사용자 PC(로컬호스트)에서 실행 중이므로 항상 PC IP를 참조합니다.
-  const host = window.location.hostname || "127.0.0.1";
-  return `http://${host}:8081/ai_stream`;
+// 추론이 로봇 안(Physical AI)으로 옮겨졌다. 예전에는 PC의 8081 AI 서버를 봤지만,
+// 이제 로봇이 스스로 탐지하고 박스를 그린 MJPEG를 8080/ai/stream 으로 내보낸다.
+// PC가 꺼져 있어도 동작하므로 대상 IP는 일반 스트림과 같은 곳을 쓴다.
+function getAiVisionStreamUrl(localIp, port = 8080) {
+  const ip = localIp || _cachedLocalIp || _defaultIpForMode();
+  return `http://${ip}:${port}/ai/stream`;
 }
 
 // 스트림 서버의 /health 엔드포인트를 빠르게 찔러보아 직결 가능 여부를 판별한다.
@@ -372,8 +374,9 @@ async function finishRobotGuide(status = "completed") {
 }
 
 async function fetchAiStatus() {
-  const host = window.location.hostname || "127.0.0.1";
-  const url = `http://${host}:8081/ai_status`;
+  // 로봇 자체 추론 상태(backend/fps/지연/탐지목록)를 직접 읽는다.
+  const ip = _cachedLocalIp || _defaultIpForMode();
+  const url = `http://${ip}:8080/ai/status`;
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 1200);

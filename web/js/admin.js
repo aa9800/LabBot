@@ -1025,7 +1025,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (aiVisionActive) {
         robotAiVisionBtn.classList.add("btn-toggle-active");
         robotAiVisionBtn.textContent = "AI 비전 감지 중";
-        robotCameraImg.src = window.LabBotRobotConsole.getAiVisionStreamUrl(localIp, 8081);
+        robotCameraImg.src = window.LabBotRobotConsole.getAiVisionStreamUrl(localIp, 8080);
         window.LabBotToast.success("AI 실시간 비전 감지 모드가 켜졌습니다.");
       } else {
         robotAiVisionBtn.classList.remove("btn-toggle-active");
@@ -1035,6 +1035,59 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     });
   }
+
+  // AI 비전 모드일 때 로봇이 "지금 무엇을 보고 있는지"를 HUD에 띄운다.
+  // /ai/stream이 그려주는 박스만으로는 클래스명·신뢰도를 읽기 어려워서,
+  // /ai/status의 탐지 목록을 함께 읽어 요약해 보여준다.
+  const hudAiBadge = document.getElementById("hudAiBadge");
+
+  async function updateAiDetectionBadge() {
+    if (!hudAiBadge) return;
+    if (!aiVisionActive) {
+      hudAiBadge.style.display = "none";
+      return;
+    }
+    hudAiBadge.style.display = "";
+
+    const status = await window.LabBotRobotConsole.fetchAiStatus();
+    if (!status) {
+      // 로봇이 응답하지 않으면 마지막 값을 그대로 두지 않는다 — 죽은 값을
+      // 계속 보여주면 탐지가 되고 있는 것으로 오인한다.
+      hudAiBadge.textContent = "🧠 AI 응답 없음";
+      hudAiBadge.className = "hud-tag hud-ai-tag";
+      return;
+    }
+    if (status.running === false) {
+      hudAiBadge.textContent = "🧠 AI 정지됨";
+      hudAiBadge.className = "hud-tag hud-ai-tag";
+      return;
+    }
+
+    const dets = Array.isArray(status.detections) ? status.detections : [];
+    const fps = status.actual_fps != null ? `${status.actual_fps}fps` : "";
+    if (dets.length === 0) {
+      hudAiBadge.textContent = `🧠 탐지 없음 · ${fps}`;
+      hudAiBadge.className = "hud-tag hud-ai-tag";
+      return;
+    }
+
+    // 같은 클래스가 여러 개면 개수로 묶고, 신뢰도가 높은 순으로 최대 3종만 보여준다.
+    const byClass = new Map();
+    dets.forEach((d) => {
+      const key = d.class_name || "?";
+      const prev = byClass.get(key) || { count: 0, conf: 0 };
+      byClass.set(key, { count: prev.count + 1, conf: Math.max(prev.conf, d.confidence || 0) });
+    });
+    const summary = [...byClass.entries()]
+      .sort((a, b) => b[1].conf - a[1].conf)
+      .slice(0, 3)
+      .map(([name, v]) => `${name}${v.count > 1 ? `×${v.count}` : ""} ${Math.round(v.conf * 100)}%`)
+      .join(" · ");
+
+    hudAiBadge.textContent = `🧠 ${summary} · ${fps}`;
+    hudAiBadge.className = "hud-tag hud-ai-tag hud-ai-active";
+  }
+  setInterval(updateAiDetectionBadge, 1000);
 
   // 야간 경비 정책: 정기순찰 ↔ 센서대기 ↔ 이상 재확인 ↔ 조사 주행
   let latestNightGuardStatus = null;
