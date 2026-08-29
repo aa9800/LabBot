@@ -190,20 +190,22 @@ def main():
                 # 보는 사람이 있을 때만 그리고, 없으면 /ai/snapshot이 너무 낡지
                 # 않게 1초에 한 장만 만든다. 탐지 자체(아래 ai_corrected)는 경비
                 # 판단에 쓰이므로 항상 갱신한다.
+                def encode_annotated():
+                    """박스를 그려 넣은 JPEG 한 장. 실패하면 None."""
+                    ok, buf = cv2.imencode(
+                        ".jpg", draw_detections(source_frame, detections),
+                        [int(cv2.IMWRITE_JPEG_QUALITY), 85, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
+                    )
+                    return buf.tobytes() if ok else None
+
                 now_draw = time.time()
+                fresh_jpeg = None
                 if (stream_server.ai_has_viewers()
                         or now_draw - ai_last_draw["at"] >= AI_IDLE_DRAW_INTERVAL_S):
                     ai_last_draw["at"] = now_draw
-                    annotated = draw_detections(source_frame, detections)
-                    # AI 스트림은 초당 몇 장뿐이라(일반 스트림 30fps보다 훨씬 낮음)
-                    # 품질을 올려도 대역폭에 여유가 있다. 55는 확대한 화면에서
-                    # 압축 깨짐이 눈에 띄었다.
-                    ok, jpeg = cv2.imencode(
-                        ".jpg", annotated,
-                        [int(cv2.IMWRITE_JPEG_QUALITY), 85, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
-                    )
-                    if ok:
-                        stream_server.set_ai_frame(jpeg.tobytes())
+                    fresh_jpeg = encode_annotated()
+                    if fresh_jpeg:
+                        stream_server.set_ai_frame(fresh_jpeg)
 
                 ai_corrected["detections"] = [_asdict(d) for d in detections]
 
@@ -227,7 +229,10 @@ def main():
                             "source": "real-raspbot-edge-ai",
                             "shadow_mode": True,
                         },
-                        snapshot_bytes=jpeg_bytes,
+                        # 증거 사진은 이 프레임에서 새로 만든다. 스트림용 인코딩을
+                        # 건너뛴 프레임일 수도 있어서 그때는 여기서 한 장 만든다 —
+                        # 쿨다운이 걸려 있어 자주 일어나지 않는다.
+                        snapshot_bytes=fresh_jpeg or encode_annotated(),
                     )
 
             ai_worker = EdgeInferenceWorker(

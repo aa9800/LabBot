@@ -277,6 +277,7 @@ class EdgeInferenceWorker:
         self._lock = threading.Lock()
         self._latest: Optional[InferenceSnapshot] = None
         self._latencies = deque(maxlen=120)
+        self._cycles = deque(maxlen=120)     # 콜백까지 포함한 한 주기 전체 시간
         self._completed_at = deque(maxlen=120)
         self._error = None
 
@@ -317,6 +318,14 @@ class EdgeInferenceWorker:
                     self._error = None
                 if self.result_callback is not None:
                     self.result_callback(snapshot, frame)
+                # latency_ms 는 이 백엔드 하나의 시간이다. 콜백 안에서 두 번째
+                # 모델(사람 판정)을 더 돌리는 구성이라, 그것까지 포함한 실제 한
+                # 주기의 비용은 여기서 따로 잰다. 이 둘을 구분하지 않으면 로봇이
+                # 실제보다 빠른 것처럼 보인다.
+                cycle_end = self._clock()
+                with self._lock:
+                    self._cycles.append((cycle_end - started) * 1000.0)
+                finished = cycle_end
             except Exception as exc:
                 finished = self._clock()
                 with self._lock:
@@ -331,6 +340,7 @@ class EdgeInferenceWorker:
     def status(self) -> Dict:
         with self._lock:
             latencies = list(self._latencies)
+            cycles = list(self._cycles)
             completed_at = list(self._completed_at)
             latest = self._latest
             error = self._error
@@ -348,6 +358,14 @@ class EdgeInferenceWorker:
             p95_index = min(len(ordered) - 1, round((len(ordered) - 1) * 0.95))
             result["latency_ms"] = {
                 "mean": round(statistics.fmean(latencies), 2),
+                "p95": round(ordered[p95_index], 2),
+            }
+        if cycles:
+            # 콜백(두 번째 모델·그리기·이벤트)까지 포함한 한 주기 전체 시간.
+            ordered = sorted(cycles)
+            p95_index = min(len(ordered) - 1, round((len(ordered) - 1) * 0.95))
+            result["cycle_ms"] = {
+                "mean": round(statistics.fmean(cycles), 2),
                 "p95": round(ordered[p95_index], 2),
             }
         if latest:
