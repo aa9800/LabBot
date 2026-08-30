@@ -539,8 +539,24 @@ class PatrolRunner:
     # 잡으면 오차를 키운다. 방향(bearing)의 부호는 오늘 주행으로 검증됐으므로
     # 확실한 쪽만 쓴다.
     MARKER_FIX_EVERY = 5        # 몇 틱마다 마커를 찾아볼 것인가
-    MARKER_FIX_MIN_CM = 60.0    # 너무 가까우면 각도가 예민해져 안 쓴다
+    MARKER_FIX_MIN_CM = 45.0    # 너무 가까우면 각도가 예민해져 안 쓴다
     MARKER_FIX_MAX_DEG = 25.0   # 이보다 큰 보정은 잘못 본 것으로 보고 버린다
+
+    # 계산한 보정을 한 번에 다 반영하지 않고 이 비율만 적용한다.
+    #
+    # 마커 보정은 "내 위치는 맞고 방향만 틀렸다"를 전제로 한다. 그런데 거리가
+    # 틀려서 위치가 어긋난 경우에는 그 전제가 깨지고, 없던 방향 오차를 새로
+    # 만들어낸다(가상 주행: 거리만 10% 틀린 로봇이 0.1cm -> 9.0cm 로 나빠졌다).
+    #
+    # 일부만 반영하면 틀린 보정의 피해는 줄고, 맞는 보정은 여러 번에 걸쳐
+    # 수렴한다. 회전 오차가 실제 로봇의 주된 문제이므로 이쪽이 이득이다.
+    # 가상 주행 결과(회전 8% 과다 · 마커가 경유지에 있는 배치):
+    #   게인 0.0(보정 없음) 22.5cm · 0.6 -> 17.5cm · 1.0 -> 13.8cm
+    # 거리만 10% 틀린 경우는 반대로 게인이 클수록 나빠진다(0.0 -> 0.1cm,
+    # 0.6 -> 4.7cm, 1.0 -> 9.0cm). 실물 로봇은 거리를 줄자로 두 번 맞춰
+    # 190cm 오차 0 이었고 회전은 5~10% 틀렸으므로, 회전 쪽에 무게를 두되
+    # 위치가 어긋났을 때의 피해를 줄이는 선에서 0.8 로 둔다.
+    MARKER_FIX_GAIN = 0.8
 
     def _marker_positions(self):
         """지도에 적힌 마커 번호 -> 좌표.
@@ -619,7 +635,7 @@ class PatrolRunner:
             self._log(f"마커 {best['id']} 보정 {delta:+.1f}도는 너무 커서 무시한다")
             return False
 
-        self.odometry.nudge_heading(delta)
+        self.odometry.nudge_heading(delta * self.MARKER_FIX_GAIN)
         self._marker_fixes += 1
         self._log(f"마커 {best['id']}({best['distance_cm']:.0f}cm)로 방향 보정 "
                   f"{delta:+.1f}도 -> {self.odometry.pose()['heading_deg']:.1f}도")
@@ -800,6 +816,15 @@ class PatrolRunner:
                 break
             self._set(phase="turning", **self._pose_fields())
             self._turn_pulse(delta)
+
+            # 회전 직후가 마커 보정에 가장 좋은 순간이다. 방향 오차가 방금
+            # 생겼고(회전이 오차의 주범이다), 목표 마커는 아직 제일 멀리 있어
+            # 각도 계산이 위치 오차에 가장 둔감하다.
+            #
+            # 주행 중 5틱마다 보는 것만으로는 늦다. 70cm 구간이면 첫 확인이
+            # 40cm 를 간 뒤라 마커가 이미 코앞이고, 그러면 최소 거리 조건에
+            # 걸려 보정을 못 한다(가상 주행에서 보정 0회였다).
+            self._fix_heading_from_markers()
             self._set(phase="driving")
             gone = self._drive_cm(dist)
             self._log(f"({x:.0f},{y:.0f}) 로 {attempt + 1}차 이동 · "
