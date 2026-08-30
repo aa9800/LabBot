@@ -1225,6 +1225,12 @@ document.addEventListener("DOMContentLoaded", async () => {
                 </span>`;
               })
               .join("");
+          } else if (status.camera_blind) {
+            // "감지된 객체 없음"과 "어두워서 못 봄"은 완전히 다르다. 밤에
+            // 화면이 캄캄한데 "이상 없음"으로 보이면 감시하는 척이 된다.
+            aiLiveDetectionsList.innerHTML =
+              `<span class="badge badge-st-open"><span class="badge-dot"></span>` +
+              `카메라가 어두워 감지 불가 (밝기 ${status.light_level ?? "?"}/255)</span>`;
           } else {
             aiLiveDetectionsList.innerHTML = `<span class="mono" style="font-size: 11px; color: var(--text-faint);">감지된 객체 없음</span>`;
           }

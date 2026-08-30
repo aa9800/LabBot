@@ -312,10 +312,33 @@ def main():
             ai_runtime_status.update({"mode": "unavailable", "error": f"{type(exc).__name__}: {exc}"})
             print(f"[labkeeper] 로컬 Physical AI 비활성: {ai_runtime_status['error']}")
 
+    # 이 밝기 아래로는 탐지 결과를 믿을 수 없다고 본다. 실측에서 불을 끈 방이
+    # 평균 2.5 였고, 사람이 알아볼 수 있는 어두운 실내가 대략 30~40 이었다.
+    CAMERA_BLIND_MEAN = 12.0
+
+    def camera_light_level():
+        """화면이 얼마나 밝은가(0~255). 못 재면 None."""
+        try:
+            frame = hal.capture_frame()
+            if frame is None or getattr(frame, "size", 0) == 0:
+                return None
+            # 전체를 다 볼 필요가 없다. 8픽셀마다 하나씩만 봐도 평균은 같다.
+            return float(frame[::8, ::8].mean())
+        except Exception:
+            return None
+
     def get_ai_status():
         if ai_worker is None:
             return {"status": "error", **ai_runtime_status}
         worker_status = ai_worker.status()
+        # 어두워서 못 보는 것과 "아무도 없다"는 다르다. 구분해서 알려준다.
+        light = camera_light_level()
+        worker_status["light_level"] = None if light is None else round(light, 1)
+        worker_status["camera_blind"] = bool(light is not None and light < CAMERA_BLIND_MEAN)
+        if worker_status["camera_blind"]:
+            worker_status["blind_note"] = (
+                "화면이 너무 어두워 탐지 결과를 믿을 수 없습니다. "
+                "탐지 0건은 '아무도 없다'가 아니라 '보이지 않는다'입니다.")
         latest = worker_status.get("latest") or {}
         # 사람이 순정 모델로 교체된 뒤의 목록이 있으면 그걸 쓴다.
         if ai_corrected["detections"] is not None:
