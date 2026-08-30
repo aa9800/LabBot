@@ -174,6 +174,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     use: { eyebrow: "물품 사용", message: "로봇을 따라가세요" },
   };
 
+  // 물품 목록에서 예약하고 넘어오면 ?guide=1&loanId=... 가 붙어 있다. 그때는
+  // 사용자가 목록에서 다시 찾아 누르게 하지 않고 바로 안내창을 연다 - 방금
+  // 누른 그 물품을 다시 고르게 하는 건 불필요한 단계다.
+  function openGuideFromQuery(loans) {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("guide") !== "1") return;
+    const loanId = q.get("loanId");
+    const loan = (loans || []).find((l) => String(l.id) === String(loanId));
+    // 주소창을 정리해 새로고침 때 또 열리지 않게 한다.
+    window.history.replaceState({}, "", window.location.pathname);
+    if (!loan) return;
+    const item = loan.items || {};
+    const consumable = (item.item_type || "") === "consumable";
+    openGuideModal({ loan, mode: consumable ? "use" : "pickup", qty: 1 });
+  }
+
   function openGuideModal({ loan, mode, qty }) {
     const item = loan.items;
     const copy = GUIDE_COPY[mode];
@@ -200,13 +216,22 @@ document.addEventListener("DOMContentLoaded", async () => {
         </div>
 
         <div class="guide-step" data-step="scan" hidden>
-          <p class="guide-eyebrow">로봇 카메라 QR 확인</p>
-          <p class="guide-caption">${escapeHtml(item.name)}을 들고 QR 라벨을 로봇 카메라 정면에 보여주세요</p>
-          <div class="qr-scan-frame">
-            <img class="qr-scan-video" id="guideRobotCamera" alt="로봇 카메라 화면" />
-            <div class="qr-scan-reticle"></div>
+          <p class="guide-eyebrow">물품 QR 보여주기</p>
+          <p class="guide-caption">${escapeHtml(item.name)}의 QR입니다. 이 화면을 로봇 카메라 정면에 대주세요</p>
+          <!-- 로봇 카메라 화면이 아니라 물품 QR 을 띄운다. QR 을 읽는 쪽은
+               로봇이므로, 사람은 보여줄 것이 필요하지 볼 것이 필요한 게 아니다. -->
+          <div class="qr-show-frame">
+            <canvas id="guideItemQr" width="220" height="220"></canvas>
+            <p class="qr-show-code mono" id="guideItemQrCode"></p>
           </div>
-          <p class="guide-scan-status" id="guideScanStatus">QR이 프레임 안에 들어오면 아래 버튼을 누르세요.</p>
+          <details class="qr-robot-view">
+            <summary>로봇이 보는 화면 확인</summary>
+            <div class="qr-scan-frame">
+              <img class="qr-scan-video" id="guideRobotCamera" alt="로봇 카메라 화면" />
+              <div class="qr-scan-reticle"></div>
+            </div>
+          </details>
+          <p class="guide-scan-status" id="guideScanStatus">QR을 로봇 카메라에 대고 아래 버튼을 누르세요.</p>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary btn-sm" data-action="back-to-guide">안내 상태 보기</button>
             <button type="button" class="btn btn-primary btn-sm" data-action="robot-scan">로봇으로 QR 읽기</button>
@@ -259,6 +284,37 @@ document.addEventListener("DOMContentLoaded", async () => {
     const manualInput = overlay.querySelector("#guideManualInput");
     const navStatus = overlay.querySelector("#guideNavStatus");
     const robotCamera = overlay.querySelector("#guideRobotCamera");
+
+    // 물품 QR 을 화면에 그린다.
+    //
+    // QR 값은 item_qr_codes 에 있고, 자기가 예약중·대여중인 물품만 읽을 수
+    // 있다(RLS). 전부 열지 않는 이유는 QR 하나면 그 물품 수령이 확정되기
+    // 때문이다 - 아무나 읽으면 남의 예약을 가로챌 수 있다.
+    //
+    // 그래도 값이 없을 수 있다(마이그레이션 전이거나 예약이 만료된 경우).
+    // 그때는 직접 입력으로 넘어가게 둔다 - 값이 없다고 대여를 막으면 안 된다.
+    function renderItemQr() {
+      const canvas = overlay.querySelector("#guideItemQr");
+      const codeText = overlay.querySelector("#guideItemQrCode");
+      if (!canvas || !codeText) return;
+      const code = window.LabBotItems.qrCodeOf(item);
+      if (!code) {
+        canvas.style.display = "none";
+        codeText.textContent = "QR 값을 불러오지 못했습니다 · 물품에 붙은 QR 라벨을 로봇에 보여주거나 아래에 직접 입력하세요";
+        return;
+      }
+      codeText.textContent = code;
+      if (!window.QRCode) {
+        codeText.textContent = code + " (QR 그리기 실패 — 위 코드를 직접 입력하세요)";
+        return;
+      }
+      window.QRCode.toCanvas(canvas, code, { width: 220, margin: 1 }, (err) => {
+        if (err) {
+          canvas.style.display = "none";
+          codeText.textContent = code + " (QR 그리기 실패 — 위 코드를 직접 입력하세요)";
+        }
+      });
+    }
 
     function renderGuideStatus(status) {
       if (!status) return;
@@ -357,6 +413,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     overlay.querySelector('[data-action="to-scan"]').addEventListener("click", async () => {
       showStep("scan");
+      renderItemQr();   // 이 단계에 들어와야 캔버스가 보이므로 여기서 그린다
     });
 
     overlay.querySelector('[data-action="back-to-guide"]').addEventListener("click", () => showStep("nav"));
@@ -502,6 +559,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     activeListEl.innerHTML = "";
     active.forEach((loan) => activeListEl.appendChild(renderActiveCard(loan)));
     activeEmptyEl.style.display = active.length === 0 ? "block" : "none";
+
+    // 물품 목록에서 예약하고 넘어온 경우 여기서 바로 안내창을 연다.
+    // 목록이 그려진 뒤여야 해당 대여 건을 찾을 수 있다.
+    openGuideFromQuery(loans);
 
     historyBodyEl.innerHTML = history
       .map(
@@ -677,13 +738,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         const target = e.currentTarget;
         target.disabled = true;
         try {
-          const consumable = window.LabBotRentals.isConsumable(sub.items);
-          await window.LabBotRentals.reserveItem(sub.items, session);
+          const loan = await window.LabBotRentals.reserveItem(sub.items, session);
           window.LabBotToast.success(
-            `"${sub.items.name}" 예약되었습니다. 마이페이지에서 로봇 안내를 받아 ${consumable ? "사용" : "수령"}하세요.`
+            `"${sub.items.name}" 예약되었습니다. 로봇의 선반 안내 경로를 표시합니다.`
           );
-          await renderAll();
-          await renderRestockSubscriptions();
+          window.location.href = window.LabBotRentals.buildRobotGuideUrl(sub.items, loan);
         } catch (err) {
           window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
           target.disabled = false;

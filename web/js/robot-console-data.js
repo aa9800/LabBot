@@ -36,8 +36,12 @@ async function fetchRobotCommand() {
   return data;
 }
 
-let _currentMode = localStorage.getItem("labbot_target_mode") || "sim";
+// 관리자 페이지를 열 때의 기본 관제 대상은 항상 실물 Raspbot이다.
+// 이전 세션에서 Isaac을 골랐더라도 새로 연 화면이 가상 로봇에 명령을 보내지 않게 한다.
+let _currentMode = "real";
+localStorage.setItem("labbot_target_mode", _currentMode);
 let _cachedLocalIp = null;  // 첫 fetchRobotIp()에서 채운다
+let _cachedRealRobotIp = null; // 좌표 순찰 대상 선택은 상단 관제 대상과 독립적이다
 let _activeDriveController = null;
 let _driveCommandSequence = 0;
 let _activeGuideTaskId = null;
@@ -163,11 +167,12 @@ async function fetchRobotIp() {
       .eq("id", 1)
       .single();
     if (data && data.local_ip && data.local_ip.trim()) {
-      _cachedLocalIp = data.local_ip.trim();
+      _cachedRealRobotIp = data.local_ip.trim();
+      _cachedLocalIp = _cachedRealRobotIp;
       return _cachedLocalIp;
     }
   } catch {}
-  return _cachedLocalIp || FALLBACK_ROBOT_IP;
+  return _cachedRealRobotIp || FALLBACK_ROBOT_IP;
 }
 
 function getDirectStreamUrl(localIp, port = 8080) {
@@ -312,6 +317,87 @@ async function setCameraDirection({ pan_dir, tilt_dir }) {
   if (pan_dir !== undefined) params.pan_dir = pan_dir;
   if (tilt_dir !== undefined) params.tilt_dir = tilt_dir;
   return sendDirectCommand(targetIp, "/camera", params, 1500);
+}
+
+// ---------------------------------------------------------------------------
+// 좌표 순찰
+// ---------------------------------------------------------------------------
+// 실물은 현장 보정 좌표, Isaac은 디지털 트윈 전체 연구실 웨이포인트를 따른다.
+// env 는 실물 라즈봇("real")과 아이작 심 가상 실험실("isaac")을 가른다 - 두
+// 공간은 크기도 물리도 달라서 순찰 경로와 주행 보정값을 따로 둔다.
+
+async function patrolTargetIp(env) {
+  if (env === "isaac") return window.location.hostname || "127.0.0.1";
+  if (_cachedRealRobotIp) return _cachedRealRobotIp;
+  try {
+    const { data } = await supabaseClient
+      .from("robot_commands")
+      .select("local_ip")
+      .eq("id", 1)
+      .single();
+    if (data && data.local_ip && data.local_ip.trim()) {
+      _cachedRealRobotIp = data.local_ip.trim();
+    }
+  } catch {}
+  return _cachedRealRobotIp || FALLBACK_ROBOT_IP;
+}
+
+async function patrolCall(action, params = {}, timeoutMs = 4000, env = null) {
+  // 좌표 순찰 패널의 대상 선택을 상단 카메라/조이스틱 대상과 섞지 않는다.
+  // 그래야 관제 카메라는 실물을 보면서 Isaac 경로만 별도로 확인할 수도 있다.
+  const targetEnv = env || params.env || (_currentMode === "sim" ? "isaac" : "real");
+  const targetIp = await patrolTargetIp(targetEnv);
+  if (!targetIp) return null;
+  try {
+    return await sendDirectCommand(targetIp, `/patrol/${action}`, params, timeoutMs);
+  } catch {
+    return null;   // 로봇이 꺼져 있는 것 — 호출부에서 "연결 없음"으로 표시
+  }
+}
+
+// 지금 어디에 있든 출발점(0,0)으로 돌아간다. 좌표 주행이라 로봇이 자기 위치를
+// 알고 있어야 하는데, 수동 주행도 좌표에 반영되므로 WASD 로 옮긴 뒤에도 된다.
+const dockRobot = () => {
+  const env = _currentMode === "sim" ? "isaac" : "real";
+  return patrolCall("dock", { env }, 6000, env);
+};
+
+const startPatrol = (env = "real", laps = 1) =>
+  patrolCall("start", { env, laps }, 8000, env);
+const stopPatrol = (env = (_currentMode === "sim" ? "isaac" : "real")) =>
+  patrolCall("stop", { env }, 4000, env);
+const fetchPatrolStatus = (timeoutMs = 2000, env = (_currentMode === "sim" ? "isaac" : "real")) =>
+  patrolCall("status", { env }, timeoutMs, env);
+const fetchPatrolMap = (env = "real") => patrolCall("map", { env }, 4000, env);
+const fetchPatrolPose = (env = (_currentMode === "sim" ? "isaac" : "real")) =>
+  patrolCall("pose", { env }, 2000, env);
+const configurePatrolRepeat = (env = "isaac", minutes = 0) =>
+  patrolCall("repeat", { env, minutes }, 4000, env);
+
+async function emergencyStopRobot() {
+  const env = _currentMode === "sim" ? "isaac" : "real";
+  const targetIp = await patrolTargetIp(env);
+  let driveStopped = false;
+  let controlStopped = false;
+
+  try {
+    await sendDirectCommand(targetIp, "/drive", { mode: "manual", speed: 0, turn: 0 }, 1500);
+    driveStopped = true;
+  } catch {}
+  try {
+    const action = env === "isaac" ? "emergency_stop" : "stop";
+    const result = await patrolCall(action, { env }, 2500, env);
+    controlStopped = !!result;
+  } catch {}
+
+  syncDriveStateThrottled(
+    { mode: "manual", speed: 0, turn: 0, updated_at: new Date().toISOString() },
+    true
+  );
+  if (!driveStopped && !controlStopped) {
+    throw new Error("강제정지 명령에 응답하지 않습니다.");
+  }
+  return { status: "stopped", env, driveStopped, controlStopped };
 }
 
 // 라즈베리파이 하드웨어 상태(온도·스로틀·CPU·메모리). 관리자 화면 상단에 상시 표시한다.
@@ -568,6 +654,14 @@ window.LabBotRobotConsole = {
   setCameraAngle,
   setCameraDirection,
   fetchRobotHealth,
+  startPatrol,
+  dockRobot,
+  stopPatrol,
+  fetchPatrolStatus,
+  fetchPatrolMap,
+  fetchPatrolPose,
+  configurePatrolRepeat,
+  emergencyStopRobot,
   getFallbackRobotIp: () => FALLBACK_ROBOT_IP,
   setTargetMode,
   getTargetMode,

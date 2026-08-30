@@ -11,7 +11,11 @@
 // qr_code는 여기 넣지 않는다 — item_qr_codes는 관리자만 조회 가능해서(docs/labbot_schema.sql
 // 24번 섹션) 넣어봐야 일반 사용자에게는 null로 온다. 애초에 클라이언트가 QR 값을 미리 알
 // 필요가 없다 — 실제 대조는 서버(confirm_* RPC)가 카메라로 찍은 값과 대조한다.
-const LOAN_SELECT = "*, items(id, name, category, location, item_type, available_qty, total_qty, unit)";
+// item_qr_codes 를 같이 끌어오는 이유: 마이페이지에서 물품 QR 을 화면에 띄워
+// 로봇 카메라에 보여주는 흐름이라, 대여 건에 물품 QR 이 딸려와야 한다. RLS 가
+// 걸려 있어서 자기가 예약중·대여중인 물품만 값이 채워지고 나머지는 null 로 온다
+// (에러가 아니다).
+const LOAN_SELECT = "*, items(id, name, category, location, item_type, available_qty, total_qty, unit, is_rentable, storage_parent_item_id, storage_position, item_qr_codes(qr_code))";
 
 // 연체 여부: 대여중 상태(실제로 픽업 확정된 것)에만 의미가 있다 — 예약중인데 due_at이
 // 아직 없을(null) 수도 있어서, 그 경우는 연체가 아니라고 본다.
@@ -23,6 +27,9 @@ function isOverdue(loan) {
 // due_at은 아직 실제로 받아간 게 아니라서 NULL로 둔다 — confirmPickup()이 진짜 수령
 // 시점 기준으로 7일 후를 새로 매긴다.
 async function reserveItem(item, session, source = "manual") {
+  if (item.is_rentable === false) {
+    throw new Error("고정 설비는 대여할 수 없습니다.");
+  }
   if (item.available_qty <= 0) {
     throw new Error("대여 가능한 재고가 없습니다.");
   }
@@ -137,6 +144,22 @@ function isConsumable(item) {
   return item.item_type === "REAGENT" || item.item_type === "CONSUMABLE";
 }
 
+function buildRobotGuideUrl(item, loan) {
+  // 예약하면 마이페이지로 보낸다.
+  //
+  // 예전에는 가상 실험실(lab-twin.html)로 보냈는데, 실물 로봇으로 대여를
+  // 처리하는 지금 흐름에서는 맞지 않는다. 사용자가 할 일은 "내 대여 목록에서
+  // 물품 QR 을 띄워 로봇에 보여주는 것"이고 그건 마이페이지에 있다.
+  // 가상 실험실은 위치를 눈으로 볼 때 쓰는 별도 화면으로 남긴다(물품 목록의
+  // [위치] 버튼).
+  const query = new URLSearchParams({
+    guide: "1",
+    loanId: String(loan.id),
+    itemId: String(item.id),
+  });
+  return `mypage.html?${query.toString()}`;
+}
+
 // 내 대여 목록: 로그인한 사용자 본인 것만
 async function fetchMyLoans(userId) {
   const { data, error } = await supabaseClient
@@ -170,6 +193,7 @@ window.LabBotRentals = {
   confirmVirtualUsage,
   cancelReservation,
   isConsumable,
+  buildRobotGuideUrl,
   fetchMyLoans,
   fetchAllLoans,
   isOverdue,

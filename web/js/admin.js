@@ -837,6 +837,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       // 1. 로컬 실시간 텔레메트리 최우선 반영
       const telemetry = await window.LabBotRobotConsole.fetchTelemetry(TELEMETRY_TIMEOUT_MS);
       if (telemetry && telemetry.mode) {
+        const operationLabels = {
+          emergency_stop: ["badge-st-closed", "강제정지 유지"],
+          dock: ["badge-st-progress", "대기 자리 복귀 중"],
+          docked: ["badge-st-open", "대기 자리 정차"],
+          stopped: ["badge-st-open", "정지"],
+          patrol_wait: ["badge-st-open", "다음 자동순찰 대기"],
+          patrol: ["badge-st-resolved", "자동순찰 중"],
+          guide: ["badge-st-progress", "물품 안내 중"],
+          night_guard: ["badge-st-progress", "야간 경비 중"],
+        };
+        const operation = operationLabels[telemetry.operation];
+        if (operation) {
+          robotModeBadge.className = `badge ${operation[0]}`;
+          robotModeBadge.innerHTML = `<span class="badge-dot"></span>${operation[1]}`;
+          return;
+        }
         const isManual = telemetry.mode === "manual";
         robotModeBadge.className = `badge ${isManual ? "badge-st-in_progress" : "badge-st-resolved"}`;
         robotModeBadge.innerHTML = `<span class="badge-dot"></span>${isManual ? "수동조작 중" : "자동순찰 중"}`;
@@ -862,6 +878,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           joystickBase.classList.remove("is-dragging");
           joySetKnob(0, 0);
           joyEmergencyStop();
+          await window.LabBotRobotConsole.emergencyStopRobot();
           showTemporaryKeyboardFeedback("정지 버튼 입력됨", "stop");
         } else {
           await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", ...values });
@@ -1727,6 +1744,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     cpu: document.getElementById("healthCpu"),
     mem: document.getElementById("healthMem"),
     uptime: document.getElementById("healthUptime"),
+    power: document.getElementById("healthPower"),
     wifi: document.getElementById("healthWifi"),
     disk: document.getElementById("healthDisk"),
     ai: document.getElementById("healthAi"),
@@ -1778,6 +1796,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       mem == null ? "is-offline" : mem >= 90 ? "is-hot" : mem >= 75 ? "is-warm" : null);
 
     setChip(healthEls.uptime, formatUptime(h.uptime_sec), h.uptime_sec == null ? "is-offline" : null);
+
+    // 배터리. 잔량(%)은 확장보드가 안 알려줘서 못 낸다 — 저전압 플래그로 판단한다.
+    // 그래서 "정상 / 처짐 / 충전 필요" 세 단계뿐이고, 그게 정직한 한계다.
+    const power = h.power || {};
+    const POWER_TONE = { ok: null, weak: "is-warn", critical: "is-hot" };
+    setChip(healthEls.power,
+      power.label || "--",
+      POWER_TONE[power.state] !== undefined ? POWER_TONE[power.state] : "is-offline");
+    if (healthEls.power && power.how) {
+      healthEls.power.title = `${power.how}
+${power.note || ""}`;
+    }
 
     // 무선 신호. -50 이상 우수, -70 보통, -80 이하면 끊기기 시작한다.
     const dbm = h.wifi_dbm;
@@ -1901,6 +1931,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (e.repeat) return;
       activeKeyboardKeys.clear();
       joyEmergencyStop();
+      window.LabBotRobotConsole.emergencyStopRobot()
+        .catch((err) => window.LabBotToast.error("강제정지 전송 실패: " + (err.message || err)));
       showTemporaryKeyboardFeedback("긴급 정지 입력됨", "stop");
       return;
     }
@@ -1935,11 +1967,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       joystickBase.classList.remove("is-dragging");
       joySetKnob(0, 0);
       joyEmergencyStop();
-      renderKeyboardFeedback("자동순찰 중 · 키 입력 시 수동 전환");
-      await window.LabBotRobotConsole.setRobotCommand({ mode: "auto", speed: 0, turn: 0 });
+      renderKeyboardFeedback("대기 자리로 복귀 중 · 키 입력 시 수동 전환");
+      // 예전에는 여기서 mode:"auto"(자율 배회)로 바꿨다. 그 방식은 좌표를 모른 채
+      // 돌아다녀서, 끝나고 나면 로봇이 자기 위치를 잃는다. 그 상태로 배달을 걸면
+      // 엉뚱한 곳을 출발점으로 잡는다. 이제 이 버튼은 출발점(0,0)으로 좌표
+      // 주행해 돌아가고, 순찰은 순찰 패널의 [순찰 시작]이 맡는다.
+      const r = await window.LabBotRobotConsole.dockRobot();
+      if (!r) {
+        window.LabBotToast.error("로봇에 연결할 수 없습니다.");
+      } else if (r.error) {
+        window.LabBotToast.error("복귀할 수 없습니다: " + r.error);
+      } else {
+        window.LabBotToast.success("대기 자리로 돌아갑니다.");
+      }
       await refreshRobotModeBadge();
     } catch (err) {
-      window.LabBotToast.error("자동 모드로 전환하지 못했습니다: " + (err.message || err));
+      window.LabBotToast.error("복귀 명령을 보내지 못했습니다: " + (err.message || err));
     }
   });
 

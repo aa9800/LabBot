@@ -1,0 +1,12 @@
+{
+  "name": "실물 로봇 기본 순찰 경로",
+  "env": "real",
+  "source": "robot-default-map",
+  "note": "실물 로봇이 오프라인일 때 표시하는 기본 80cm 사각 순찰 경로입니다.",
+  "waypoints": [
+    { "name": "출발", "marker": null, "x_cm": 0, "y_cm": 0 },
+    { "name": "1", "marker": null, "x_cm": 80, "y_cm": 0 },
+    { "name": "2", "marker": null, "x_cm": 80, "y_cm": 80 },
+    { "name": "3", "marker": null, "x_cm": 0, "y_cm": 80 }
+  ]
+}
