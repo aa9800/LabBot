@@ -87,6 +87,7 @@ def main():
     signal.signal(signal.SIGINT, request_shutdown)
     signal.signal(signal.SIGTERM, request_shutdown)
     stream_server.set_camera_angle_callback(hal.set_camera_angle)
+    stream_server.set_camera_direction_callback(hal.set_camera_direction)
     stream_server.set_buzzer_callback(hal.trigger_buzzer)
     # 주의: set_drive_callback / set_qr_scan_callback은 여기서 등록하지 않는다.
     # 아래에서 on_direct_drive(인자 3개) / on_manual_qr_scan으로 다시 등록하는데,

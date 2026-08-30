@@ -1446,11 +1446,45 @@ document.addEventListener("DOMContentLoaded", async () => {
     camSend();
   }
 
+  // 누르고 있는 동안은 "방향"만 알려주고 로봇이 이어서 돌린다. 예전처럼 4도씩
+  // 끊어 보내면 서보가 초당 8번 멈췄다 가서 계단처럼 뻑뻑하게 느껴진다.
+  const CAM_DIR_VEC = {
+    up:    { tilt_dir: -1 },
+    down:  { tilt_dir: 1 },
+    left:  { pan_dir: -1 },
+    right: { pan_dir: 1 },
+  };
+  let camHeldDirs = new Set();
+
+  function camSendDirection() {
+    const v = { pan_dir: 0, tilt_dir: 0 };
+    camHeldDirs.forEach((d) => Object.assign(v, CAM_DIR_VEC[d]));
+    window.LabBotRobotConsole.setCameraDirection(v).catch(() => {});
+  }
+
+  function camHoldStart(direction) {
+    if (camHeldDirs.has(direction)) return;
+    camHeldDirs.add(direction);
+    camSendDirection();
+  }
+
+  function camHoldEnd(direction) {
+    if (!camHeldDirs.delete(direction)) return;
+    camSendDirection();
+  }
+
+  function camHoldClear() {
+    if (camHeldDirs.size === 0) return;
+    camHeldDirs.clear();
+    camSendDirection();
+  }
+
   function camStopRepeat() {
     if (camRepeatTimer) {
       clearInterval(camRepeatTimer);
       camRepeatTimer = null;
     }
+    camHoldClear();
     camDpadButtons.forEach((b) => b.classList.remove("is-active"));
     window.removeEventListener("pointerup", camStopRepeat);
   }
@@ -1495,8 +1529,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   function camKeyStop(key) {
-    const timer = camKeysHeld.get(key);
-    if (timer) clearInterval(timer);
+    const direction = camKeysHeld.get(key);
+    if (direction) camHoldEnd(direction);
     camKeysHeld.delete(key);
     const btn = document.querySelector(`[data-cam="${CAM_KEY_MAP[key]}"]`);
     if (btn) btn.classList.remove("is-active");
@@ -1521,8 +1555,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const direction = CAM_KEY_MAP[key];
     const btn = document.querySelector(`[data-cam="${direction}"]`);
     if (btn) btn.classList.add("is-active");   // D패드 버튼도 같이 눌린 것처럼 보이게
-    camStep(direction);                        // 누르자마자 한 번 즉시 반응
-    camKeysHeld.set(key, setInterval(() => camStep(direction), CAM_REPEAT_MS));
+    camHoldStart(direction);                   // 놓을 때까지 로봇이 계속 돌린다
+    camKeysHeld.set(key, direction);
     if (camFeedbackTimer) { clearTimeout(camFeedbackTimer); camFeedbackTimer = null; }
     renderCamFeedback(camActiveLabel(), "active");
   });
@@ -1535,6 +1569,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // 탭 전환 등으로 keyup을 놓치면 카메라가 계속 돌아간다 — 창을 벗어나면 전부 정지.
   window.addEventListener("blur", () => {
     Array.from(camKeysHeld.keys()).forEach(camKeyStop);
+    camHoldClear();   // keyup 을 놓쳐도 로봇이 계속 돌지 않게
     renderCamFeedback("창 포커스 없음 · 카메라 정지", "blocked");
   });
 
@@ -1548,8 +1583,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     btn.addEventListener("pointerdown", () => {
       const direction = btn.dataset.cam;
       btn.classList.add("is-active");
-      camStep(direction); // 누르자마자 한 번 즉시 반응
-      camRepeatTimer = setInterval(() => camStep(direction), CAM_REPEAT_MS);
+      camHoldStart(direction);
       window.addEventListener("pointerup", camStopRepeat);
     });
   });

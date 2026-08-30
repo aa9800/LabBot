@@ -303,6 +303,17 @@ function syncCameraStateThrottled(payload) {
   }, delay);
 }
 
+// 화살표를 누르고 있는 동안 "그 방향으로 계속" 이라고 알려준다(-1/0/+1).
+// 예전에는 4도씩 끊어 보냈는데, 서보가 4도를 7ms 만에 끝내고 113ms 를 멈춰
+// 있어서 초당 8번 계단을 밟았다. 이제 로봇이 이어서 돌려주므로 끊기지 않는다.
+async function setCameraDirection({ pan_dir, tilt_dir }) {
+  const targetIp = _cachedLocalIp || _defaultIpForMode();
+  const params = {};
+  if (pan_dir !== undefined) params.pan_dir = pan_dir;
+  if (tilt_dir !== undefined) params.tilt_dir = tilt_dir;
+  return sendDirectCommand(targetIp, "/camera", params, 1500);
+}
+
 // 라즈베리파이 하드웨어 상태(온도·스로틀·CPU·메모리). 관리자 화면 상단에 상시 표시한다.
 async function fetchRobotHealth(timeoutMs = 2000) {
   const targetIp = _cachedLocalIp || _defaultIpForMode();
@@ -555,6 +566,7 @@ window.LabBotRobotConsole = {
   triggerRemoteBuzzer,
   setRobotCommand,
   setCameraAngle,
+  setCameraDirection,
   fetchRobotHealth,
   getFallbackRobotIp: () => FALLBACK_ROBOT_IP,
   setTargetMode,

@@ -125,6 +125,7 @@ class RealHAL:
         self._servo_now = {}           # 채널 -> 현재 보낸 각도
         self._servo_wake = threading.Event()
         self._servo_thread = None
+        self._servo_dir = {}           # 채널 -> -1/0/+1, 누르고 있는 동안 계속 흐른다
 
         try:
             # 시작 자세는 중앙. 여기서 한 번 직접 보내고 서보 스레드의 '현재값'도
@@ -433,6 +434,11 @@ class RealHAL:
     # 여기에 걸려서 서보 고유 곡선을 그대로 쓴다.
     SERVO_DIRECT_DEG = 15.0
 
+    # 화살표를 누르고 있는 동안의 이동 속도. 이 모드에서는 서보가 목표에 닿기
+    # 전에 다음 목표가 오므로 멈추지 않고 계속 흐른다 — 웹이 4도씩 끊어 보내던
+    # 계단식 움직임이 사라진다.
+    SERVO_HOLD_DEG_PER_S = 45.0
+
 
     # 카메라 모듈이 거꾸로 달려 있어 캡처를 180도 회전(hflip+vflip)시켜 쓴다.
     # 그래서 서보를 왼쪽으로 돌리면 화면 속 장면은 반대로 흐른다 — 웹에서 왼쪽
@@ -440,6 +446,30 @@ class RealHAL:
     # 맞추기 위해 서보로 나가는 각도만 뒤집는다. 웹/텔레메트리가 쓰는 논리 각도
     # (pan 작을수록 화면상 왼쪽)는 그대로 유지된다.
     PAN_INVERT = True
+
+    def _servo_limits(self, channel):
+        """서보 채널의 하드웨어 각도 범위. 팬은 반전돼 있어도 범위는 같다."""
+        if channel == self.SERVO_TILT:
+            return self.TILT_MIN, self.TILT_MAX
+        return self.PAN_MIN, self.PAN_MAX
+
+    def set_camera_direction(self, pan_dir=None, tilt_dir=None):
+        """화살표를 누르고 있는 동안 그 방향으로 계속 흐르게 한다. 0이면 멈춘다.
+
+        예전에는 웹이 4도씩 120ms 간격으로 목표를 보냈다. 서보는 4도를 7ms 만에
+        끝내고 113ms 를 멈춰 있어서 초당 8번 계단을 밟았고, 그게 "뻑뻑하다"는
+        느낌이었다. 이제 방향만 받고 로봇이 매 틱 목표를 앞으로 밀어주므로
+        서보가 목표에 닿기 전에 다음 목표가 와서 멈추지 않고 흐른다.
+        """
+        self._ensure_servo_thread()
+        if pan_dir is not None:
+            # 화면 기준 방향을 하드웨어 방향으로 뒤집는다(PAN_INVERT 와 같은 이유).
+            hw = -int(pan_dir) if self.PAN_INVERT else int(pan_dir)
+            self._servo_dir[self.SERVO_PAN] = hw
+        if tilt_dir is not None:
+            self._servo_dir[self.SERVO_TILT] = int(tilt_dir)
+        self._servo_wake.set()
+        return {"pan": self.cam_pan, "tilt": self.cam_tilt}
 
     def _write_servo(self, channel, angle):
         """서보 한 채널에 실제로 각도를 보낸다. 값이 그대로면 보내지 않는다."""
@@ -461,8 +491,22 @@ class RealHAL:
         불필요한 전송이 나가면 다른 명령과 뒤엉킨다.
         """
         max_step = self.SERVO_DEG_PER_S * self.SERVO_TICK_S
+        hold_step = self.SERVO_HOLD_DEG_PER_S * self.SERVO_TICK_S
         while not self._camera_stop.is_set():
             moved = False
+            # 방향이 눌려 있으면 목표를 계속 앞으로 밀어준다.
+            for channel, direction in list(self._servo_dir.items()):
+                if not direction:
+                    continue
+                lo, hi = self._servo_limits(channel)
+                nxt = self._servo_target.get(channel, 90) + direction * hold_step
+                self._servo_target[channel] = max(lo, min(hi, nxt))
+                if channel == self.SERVO_PAN:
+                    hw = self._servo_target[channel]
+                    self.cam_pan = (180 - hw) if self.PAN_INVERT else hw
+                else:
+                    self.cam_tilt = self._servo_target[channel]
+                moved = True
             for channel, target in list(self._servo_target.items()):
                 now = self._servo_now.get(channel)
                 if now is None:

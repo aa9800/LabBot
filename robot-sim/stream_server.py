@@ -184,8 +184,20 @@ class StreamingHandler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             pan = int(qs["pan"][0]) if "pan" in qs else None
             tilt = int(qs["tilt"][0]) if "tilt" in qs else None
+            # pan_dir/tilt_dir 은 "그 방향으로 계속 움직여라"(-1/0/+1)다. 화살표를
+            # 누르고 있는 동안 쓰며, 로봇이 매 틱 목표를 밀어줘서 끊기지 않는다.
+            pan_dir = int(qs["pan_dir"][0]) if "pan_dir" in qs else None
+            tilt_dir = int(qs["tilt_dir"][0]) if "tilt_dir" in qs else None
             applied = {"pan": pan, "tilt": tilt}
-            if _camera_angle_callback is not None:
+            if (pan_dir is not None or tilt_dir is not None) and _camera_direction_callback is not None:
+                try:
+                    result = _camera_direction_callback(pan_dir, tilt_dir)
+                    if isinstance(result, dict):
+                        applied.update(result)
+                except Exception as e:
+                    self._send_json_error(500, f"Camera direction callback failed: {e}")
+                    return
+            elif _camera_angle_callback is not None:
                 try:
                     callback_result = _camera_angle_callback(pan, tilt)
                     if isinstance(callback_result, dict):
@@ -413,6 +425,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
 
 
 _camera_angle_callback = None
+_camera_direction_callback = None
 _drive_callback = None
 _telemetry_provider = None
 _qr_scan_callback = None
@@ -523,6 +536,12 @@ def read_pi_health():
         health["uptime_sec"] = None
 
     return health
+
+
+def set_camera_direction_callback(cb):
+    """방향 이동 콜백 등록 (RealHAL.set_camera_direction 연동)."""
+    global _camera_direction_callback
+    _camera_direction_callback = cb
 
 
 def set_camera_angle_callback(cb):
