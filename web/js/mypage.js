@@ -208,7 +208,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           <p class="guide-item-name">${escapeHtml(item.name)} · ${escapeHtml(item.location)}${
             mode === "use" ? ` · ${qty}${escapeHtml(item.unit || "개")}` : ""
           }</p>
-          <p class="guide-sim-note mono">안내와 QR 확인은 독립적입니다 · 어디서든 물품을 로봇 카메라에 보여주세요</p>
+          <p class="guide-sim-note mono">실물 로봇이 선반으로 이동합니다 · QR을 찍으면 로봇은 대기 자리로 돌아갑니다</p>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary btn-sm" data-action="cancel">안내 취소</button>
             <button type="button" class="btn btn-primary btn-sm" data-action="to-scan">물품을 들었어요 · 로봇 QR 스캔</button>
@@ -216,7 +216,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         </div>
 
         <div class="guide-step" data-step="scan" hidden>
-          <p class="guide-eyebrow">물품 QR 보여주기</p>
+          <p class="guide-eyebrow">물품 QR 보여주기 · 실물 로봇</p>
           <p class="guide-caption">${escapeHtml(item.name)}의 QR입니다. 이 화면을 로봇 카메라 정면에 대주세요</p>
           <!-- 로봇 카메라 화면이 아니라 물품 QR 을 띄운다. QR 을 읽는 쪽은
                로봇이므로, 사람은 보여줄 것이 필요하지 볼 것이 필요한 게 아니다. -->

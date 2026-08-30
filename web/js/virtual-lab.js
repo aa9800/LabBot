@@ -1067,7 +1067,9 @@
         <div class="virtual-scanner-modal">
           <h3>${mode === "pickup" ? "가상 QR 수령 스캔" : mode === "usage" ? "가상 QR 사용 스캔" : "가상 QR 반납 스캔"}</h3>
           <p style="color:var(--text-muted); font-size:0.85rem; margin-top:4px;">
-            디지털 트윈 로봇이 대상 물품의 QR 라벨을 확인 중입니다.
+            아이작 심(가상 연구실) 로봇이 QR 라벨을 확인합니다.
+            <br>실물 로봇으로 대여하려면 마이페이지에서 진행하세요 — 이 화면의
+            경로는 가상 연구실 기준이라 실물 로봇과 다릅니다.
           </p>
           <div class="scanner-viewfinder">
             <div class="scanner-laser-line"></div>
@@ -1075,6 +1077,20 @@
               [SCANNING ITEM]
             </div>
           </div>
+          <!-- 실물 로봇용 QR. 이 화면을 로봇 카메라에 대면 로봇이 읽는다.
+               흰 바탕을 강제하는 이유는 어두운 배경에서는 인식률이 떨어지기
+               때문이다. -->
+          <div id="virtualItemQrBox"
+            style="display:flex; flex-direction:column; align-items:center; gap:6px;
+                   margin-top:0.75rem; padding:12px; background:#fff; border-radius:10px;">
+            <canvas id="virtualItemQr" width="180" height="180"></canvas>
+            <span id="virtualItemQrCode"
+              style="font-family:var(--font-mono); font-size:0.72rem; color:#333;
+                     text-align:center; word-break:break-all;"></span>
+          </div>
+          <p style="color:var(--text-muted); font-size:0.78rem; margin:6px 0 0; text-align:center;">
+            실물 로봇으로 대여하려면 위 QR을 로봇 카메라에 보여주세요
+          </p>
           ${mode === "usage" ? `
             <label for="virtualUsageQty" style="display:block; margin:0.75rem 0; color:var(--text);">
               사용 수량
@@ -1090,6 +1106,27 @@
         </div>
       </div>
     `;
+
+    // 실물 QR 을 그린다. 값은 자기가 예약중·대여중인 물품만 내려온다(RLS).
+    (function renderVirtualItemQr() {
+      const canvas = document.getElementById("virtualItemQr");
+      const codeEl = document.getElementById("virtualItemQrCode");
+      const box = document.getElementById("virtualItemQrBox");
+      if (!canvas || !codeEl) return;
+      const code = window.LabBotItems && window.LabBotItems.qrCodeOf
+        ? window.LabBotItems.qrCodeOf(loan.items)
+        : null;
+      if (!code) {
+        // 값이 없으면 가상 스캔만 쓰는 상황이다. 빈 흰 상자를 남기지 않는다.
+        if (box) box.style.display = "none";
+        return;
+      }
+      codeEl.textContent = code;
+      if (!window.QRCode) return;
+      window.QRCode.toCanvas(canvas, code, { width: 180, margin: 1 }, (err) => {
+        if (err) canvas.style.display = "none";
+      });
+    })();
 
     document.getElementById("btnCloseScanner").addEventListener("click", () => {
       modalContainer.innerHTML = "";
