@@ -1683,6 +1683,41 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   setInterval(updateHudTelemetry, 1000);
 
+  // 카메라 화면 크기. 좁은 화면에서 보거나 크게 띄워 자세히 볼 때를 위해 둔다.
+  // 0 은 "최대" — 컬럼이 허용하는 만큼 늘린다.
+  const camSizeButtons = document.querySelectorAll("[data-cam-size]");
+  const camWrapEl = document.querySelector(".robot-camera-wrap");
+
+  function applyCameraSize(px) {
+    if (!camWrapEl) return;
+    camWrapEl.style.maxWidth = px > 0 ? `${px}px` : "none";
+    camWrapEl.style.flexBasis = px > 0 ? `${px}px` : "100%";
+    try {
+      localStorage.setItem("labbot_cam_size", String(px));
+    } catch {}
+  }
+
+  camSizeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      camSizeButtons.forEach((b) => b.classList.remove("is-active"));
+      btn.classList.add("is-active");
+      applyCameraSize(Number(btn.dataset.camSize));
+    });
+  });
+
+  // 마지막으로 고른 크기를 기억한다 — 매번 다시 고르게 하면 번거롭다.
+  try {
+    const saved = localStorage.getItem("labbot_cam_size");
+    if (saved !== null) {
+      const target = Array.from(camSizeButtons).find((b) => b.dataset.camSize === saved);
+      if (target) {
+        camSizeButtons.forEach((b) => b.classList.remove("is-active"));
+        target.classList.add("is-active");
+        applyCameraSize(Number(saved));
+      }
+    }
+  } catch {}
+
   // 🩺 로봇 하드웨어 상태 바 — 온도/CPU/메모리/가동시간 + 스로틀 경고.
   // 텔레메트리(1초)보다 훨씬 느리게 돈다. 이 값들은 초 단위로 안 바뀌고,
   // 약한 와이파이에서 폴링을 늘리면 조작 명령이 밀린다.
@@ -1692,6 +1727,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     cpu: document.getElementById("healthCpu"),
     mem: document.getElementById("healthMem"),
     uptime: document.getElementById("healthUptime"),
+    wifi: document.getElementById("healthWifi"),
+    disk: document.getElementById("healthDisk"),
+    ai: document.getElementById("healthAi"),
     throttle: document.getElementById("healthThrottle"),
   };
 
@@ -1717,7 +1755,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     const h = await window.LabBotRobotConsole.fetchRobotHealth();
     if (!h) {
       // 로봇이 꺼졌거나 와이파이가 끊긴 상태 — 옛날 숫자를 그대로 두면 오해를 부른다.
-      ["temp", "cpu", "mem", "uptime"].forEach((k) => setChip(healthEls[k], "--", "is-offline"));
+      ["temp", "cpu", "mem", "uptime", "wifi", "disk", "ai"].forEach((k) =>
+        setChip(healthEls[k], "--", "is-offline"));
       healthEls.throttle.style.display = "none";
       return;
     }
@@ -1739,6 +1778,28 @@ document.addEventListener("DOMContentLoaded", async () => {
       mem == null ? "is-offline" : mem >= 90 ? "is-hot" : mem >= 75 ? "is-warm" : null);
 
     setChip(healthEls.uptime, formatUptime(h.uptime_sec), h.uptime_sec == null ? "is-offline" : null);
+
+    // 무선 신호. -50 이상 우수, -70 보통, -80 이하면 끊기기 시작한다.
+    const dbm = h.wifi_dbm;
+    setChip(healthEls.wifi, dbm == null ? "--" : `${Math.round(dbm)} dBm`,
+      dbm == null ? "is-offline" : dbm <= -78 ? "is-hot" : dbm <= -68 ? "is-warm" : null);
+
+    // 디스크. 이벤트 큐와 로그가 여기 쌓인다.
+    const disk = h.disk_used_pct;
+    setChip(healthEls.disk,
+      disk == null ? "--" : `${disk}%${h.disk_free_gb != null ? ` · ${h.disk_free_gb}GB 여유` : ""}`,
+      disk == null ? "is-offline" : disk >= 92 ? "is-hot" : disk >= 82 ? "is-warm" : null);
+
+    // AI 가 조용히 죽으면 아무것도 탐지하지 못한다. 그 상태를 눈에 띄게 둔다.
+    if (h.ai_ok === false || h.ai_error) {
+      setChip(healthEls.ai, h.ai_error ? "오류" : "정지됨", "is-hot");
+      healthEls.ai.title = h.ai_error || "AI 추론이 돌지 않습니다";
+    } else if (h.ai_ok) {
+      setChip(healthEls.ai, `${(h.ai_fps ?? 0).toFixed(1)} fps`, null);
+      healthEls.ai.title = "AI 추론 정상 동작 중";
+    } else {
+      setChip(healthEls.ai, "--", "is-offline");
+    }
 
     // 지금 걸려 있는 스로틀만 보여준다(이력 비트는 제외). 없으면 칩 자체를 숨긴다.
     const active = Array.isArray(h.throttled_now) ? h.throttled_now : [];

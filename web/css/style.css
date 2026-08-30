@@ -3519,3 +3519,33 @@ tbody tr:hover td {
 .robot-health-chip.is-offline {
   opacity: 0.5;
 }
+
+/* 카메라 화면 크기 선택 */
+.camera-size-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  flex-wrap: wrap;
+}
+
+.cam-size-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.cam-size-btn:hover { border-color: var(--line-strong, var(--border)); color: var(--text); }
+
+.cam-size-btn.is-active {
+  border-color: var(--accent-border, var(--accent));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+  color: var(--accent);
+}

@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import os
+import shutil
 import socket
 import threading
 import time
@@ -534,6 +535,46 @@ def read_pi_health():
         health["uptime_sec"] = int(float(raw.split()[0])) if raw else None
     except Exception:
         health["uptime_sec"] = None
+
+    # 무선 신호. iw 를 부르면 프로세스를 띄우니 커널이 이미 내놓은 파일을 읽는다.
+    # 로봇이 돌아다니는 물건이라 신호가 떨어지면 명령도 영상도 같이 끊긴다.
+    health["wifi_dbm"] = None
+    health["wifi_quality"] = None
+    try:
+        with open("/proc/net/wireless", "r") as f:
+            for line in f:
+                if "wlan0" not in line:
+                    continue
+                cols = line.split()
+                # 값 끝에 점이 붙어 나온다: "52." "-58."
+                health["wifi_quality"] = float(cols[2].rstrip("."))
+                health["wifi_dbm"] = float(cols[3].rstrip("."))
+                break
+    except Exception:
+        pass
+
+    # 디스크. 이벤트 큐와 주행 로그가 여기 쌓이므로 가득 차면 안전이벤트가 유실된다.
+    try:
+        usage = shutil.disk_usage("/")
+        health["disk_used_pct"] = round(usage.used / usage.total * 100)
+        health["disk_free_gb"] = round(usage.free / 1e9, 1)
+    except Exception:
+        health["disk_used_pct"] = None
+        health["disk_free_gb"] = None
+
+    # AI 가 조용히 죽으면 경비 로봇이 아무것도 못 보는데 알 방법이 없다.
+    health["ai_ok"] = None
+    health["ai_fps"] = None
+    health["ai_error"] = None
+    if _ai_status_provider is not None:
+        try:
+            ai = _ai_status_provider() or {}
+            health["ai_ok"] = bool(ai.get("running")) and not ai.get("error")
+            health["ai_fps"] = ai.get("actual_fps")
+            health["ai_error"] = ai.get("error")
+        except Exception as e:
+            health["ai_ok"] = False
+            health["ai_error"] = f"{type(e).__name__}: {e}"
 
     return health
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LabBot – 연구실 물품 대여관리 시스템</title>
-  <link rel="stylesheet" href="css/style.css?v=20260830-camdir" />
+  <link rel="stylesheet" href="css/style.css?v=20260830-health2" />
 </head>
 <body data-page="admin">
   <header class="navbar">
@@ -252,6 +252,9 @@
           <span class="robot-health-chip" id="healthCpu" title="CPU 부하 / 동작 클럭">🧠 CPU <strong>--</strong></span>
           <span class="robot-health-chip" id="healthMem" title="메모리 사용률">💾 RAM <strong>--</strong></span>
           <span class="robot-health-chip" id="healthUptime" title="라즈베리파이가 부팅된 뒤 지난 시간. 0으로 돌아갔다면 로봇이 재시작된 것.">⏱️ 가동 <strong>--</strong></span>
+          <span class="robot-health-chip" id="healthWifi" title="로봇의 무선 신호 세기. 로봇이 멀어지면 명령과 영상이 같이 끊긴다.">📶 <strong>--</strong></span>
+          <span class="robot-health-chip" id="healthDisk" title="이벤트 큐와 주행 로그가 쌓이는 곳. 가득 차면 안전이벤트가 유실된다.">💽 <strong>--</strong></span>
+          <span class="robot-health-chip" id="healthAi" title="AI 추론 상태. 조용히 죽으면 아무것도 탐지하지 못한다.">🧿 AI <strong>--</strong></span>
           <span class="robot-health-chip is-warn" id="healthThrottle" style="display: none;">⚠️ <strong>--</strong></span>
         </div>
         <div class="robot-console-layout">
@@ -300,6 +303,13 @@
               </div>
             </div>
             <div class="robot-camera-status" id="robotCameraStatus"></div>
+            <div class="camera-size-row">
+              <span>화면 크기</span>
+              <button type="button" class="cam-size-btn" data-cam-size="420">작게</button>
+              <button type="button" class="cam-size-btn is-active" data-cam-size="640">보통</button>
+              <button type="button" class="cam-size-btn" data-cam-size="900">크게</button>
+              <button type="button" class="cam-size-btn" data-cam-size="0">최대</button>
+            </div>
           </div>
 
           <div class="robot-dpad-col">
@@ -606,6 +616,6 @@
   <script src="js/restock-data.js"></script>
   <script src="js/chat-data.js"></script>
   <script src="js/user-admin-data.js"></script>
-  <script src="js/admin.js?v=20260830-camdir"></script>
+  <script src="js/admin.js?v=20260830-health2"></script>
 </body>
 </html>
