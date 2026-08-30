@@ -119,10 +119,23 @@ class RealHAL:
         self.last_turn = 0.0
         self.cam_pan = 90
         self.cam_tilt = 90
+        self._camera_stop = threading.Event()
+        # 서보를 목표까지 부드럽게 데려가는 스레드용 상태.
+        self._servo_target = {}        # 채널 -> 목표 각도
+        self._servo_now = {}           # 채널 -> 현재 보낸 각도
+        self._servo_wake = threading.Event()
+        self._servo_thread = None
+
         try:
-            # 둘 다 90도(중앙)라 순서는 무관하지만, 채널 의미는 SERVO_PAN/TILT를 따른다.
+            # 시작 자세는 중앙. 여기서 한 번 직접 보내고 서보 스레드의 '현재값'도
+            # 같이 맞춰둔다 — 안 그러면 첫 명령 때 어디서 출발할지 몰라 튄다.
+            hw_pan = (180 - 90) if self.PAN_INVERT else 90
             self.car.Ctrl_Servo(self.SERVO_TILT, 90)
-            self.car.Ctrl_Servo(self.SERVO_PAN, 90)
+            self.car.Ctrl_Servo(self.SERVO_PAN, hw_pan)
+            self._servo_now[self.SERVO_TILT] = 90
+            self._servo_now[self.SERVO_PAN] = hw_pan
+            self._servo_target[self.SERVO_TILT] = 90
+            self._servo_target[self.SERVO_PAN] = hw_pan
         except Exception:
             pass
 
@@ -141,7 +154,6 @@ class RealHAL:
         self._is_stopped = False   # 이미 멈춰 있으면 정지 명령을 또 보내지 않는다
         self._motion_prev_gray = None
         self._camera_thread = None
-        self._camera_stop = threading.Event()
         self._last_qr_time = 0.0
         self._last_qr_result = None
         if enable_camera:
@@ -397,6 +409,15 @@ class RealHAL:
     TILT_MIN, TILT_MAX = 35, 145
     PAN_MIN, PAN_MAX = 0, 180
 
+    # 웹이 목표 각도만 알려주고, 실제로 그쪽으로 데려가는 일은 로봇이 한다.
+    # 예전에는 웹이 4도씩 120ms 간격으로 직접 보냈는데, 서보는 4도를 7ms 만에
+    # 끝내고 113ms 를 멈춰 있어서 초당 8번 "움직임-정지"를 반복했다. 공유기를
+    # 거치면서 왕복이 33ms(최대 65ms)로 들쭉날쭉해 간격도 흔들렸다.
+    # 이제 이 스레드가 60Hz 로 목표까지 촘촘히 좁혀간다 — 네트워크 지연이
+    # 움직임에 드러나지 않고, 웹은 아무 때나 목표만 바꾸면 된다.
+    SERVO_TICK_S = 1.0 / 60
+    SERVO_DEG_PER_S = 150.0        # 이보다 빠르면 SG90 이 못 따라와 덜컹인다
+
     # 카메라 모듈이 거꾸로 달려 있어 캡처를 180도 회전(hflip+vflip)시켜 쓴다.
     # 그래서 서보를 왼쪽으로 돌리면 화면 속 장면은 반대로 흐른다 — 웹에서 왼쪽
     # 화살표를 눌렀는데 오른쪽으로 도는 것처럼 보였다. 화면(=사용자가 보는 기준)에
@@ -404,29 +425,72 @@ class RealHAL:
     # (pan 작을수록 화면상 왼쪽)는 그대로 유지된다.
     PAN_INVERT = True
 
+    def _write_servo(self, channel, angle):
+        """서보 한 채널에 실제로 각도를 보낸다. 값이 그대로면 보내지 않는다."""
+        angle = int(round(angle))
+        if self._servo_now.get(channel) == angle:
+            return
+        try:
+            with self._i2c_lock:
+                self.car.Ctrl_Servo(channel, angle)
+            self._servo_now[channel] = angle
+        except Exception as e:
+            print(f"[RealHAL] 서보 {channel} 제어 실패: {e}")
+
+    def _servo_loop(self):
+        """목표 각도까지 촘촘히 좁혀가는 스레드.
+
+        한 틱에 움직일 수 있는 최대치를 정해두고 그만큼만 다가간다. 목표에
+        도달하면 이벤트를 기다리며 잠들어 I2C 를 놀린다 — 가만히 있을 때
+        불필요한 전송이 나가면 다른 명령과 뒤엉킨다.
+        """
+        max_step = self.SERVO_DEG_PER_S * self.SERVO_TICK_S
+        while not self._camera_stop.is_set():
+            moved = False
+            for channel, target in list(self._servo_target.items()):
+                now = self._servo_now.get(channel)
+                if now is None:
+                    self._write_servo(channel, target)
+                    moved = True
+                    continue
+                delta = target - now
+                if abs(delta) < 0.5:
+                    continue
+                step = max(-max_step, min(max_step, delta))
+                self._write_servo(channel, now + step)
+                moved = True
+            if moved:
+                time.sleep(self.SERVO_TICK_S)
+            else:
+                # 할 일이 없으면 잠든다. 새 목표가 오면 깨어난다.
+                self._servo_wake.wait(0.5)
+                self._servo_wake.clear()
+
+    def _ensure_servo_thread(self):
+        if self._servo_thread is None or not self._servo_thread.is_alive():
+            self._servo_thread = threading.Thread(target=self._servo_loop, daemon=True)
+            self._servo_thread.start()
+
     def set_camera_angle(self, pan=None, tilt=None):
-        """카메라 2축 팬/틸트 서보 각도 조절 (0~180도, 중앙 90도).
+        """카메라 팬/틸트의 '목표' 각도를 정한다. 실제 이동은 서보 스레드가 맡는다.
 
         pan  = 좌우 (실제 서보 채널은 SERVO_PAN)
         tilt = 상하 (실제 서보 채널은 SERVO_TILT)
+
+        호출은 즉시 돌아온다. 웹이 아무리 자주 불러도 목표만 갱신될 뿐이라
+        네트워크 지연이 움직임에 드러나지 않는다.
         """
+        self._ensure_servo_thread()
         if pan is not None:
             pan = max(self.PAN_MIN, min(self.PAN_MAX, int(pan)))
             hw_pan = (180 - pan) if self.PAN_INVERT else pan
-            try:
-                with self._i2c_lock:
-                    self.car.Ctrl_Servo(self.SERVO_PAN, hw_pan)
-            except Exception as e:
-                print(f"[RealHAL] Pan 서보 제어 실패: {e}")
+            self._servo_target[self.SERVO_PAN] = hw_pan
             self.cam_pan = pan
         if tilt is not None:
             tilt = max(self.TILT_MIN, min(self.TILT_MAX, int(tilt)))
-            try:
-                with self._i2c_lock:
-                    self.car.Ctrl_Servo(self.SERVO_TILT, tilt)
-            except Exception as e:
-                print(f"[RealHAL] Tilt 서보 제어 실패: {e}")
+            self._servo_target[self.SERVO_TILT] = tilt
             self.cam_tilt = tilt
+        self._servo_wake.set()
         return {"pan": self.cam_pan, "tilt": self.cam_tilt}
 
     def trigger_buzzer(self, duration_sec: float = 1.5):
