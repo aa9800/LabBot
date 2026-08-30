@@ -148,7 +148,7 @@ def main():
             ai_backend = NcnnYoloBackend.from_manifest(
                 ai_model_dir,
                 confidence=float(os.environ.get("LABKEEPER_AI_CONFIDENCE", "0.40")),
-                num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "2")),
+                num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "4")),
             )
 
             # 사람 전용 백엔드. 없으면(미배포 등) 조용히 비활성화하고 물품 탐지는 계속한다.
@@ -157,7 +157,7 @@ def main():
                 ai_person_backend = NcnnYoloBackend.from_manifest(
                     ai_person_model_dir,
                     confidence=float(os.environ.get("LABKEEPER_AI_PERSON_CONFIDENCE", "0.40")),
-                    num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "2")),
+                    num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "4")),
                 )
                 print(f"[labkeeper] 사람 판정: COCO 순정 모델 / {ai_person_model_dir}")
             except Exception as person_exc:

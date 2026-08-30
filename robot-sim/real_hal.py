@@ -33,7 +33,7 @@ Yahboom 데모들이 Car_Run(70, 70)처럼 직접 쓰는 0~100 PWM 스케일과 
 각 바퀴에 필요한 스칼라 차동값을 즉시 YB_Pcb_Car로 내린다. 이건 하드웨어 사양이 아니라
 이 프로젝트에서 고른 변환 공식이라는 점을 분명히 해둔다.
 """
-import math
+import os
 import threading
 import time
 
@@ -65,7 +65,23 @@ BUZZER_FREQ_HZ = 440
 BUZZER_DUTY = 50  # 듀티비가 곧 음량 — 0이면 무음
 
 # ── 카메라/QR ────────────────────────────────────────────────────────
-CAMERA_SIZE = (320, 240)
+# ov5647 센서는 2592x1944(500만 화소)까지 낼 수 있는데 오랫동안 320x240만
+# 썼다. 센서 능력의 1.6%다. 모델 입력을 416으로 올려도 240줄짜리 그림을
+# 늘려 넣는 것이라 없는 디테일이 생기지 않는다 — 카메라부터 올려야 한다.
+# 캡처를 키우면 색변환과 JPEG 인코딩 비용이 같이 늘어나므로 환경변수로
+# 조절 가능하게 두고 실측해서 정한다.
+def _env_size(name, default_w, default_h):
+    raw = os.environ.get(name, "")
+    if "x" in raw:
+        try:
+            w, h = raw.lower().split("x")
+            return (int(w), int(h))
+        except ValueError:
+            pass
+    return (default_w, default_h)
+
+
+CAMERA_SIZE = _env_size("LABKEEPER_CAMERA_SIZE", 640, 480)
 # 색감 튜닝용 — 화면이 창백/청록빛으로 보이면 이 값들을 조정한다.
 # CAMERA_SATURATION: 1.0이 기본, 낮을수록 색이 빠짐(창백함) -> 올리면 색이 진해짐.
 # CAMERA_AWB_MODE: "Auto"가 기본. 여전히 색감이 이상하면 "Indoor"/"Tungsten"/"Fluorescent"/

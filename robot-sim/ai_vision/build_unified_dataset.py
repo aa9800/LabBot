@@ -43,9 +43,15 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 DATASETS = HERE.parent / "datasets"
 
-COCO_ROOT = DATASETS / "coco_replay" / "coco"
-LAB_ROOT = DATASETS / "lab_guardian_v3"
-OUT_ROOT = DATASETS / "lab_guardian_unified"
+# COCO 이미지는 11.8만 장(~19GB)이다. 이걸 OneDrive 안에 두면 작은 파일 12만 개를
+# 클라우드로 올리려 들어서 인터넷과 용량을 잡아먹는다. 학습 데이터는 언제든 다시
+# 받을 수 있으니 동기화 밖에 둔다. 깃에는 코드와 가중치만 올라가면 된다.
+# LABBOT_DATA_ROOT 환경변수로 다른 위치를 지정할 수 있다.
+DATA_ROOT = Path(os.environ.get("LABBOT_DATA_ROOT", r"C:\labbot_datasets"))
+
+COCO_ROOT = DATA_ROOT / "coco_replay" / "coco"
+LAB_ROOT = DATASETS / "lab_guardian_v3"      # 2,477장뿐이라 저장소에 그대로 둔다
+OUT_ROOT = DATA_ROOT / "lab_guardian_unified"
 
 # COCO 80클래스 (yolo11n.pt가 이미 아는 것들 — 순서를 바꾸면 안 된다)
 COCO_NAMES = [
@@ -275,7 +281,7 @@ def main():
 
     if cmiss or vmiss:
         print(f"      ⚠ 이미지 파일을 못 찾아 건너뛴 것: train {cmiss:,} · val {vmiss:,}")
-        print(f"        (train2017.zip 압축 해제가 끝났는지 확인할 것)")
+        print("        (train2017.zip 압축 해제가 끝났는지 확인할 것)")
 
     if not dry:
         (OUT_ROOT / "data.yaml").write_text(

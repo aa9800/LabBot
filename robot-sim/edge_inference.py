@@ -125,7 +125,15 @@ class NcnnYoloBackend:
         self._ncnn = ncnn
         self.model_dir = Path(model_dir)
         self.class_names = list(class_names)
-        self.input_size = int(input_size)
+        # 입력은 정사각형(int)일 수도, (가로, 세로) 직사각형일 수도 있다.
+        # 카메라가 4:3인데 정사각형에 우겨넣으면 위아래 25%가 회색 여백으로
+        # 낭비된다. 모델을 416x320 처럼 화면 비율에 맞춰 내보내면 그 낭비가
+        # 사라진다 — 같은 유효 해상도를 더 싸게 얻는다.
+        if isinstance(input_size, (tuple, list)):
+            self.input_w, self.input_h = int(input_size[0]), int(input_size[1])
+        else:
+            self.input_w = self.input_h = int(input_size)
+        self.input_size = self.input_w   # 기존 호출부 호환
         self.confidence = float(confidence)
         self.iou = float(iou)
         self.net = ncnn.Net()
@@ -141,10 +149,13 @@ class NcnnYoloBackend:
     def from_manifest(cls, model_dir: str | Path, confidence=0.40, iou=0.45, num_threads=2):
         model_dir = Path(model_dir)
         manifest = json.loads((model_dir / "model_manifest.json").read_text(encoding="utf-8"))
+        # 직사각형으로 내보낸 모델은 input_wh: [가로, 세로] 를 싣는다.
+        # 없으면 예전처럼 정사각형 input_size 를 쓴다.
+        size = manifest.get("input_wh") or manifest.get("input_size", 320)
         return cls(
             model_dir,
             manifest["classes"],
-            manifest.get("input_size", 320),
+            size,
             confidence,
             iou,
             num_threads,
@@ -152,13 +163,13 @@ class NcnnYoloBackend:
 
     def _letterbox(self, frame: np.ndarray):
         height, width = frame.shape[:2]
-        scale = min(self.input_size / width, self.input_size / height)
+        scale = min(self.input_w / width, self.input_h / height)
         resized_width = max(1, round(width * scale))
         resized_height = max(1, round(height * scale))
         resized = cv2.resize(frame, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
-        pad_x = (self.input_size - resized_width) // 2
-        pad_y = (self.input_size - resized_height) // 2
-        canvas = np.full((self.input_size, self.input_size, 3), 114, dtype=np.uint8)
+        pad_x = (self.input_w - resized_width) // 2
+        pad_y = (self.input_h - resized_height) // 2
+        canvas = np.full((self.input_h, self.input_w, 3), 114, dtype=np.uint8)
         canvas[pad_y:pad_y + resized_height, pad_x:pad_x + resized_width] = resized
         return canvas, scale, pad_x, pad_y
 
@@ -167,7 +178,7 @@ class NcnnYoloBackend:
             return []
         prepared, scale, pad_x, pad_y = self._letterbox(frame)
         blob = cv2.dnn.blobFromImage(
-            prepared, scalefactor=1.0 / 255.0, size=(self.input_size, self.input_size),
+            prepared, scalefactor=1.0 / 255.0, size=(self.input_w, self.input_h),
             swapRB=True, crop=False,
         )
         with self.net.create_extractor() as extractor:
@@ -376,14 +387,25 @@ class EdgeInferenceWorker:
         return result
 
 
-def draw_detections(frame: np.ndarray, detections: Sequence[Detection], scale: int = 2):
+# 글자가 읽히려면 대략 이 정도 가로폭은 있어야 한다. 이보다 작은 화면만
+# 확대한다 — 카메라를 640x480으로 올린 뒤에는 확대가 낭비다.
+MIN_LEGIBLE_WIDTH = 600
+
+
+def draw_detections(frame: np.ndarray, detections: Sequence[Detection], scale: int | None = None):
     """탐지 박스와 라벨을 그린다.
 
-    카메라가 320x240이라 원본 위에 바로 글자를 쓰면 몇 픽셀짜리가 되어 읽을 수 없다.
-    그래서 먼저 확대한 뒤 그린다 — 선과 글자가 확대 후 그려지므로 계단현상이 없다
-    (확대를 나중에 하면 그려둔 글자까지 같이 뭉개진다).
-    추론은 원본 320px로 하므로 정확도·속도에는 영향이 없다.
+    화면이 작으면(예전 320x240) 원본 위에 바로 글자를 쓰면 몇 픽셀짜리가 되어
+    읽을 수 없다. 그래서 먼저 확대한 뒤 그린다 — 선과 글자가 확대 후 그려지므로
+    계단현상이 없다(확대를 나중에 하면 그려둔 글자까지 같이 뭉개진다).
+
+    scale 을 주지 않으면 화면 크기를 보고 알아서 정한다. 카메라를 640x480으로
+    올리면 확대할 필요가 없어져 INTER_CUBIC 비용이 통째로 사라진다.
+    추론은 원본 해상도로 하므로 정확도·속도에는 영향이 없다.
     """
+    if scale is None:
+        width = frame.shape[1] if frame is not None and frame.size else MIN_LEGIBLE_WIDTH
+        scale = max(1, -(-MIN_LEGIBLE_WIDTH // max(1, width)))  # 올림 나눗셈
     if scale > 1:
         output = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     else:
