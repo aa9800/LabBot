@@ -304,14 +304,19 @@ class EdgeInferenceWorker:
         if self._thread:
             self._thread.join(timeout)
 
+    def set_target_fps(self, fps):
+        """추론 속도를 바꾼다. 다음 주기부터 적용된다."""
+        self.target_fps = max(0.5, float(fps))
+
     def _run(self):
-        interval = 1.0 / self.target_fps
         next_run = self._clock()
         while not self._stop.is_set():
             now = self._clock()
             if now < next_run:
                 self._stop.wait(min(next_run - now, 0.05))
                 continue
+            # 매 주기 다시 계산한다. 그래야 밖에서 fps 를 바꿨을 때 바로 먹는다.
+            interval = 1.0 / self.target_fps
             frame = self.frame_provider()
             if frame is None:
                 next_run = self._clock() + min(interval, 0.1)
@@ -392,7 +397,73 @@ class EdgeInferenceWorker:
 MIN_LEGIBLE_WIDTH = 600
 
 
-def draw_detections(frame: np.ndarray, detections: Sequence[Detection], scale: int | None = None):
+def draw_markers(output, markers, scale=1):
+    """인식한 ArUco 마커를 화면에 그린다.
+
+    왜 필요한가: 마커 보정이 되는지 안 되는지를 숫자 로그로만 확인하면, 안 될 때
+    "안 보이는 건지, 보이는데 계산이 틀린 건지"를 못 가른다. 화면에 그려두면
+    카메라를 보는 것만으로 즉시 갈린다.
+
+    탐지 박스(초록/빨강)와 구분되게 노란색으로 그리고, 거리와 방향을 같이 적는다.
+    """
+    if not markers:
+        return output
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.45 * scale
+    thickness = max(1, scale)
+    YELLOW = (0, 215, 255)   # BGR
+
+    for m in markers:
+        cx, cy = m.get("center") or (0, 0)
+        cx, cy = int(cx * scale), int(cy * scale)
+        # 화면에서의 한 변 길이로 네모를 그린다. 실제 모서리 좌표를 넘기지 않는
+        # 이유는, 이 함수가 marker_locator 의 결과 dict 만 받기 때문이다.
+        half = max(6, int(m.get("px", 20) * scale / 2))
+        cv2.rectangle(output, (cx - half, cy - half), (cx + half, cy + half),
+                      YELLOW, thickness + 1)
+        cv2.drawMarker(output, (cx, cy), YELLOW, cv2.MARKER_CROSS,
+                       max(8, 6 * scale), thickness)
+
+        # OpenCV 기본 폰트는 한글을 못 그린다("도"가 ??? 로 나온다). 화면에
+        # 찍는 글자만 영문으로 둔다.
+        label = "ArUco %d  %.0fcm  %+.0fdeg" % (
+            m.get("id", -1), m.get("distance_cm", 0), m.get("bearing_deg",
+                                                            m.get("angle_deg", 0)))
+        (tw, th), base = cv2.getTextSize(label, font, font_scale, thickness)
+        ty = max(th + 4, cy - half - 4)
+        cv2.rectangle(output, (cx - half, ty - th - base),
+                      (cx - half + tw + 4, ty + base), YELLOW, -1)
+        cv2.putText(output, label, (cx - half + 2, ty), font, font_scale,
+                    (0, 0, 0), thickness, cv2.LINE_AA)
+    return output
+
+
+def draw_qr(output, qrs, scale=1):
+    """인식한 QR 을 화면에 그린다. 마커(노랑)와 구분되게 파랑으로."""
+    if not qrs:
+        return output
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.45 * scale
+    thickness = max(1, scale)
+    BLUE = (255, 160, 0)   # BGR
+
+    for q in qrs:
+        x, y = int(q["x"] * scale), int(q["y"] * scale)
+        w, h = int(q["w"] * scale), int(q["h"] * scale)
+        cv2.rectangle(output, (x, y), (x + w, y + h), BLUE, thickness + 1)
+        # 값은 앞부분만 보여준다. 길면 화면을 다 덮는다.
+        text = (q.get("text") or "")[:20]
+        label = "QR " + text
+        (tw, th), base = cv2.getTextSize(label, font, font_scale, thickness)
+        ty = max(th + 4, y - 4)
+        cv2.rectangle(output, (x, ty - th - base), (x + tw + 4, ty + base), BLUE, -1)
+        cv2.putText(output, label, (x + 2, ty), font, font_scale, (255, 255, 255),
+                    thickness, cv2.LINE_AA)
+    return output
+
+
+def draw_detections(frame: np.ndarray, detections: Sequence[Detection], scale: int | None = None,
+                    markers=None, qrs=None):
     """탐지 박스와 라벨을 그린다.
 
     화면이 작으면(예전 320x240) 원본 위에 바로 글자를 쓰면 몇 픽셀짜리가 되어
@@ -426,4 +497,6 @@ def draw_detections(frame: np.ndarray, detections: Sequence[Detection], scale: i
         # 글자 뒤에 색 띠를 깔아 배경이 밝든 어둡든 읽히게 한다.
         cv2.rectangle(output, (x1, ty - th - base), (x1 + tw + 4, ty + base), color, -1)
         cv2.putText(output, label, (x1 + 2, ty), font, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
-    return output
+
+    # 마커와 QR 은 탐지 박스 위에 그린다. 가려지면 확인용으로 쓸 수가 없다.
+    return draw_qr(draw_markers(output, markers, scale), qrs, scale)

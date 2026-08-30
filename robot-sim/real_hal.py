@@ -324,6 +324,31 @@ class RealHAL:
         t2 = time.time()
         return ((t2 - t1) * SOUND_SPEED_M_S / 2) * 100
 
+    def find_qr_boxes(self, frame):
+        """프레임에서 QR 위치와 값을 찾는다. 화면에 그려주기 위한 것.
+
+        scan_qr_now 와 달리 값만이 아니라 위치도 돌려준다. 사용자가 "QR 인식이
+        안 된다"고 할 때, 화면에 네모가 그려지면 "보이지만 각도·거리 문제",
+        안 그려지면 "아예 안 보임"으로 원인이 바로 갈린다.
+        """
+        if frame is None or self._pyzbar is None:
+            return []
+        try:
+            gray = (self._cv2.cvtColor(frame, self._cv2.COLOR_BGR2GRAY)
+                    if self._cv2 is not None else frame)
+            out = []
+            for code in self._pyzbar.decode(gray):
+                r = code.rect
+                out.append({
+                    "x": int(r.left), "y": int(r.top),
+                    "w": int(r.width), "h": int(r.height),
+                    "text": code.data.decode("utf-8", "replace"),
+                })
+            return out
+        except Exception as e:
+            print(f"[RealHAL] QR 위치 탐색 실패(무시): {e}")
+            return []
+
     def scan_qr_now(self):
         """웹 버튼 클릭 시 온디맨드로 단 1회 현재 카메라 프레임에서 QR을 정밀 디코딩한다."""
         frame = self.capture_frame()

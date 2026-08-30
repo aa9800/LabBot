@@ -242,6 +242,18 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             data = _telemetry_provider() if _telemetry_provider is not None else {}
             self.wfile.write(json.dumps(data).encode("utf-8"))
+        elif req_path.startswith("/patrol/"):
+            if _patrol_callback is None:
+                self._send_json(503, {"error": "순찰 기능이 꺼져 있다"})
+                return
+            action = req_path[len("/patrol/"):].strip("/")
+            qs = parse_qs(urlparse(self.path).query)
+            params = {k: v[0] for k, v in qs.items()}
+            try:
+                self._send_json(200, _patrol_callback(action, params) or {})
+            except Exception as e:
+                self._send_json(400, {"error": str(e)})
+
         elif req_path.startswith("/route/"):
             # 경로 녹화·재생. 좌표 순찰의 2단계다 — 사람이 한 번 몰아 보여준 것을
             # 그대로 따라 하게 하고, 마커로 위치를 다시 잡아 오차 누적을 막는다.
@@ -442,6 +454,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
 _camera_angle_callback = None
 _camera_direction_callback = None
 _route_callback = None
+_patrol_callback = None
 _drive_callback = None
 _telemetry_provider = None
 _qr_scan_callback = None
@@ -511,6 +524,32 @@ def read_pi_health():
                 active.append({"key": key, "label": label})
     health["throttle_flags"] = flags
     health["throttled_now"] = active          # 지금 걸려 있는 것만. 이력 비트(16~19)는 뺀다.
+
+    # 배터리 상태 — 전압을 직접 읽는 게 아니라 저전압 플래그로 유추한다.
+    #
+    # 이 확장보드(YB_Pcb_Car, I2C 0x16)는 배터리 전압을 알려주지 않는다.
+    # 라이브러리에 함수가 없고, 레지스터 0x00~0x5F 어디에도 전압으로 읽히는
+    # 값이 없다(probe_battery.py 로 확인, 2026-08-31). 그래서 퍼센트는 못 낸다.
+    #
+    # 대신 라즈베리파이가 자기 전원이 처질 때 세우는 저전압 비트를 쓴다.
+    # 배터리가 닳으면 모터가 돌 때 전압이 먼저 주저앉고, 그때 이 비트가 뜬다.
+    # 정확한 잔량은 아니지만 "곧 꺼진다"는 신호로는 실제로 맞는다.
+    #
+    #   bit 0  지금 저전압    -> 위험. 주행 중이면 곧 멈춘다
+    #   bit 16 부팅 후 겪음   -> 주의. 부하가 걸릴 때 처지고 있다
+    if flags is None:
+        health["power"] = {"state": "unknown", "label": "알 수 없음",
+                           "how": "스로틀 플래그를 못 읽음"}
+    elif flags & (1 << 0):
+        health["power"] = {"state": "critical", "label": "저전압 — 충전 필요",
+                           "how": "라즈베리파이 저전압 플래그(지금)"}
+    elif flags & (1 << 16):
+        health["power"] = {"state": "weak", "label": "전압 처짐 이력 있음",
+                           "how": "라즈베리파이 저전압 플래그(부팅 후)"}
+    else:
+        health["power"] = {"state": "ok", "label": "정상",
+                           "how": "라즈베리파이 저전압 플래그 없음"}
+    health["power"]["note"] = "확장보드가 전압을 알려주지 않아 잔량(%)은 표시할 수 없다"
 
     # CPU 클럭 (kHz -> MHz)
     raw = _read_first_line("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
@@ -592,6 +631,12 @@ def read_pi_health():
             health["ai_error"] = f"{type(e).__name__}: {e}"
 
     return health
+
+
+def set_patrol_callback(cb):
+    """좌표 순찰 명령을 받을 함수. (action, params) -> dict."""
+    global _patrol_callback
+    _patrol_callback = cb
 
 
 def set_route_callback(cb):

@@ -76,10 +76,35 @@ def save_scale(scale: float, note: str = "") -> None:
     )
 
 
+# 마커를 폰·태블릿 화면에 띄우면 기기마다 실제 크기가 다르다. 거리는 크기에
+# 정비례하므로(거리 = 크기 x 초점거리 / 픽셀), 14.1cm 로 알고 있는데 실제로는
+# 10cm 인 마커를 보면 거리를 1.4배로 잘못 잰다. ID 별로 실제 크기를 적어둔다.
+SIZE_PATH = Path(__file__).resolve().parent / "state" / "marker_sizes.json"
+
+
+def load_sizes():
+    """{"0": 141.0, "2": 98.0, ...} — ID 별 실제 한 변 길이(mm)."""
+    try:
+        raw = json.loads(SIZE_PATH.read_text(encoding="utf-8"))
+        return {int(k): float(v) for k, v in raw.items()}
+    except Exception:
+        return {}
+
+
+def save_sizes(sizes):
+    SIZE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SIZE_PATH.write_text(
+        json.dumps({str(k): float(v) for k, v in sizes.items()},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+    return sizes
+
+
 class MarkerLocator:
     def __init__(self, marker_size_mm=MARKER_SIZE_MM, hfov_deg=CAMERA_HFOV_DEG):
         self.marker_size_mm = marker_size_mm
         self.hfov_deg = hfov_deg
+        # ID 별 크기가 적혀 있으면 그걸 쓰고, 없으면 기본 크기를 쓴다.
+        self.sizes = load_sizes()
         self.scale = load_scale()
         dictionary = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
         # OpenCV 4.7 에서 API 가 바뀌었다. 로봇은 4.6 이라 옛 방식을 먼저 본다.
@@ -89,6 +114,37 @@ class MarkerLocator:
         else:
             params = cv2.aruco.DetectorParameters_create()
             self._detect = lambda g: cv2.aruco.detectMarkers(g, dictionary, parameters=params)
+
+    def _marker_yaw(self, pts, size_mm, focal, width, height):
+        """마커 면이 카메라 축에서 몇 도 틀어져 있나. 정면이면 0.
+
+        네 모서리의 원근 왜곡을 풀어(solvePnP) 마커의 3차원 자세를 구하고, 그
+        면의 법선이 수평으로 얼마나 기울었는지를 각도로 낸다. 마커를 오른쪽
+        비스듬히에서 보면 한쪽 부호, 왼쪽에서 보면 반대 부호가 나온다.
+
+        렌즈 왜곡은 0 으로 둔다. 정식 캘리브레이션을 안 했고, 화면 가운데
+        근처에서는 왜곡이 작아서 이 용도에는 충분하다.
+        """
+        half = float(size_mm) / 2.0
+        # ArUco 모서리 순서(좌상, 우상, 우하, 좌하)에 맞춘 마커 좌표계 점들.
+        obj = np.array([[-half, half, 0.0], [half, half, 0.0],
+                        [half, -half, 0.0], [-half, -half, 0.0]], dtype=np.float32)
+        cam = np.array([[focal, 0.0, width / 2.0],
+                        [0.0, focal, height / 2.0],
+                        [0.0, 0.0, 1.0]], dtype=np.float32)
+        try:
+            flags = getattr(cv2, "SOLVEPNP_IPPE_SQUARE", cv2.SOLVEPNP_ITERATIVE)
+            ok, rvec, _tvec = cv2.solvePnP(obj, pts.astype(np.float32), cam,
+                                           np.zeros(5, dtype=np.float32), flags=flags)
+            if not ok:
+                return None
+            rot, _ = cv2.Rodrigues(rvec)
+            # 마커 면의 법선(마커 좌표계의 z축)을 카메라 좌표계로 옮긴다.
+            normal = rot @ np.array([0.0, 0.0, 1.0])
+            # 수평 성분만 본다. 정면이면 법선이 카메라를 정통으로 향해 0 이 된다.
+            return math.degrees(math.atan2(float(normal[0]), -float(normal[2])))
+        except Exception:
+            return None
 
     def focal_px(self, frame_width: int) -> float:
         return (frame_width / 2.0) / math.tan(math.radians(self.hfov_deg) / 2.0)
@@ -114,7 +170,18 @@ class MarkerLocator:
             if side_px <= 1:
                 continue
 
-            distance_mm = self.marker_size_mm * focal / side_px * self.scale
+            size_mm = self.sizes.get(int(marker_id), self.marker_size_mm)
+            # 마커가 어느 쪽으로 기울어 보이는지(yaw). 이게 있어야 로봇의 절대
+            # 방향을 알 수 있다.
+            #
+            # 거리와 화면상 위치만으로는 방향을 못 구한다. 마커를 정면에서 봐도,
+            # 비스듬히 봐도 화면 가운데 있을 수 있기 때문이다. 네 모서리의
+            # 원근 왜곡을 풀면(solvePnP) 마커 면이 카메라 축과 몇 도 틀어져
+            # 있는지가 나오고, 마커가 벽에서 어느 방향을 보는지를 알고 있으면
+            # 거기서 로봇의 절대 방향이 역산된다.
+            yaw = self._marker_yaw(pts, size_mm, focal, w, h)
+
+            distance_mm = size_mm * focal / side_px * self.scale
             cx = float(np.mean(pts[:, 0]))
             # 화면 가운데에서 벗어난 정도를 각도로. 오른쪽이 양수.
             angle_deg = math.degrees(math.atan2(cx - w / 2.0, focal))
@@ -124,6 +191,8 @@ class MarkerLocator:
                 "distance_cm": round(distance_mm / 10.0, 1),
                 "angle_deg": round(angle_deg, 1),
                 "px": round(side_px, 1),
+                "size_mm": round(size_mm, 1),
+                "yaw_deg": None if yaw is None else round(yaw, 1),
                 "center": (round(cx, 1), round(float(np.mean(pts[:, 1])), 1)),
             })
         out.sort(key=lambda m: m["distance_cm"])
