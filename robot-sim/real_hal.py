@@ -418,6 +418,7 @@ class RealHAL:
     SERVO_TICK_S = 1.0 / 60
     SERVO_DEG_PER_S = 150.0        # 이보다 빠르면 SG90 이 못 따라와 덜컹인다
 
+
     # 카메라 모듈이 거꾸로 달려 있어 캡처를 180도 회전(hflip+vflip)시켜 쓴다.
     # 그래서 서보를 왼쪽으로 돌리면 화면 속 장면은 반대로 흐른다 — 웹에서 왼쪽
     # 화살표를 눌렀는데 오른쪽으로 도는 것처럼 보였다. 화면(=사용자가 보는 기준)에
@@ -456,6 +457,10 @@ class RealHAL:
                 delta = target - now
                 if abs(delta) < 0.5:
                     continue
+                # 목표 근처에서 감속하는(이즈아웃) 방식도 재봤는데 좌우 축의
+                # 떨림이 오히려 늘었다(뒤집힘 7.2 -> 10.2회). 원인이 관성 오버슈트가
+                # 아니라 축의 정지마찰이어서, 작은 걸음은 아예 먹히지 않고 오차가
+                # 쌓였다가 한 번에 튀기 때문이다. 그래서 등속으로 되돌렸다.
                 step = max(-max_step, min(max_step, delta))
                 self._write_servo(channel, now + step)
                 moved = True
