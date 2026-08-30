@@ -543,12 +543,27 @@ class PatrolRunner:
     MARKER_FIX_MAX_DEG = 25.0   # 이보다 큰 보정은 잘못 본 것으로 보고 버린다
 
     def _marker_positions(self):
-        """지도에 적힌 마커 번호 -> 좌표."""
+        """지도에 적힌 마커 번호 -> 좌표.
+
+        마커는 보통 경유지 자리가 아니라 그 너머 벽에 붙어 있다. 로봇은 벽
+        앞에 서고, 마커는 그보다 조금 더 뒤에 있는 것이다.
+
+        이 차이가 실제로 중요하다. 보정은 마커가 60cm 이상 떨어져 있을 때만
+        쓰는데(가까우면 각도가 예민해 위치 오차가 방향 오차로 증폭된다),
+        마커가 경유지에 정확히 있다고 보면 구간 70cm 중 처음 10cm 에서만
+        보정할 수 있다. 벽까지의 거리를 적어주면 구간 내내 쓸 수 있다.
+
+        marker_x_cm / marker_y_cm 이 없으면 경유지 좌표를 그대로 쓴다.
+        """
         out = {}
         for wp in (self._map or {}).get("waypoints") or []:
             mid = wp.get("marker")
-            if mid is not None:
-                out[int(mid)] = (float(wp.get("x_cm", 0)), float(wp.get("y_cm", 0)))
+            if mid is None:
+                continue
+            out[int(mid)] = (
+                float(wp.get("marker_x_cm", wp.get("x_cm", 0))),
+                float(wp.get("marker_y_cm", wp.get("y_cm", 0))),
+            )
         return out
 
     def _fix_heading_from_markers(self):
@@ -643,31 +658,40 @@ class PatrolRunner:
         돌려서 순찰 경로가 망가졌다.
         """
         vals = []
-        rejected = 0
+        too_short = 0
+        no_echo = 0
         for _ in range(3):
             try:
                 d = self.hal.read_ultrasonic()
             except Exception:
                 continue
             if not d or d <= 0 or d >= 400:
+                # 메아리가 안 돌아온 것이다. 초음파는 앞이 탁 트여 있거나
+                # 비스듬한 면이면 999 같은 값을 낸다. 이건 "막혔다"가 아니라
+                # "멀어서 안 잡힌다"이므로 자유롭게 가도 된다.
+                no_echo += 1
                 continue
             if d < SONAR_MIN_TRUST_CM:
-                rejected += 1
+                too_short += 1
                 continue
             vals.append(d)
-        if rejected:
-            self._sonar_rejects += rejected
+
+        if too_short:
+            self._sonar_rejects += too_short
         if vals:
             self._all_short = 0
             vals.sort()
             return vals[len(vals) // 2]
 
-        # 셋 다 못 믿을 값이었다. 한두 번이면 노이즈로 보고 넘어간다 - 여기서
-        # 막혔다고 판단하면 멀쩡한 데서 순찰이 선다.
-        #
-        # 하지만 계속 그러면 얘기가 다르다. 정말로 코앞에 뭐가 있어서 짧게
-        # 읽히는 것일 수 있고, 그때 "모른다"며 계속 가면 그대로 박는다.
-        # 모를 때 미는 것보다 서는 쪽이 안전하다.
+        # 전부 메아리가 없었다면 앞이 비어 있는 것이다. 여기서 막혔다고 하면
+        # 넓은 방 한가운데서 순찰이 선다(가상 주행 검증에서 실제로 그랬다).
+        if no_echo and not too_short:
+            self._all_short = 0
+            return None
+
+        # 남은 경우: 전부 8cm 미만이었다. 한두 번이면 모터 노이즈로 보고
+        # 넘어가되, 계속되면 정말 코앞에 뭐가 있는 것이므로 선다. 모를 때
+        # 미는 것보다 서는 쪽이 안전하다.
         self._all_short += 1
         if self._all_short >= 5:
             return 0.0
