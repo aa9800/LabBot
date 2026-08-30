@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 
-from controller import PatrolController, OBSTACLE_STOP_DISTANCE
+from controller import PatrolController, OBSTACLE_STOP_DISTANCE, speed_cap_for_distance
 from edge_inference import EdgeInferenceWorker, NcnnYoloBackend, draw_detections
 from mission_engine import ItemLocationCache, MissionEngine
 from night_guard import NightGuardScheduler
@@ -605,8 +605,14 @@ def main():
         if is_manual:
             # 후진(speed < 0)은 장애물이 가까워도 허용한다 — 안 그러면 벽 앞에서
             # 빠져나올 방법이 없어서 로봇을 손으로 들어 옮겨야 한다.
-            if speed > 0 and cached_distance() < OBSTACLE_STOP_DISTANCE:
-                hal.stop()
+            if speed > 0:
+                # 임계값에서 갑자기 멈추면 관성으로 더 간다(실측: PWM 60에서
+                # 4.5cm). 거리에 따라 미리 감속해서 그 여유를 만든다.
+                cap = speed_cap_for_distance(cached_distance())
+                if cap <= 0:
+                    hal.stop()
+                else:
+                    hal.set_motion(min(speed, cap), turn)
             else:
                 hal.set_motion(speed, turn)
         else:

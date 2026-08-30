@@ -24,6 +24,33 @@ OBSTACLE_STOP_DISTANCE = 10
 OBSTACLE_CLEAR_DISTANCE = 18
 SCAN_HOLD_SECONDS = 1.0
 
+# 거리에 따라 속도를 미리 줄인다.
+#
+# 임계값만 낮추는 것으로는 부족했다. PWM 60(실측 24.9cm/s)으로 벽에 다가가며 잰
+# 기록이다:
+#     1.8s  17.0cm  모터 60
+#     2.0s   9.0cm  모터  0   <- 10cm 아래로 떨어져 정지 명령
+#     2.1s   5.8cm  모터  0   <- 관성으로 3.5cm 더 감
+# 임계를 넘어 4.5cm 를 더 간다. 전속(PWM 100, 약 41cm/s)이면 그 두 배라 박는다.
+#
+# 그렇다고 임계를 18cm 로 올리면 방 문턱(16.4cm)에 다시 걸린다. 그래서 속도를
+# 거리에 따라 줄인다 — 가까워질수록 느려지므로 관성 여유가 저절로 확보되고,
+# 문턱 근처에서는 이미 느려서 10cm 임계로도 충분하다.
+CAUTION_DISTANCE = 40      # 이보다 멀면 전속
+CAUTION_MIN_SPEED = 25     # 아무리 가까워도 이보다는 느려지지 않는다(못 움직이면 곤란)
+
+
+def speed_cap_for_distance(distance_cm):
+    """앞이 가까울수록 낮은 상한을 돌려준다. 0~100 스케일."""
+    if distance_cm is None or distance_cm >= CAUTION_DISTANCE:
+        return SPEED
+    if distance_cm <= OBSTACLE_STOP_DISTANCE:
+        return 0.0
+    # 정지선~주의선 사이를 선형으로 잇는다.
+    span = CAUTION_DISTANCE - OBSTACLE_STOP_DISTANCE
+    ratio = (distance_cm - OBSTACLE_STOP_DISTANCE) / span
+    return max(CAUTION_MIN_SPEED, SPEED * ratio)
+
 
 class PatrolController:
     def __init__(self, hal, on_scan=None, on_obstacle=None, on_obstacle_cleared=None):
