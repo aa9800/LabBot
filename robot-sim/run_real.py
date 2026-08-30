@@ -29,6 +29,7 @@ from run_logger import JsonlRunLogger
 from dataclasses import asdict as _asdict
 
 import event_queue
+from route_recorder import RouteRecorder, RoutePlayer, load_route, list_routes
 import stream_server
 
 # 파이썬은 기본적으로 한 스레드가 5ms 동안 GIL을 쥐고 있다가 넘긴다. 이 프로세스는
@@ -602,6 +603,9 @@ def main():
             run_log.write("mode_changed", mode=mode)
             was_manual = is_manual
 
+        # 녹화 중이면 이 명령을 경로에 쌓는다. 녹화가 아니면 아무 일도 안 한다.
+        route_recorder.on_drive(speed, turn)
+
         if is_manual:
             # 후진(speed < 0)은 장애물이 가까워도 허용한다 — 안 그러면 벽 앞에서
             # 빠져나올 방법이 없어서 로봇을 손으로 들어 옮겨야 한다.
@@ -622,6 +626,77 @@ def main():
             "speed": hal.last_speed,
             "turn": hal.last_turn,
         }
+
+    # ── 경로 녹화·재생 (좌표 순찰 2단계) ──────────────────────────────
+    # 마커 인식기. 없어도 녹화·재생은 되지만 위치 보정은 못 한다.
+    marker_locator = None
+    try:
+        from marker_locator import MarkerLocator
+        marker_locator = MarkerLocator()
+        print(f"[route] 마커 인식기 준비 · 마커 {marker_locator.marker_size_mm:.0f}mm "
+              f"· 보정계수 {marker_locator.scale:.4f}")
+    except Exception as marker_exc:
+        print(f"[route] 마커 인식기 없음 — 위치 보정 없이 진행: {marker_exc}")
+
+    route_recorder = RouteRecorder()
+    route_player = RoutePlayer(
+        hal,
+        distance_fn=cached_distance,
+        stop_distance=OBSTACLE_STOP_DISTANCE,
+    )
+    route_play_thread = {"t": None}
+
+    def on_route(action, params):
+        if action == "record/start":
+            return route_recorder.start(params.get("name", "route"))
+
+        if action == "record/stop":
+            route = route_recorder.stop()
+            path = route_recorder.save(route)
+            print(f"[route] 녹화 저장: {path} · 세그먼트 {len(route['segments'])}개")
+            return {"saved": str(path), **route}
+
+        if action == "record/status":
+            return route_recorder.status()
+
+        if action == "record/mark":
+            # 지금 보이는 마커를 경로에 새긴다. 재생 때 이 지점에서 위치를 다시 잡는다.
+            if marker_locator is None:
+                return {"status": "unavailable", "reason": "마커 인식기가 없습니다."}
+            found = marker_locator.find(hal.capture_frame())
+            if not found:
+                return {"status": "not_found", "reason": "지금 보이는 마커가 없습니다."}
+            m = found[0]
+            route_recorder.mark(m["id"], m["distance_cm"], m["angle_deg"])
+            return {"status": "ok", "marker": m}
+
+        if action == "list":
+            return {"routes": list_routes()}
+
+        if action == "play":
+            name = params.get("name", "route")
+            route = load_route(name)
+            if route is None:
+                return {"status": "not_found", "reason": f"경로 '{name}' 가 없습니다."}
+            if route_player.status().get("playing"):
+                return {"status": "busy", "reason": "이미 재생 중입니다."}
+            # 재생은 오래 걸리므로 별도 스레드에서 돌리고 즉시 응답한다.
+            t = threading.Thread(target=route_player.play, args=(route,), daemon=True)
+            route_play_thread["t"] = t
+            t.start()
+            return {"status": "started", "name": name,
+                    "segments": len(route.get("segments") or [])}
+
+        if action == "stop":
+            route_player.abort()
+            return {"status": "aborting"}
+
+        if action == "status":
+            return {"player": route_player.status(), "recorder": route_recorder.status()}
+
+        return {"status": "unknown_action", "action": action}
+
+    stream_server.set_route_callback(on_route)
 
     stream_server.set_drive_callback(on_direct_drive)
 

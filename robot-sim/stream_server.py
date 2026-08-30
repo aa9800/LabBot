@@ -242,6 +242,20 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             data = _telemetry_provider() if _telemetry_provider is not None else {}
             self.wfile.write(json.dumps(data).encode("utf-8"))
+        elif req_path.startswith("/route/"):
+            # 경로 녹화·재생. 좌표 순찰의 2단계다 — 사람이 한 번 몰아 보여준 것을
+            # 그대로 따라 하게 하고, 마커로 위치를 다시 잡아 오차 누적을 막는다.
+            if _route_callback is None:
+                self._send_json(200, {"status": "unavailable",
+                                      "reason": "경로 실행기가 등록되지 않았습니다."})
+                return
+            action = req_path[len("/route/"):].strip("/")
+            qs = parse_qs(urlparse(self.path).query)
+            params = {k: v[0] for k, v in qs.items()}
+            try:
+                self._send_json(200, _route_callback(action, params) or {})
+            except Exception as e:
+                self._send_json_error(500, f"Route action failed: {e}")
         elif req_path == "/health":
             # 라즈베리파이 하드웨어 상태(온도·스로틀·CPU·메모리). 관리자 페이지에서
             # 상시 표시한다 — 2026-08-30에 82.9도까지 올라 스로틀링이 걸린 채로
@@ -427,6 +441,7 @@ class StreamingHandler(BaseHTTPRequestHandler):
 
 _camera_angle_callback = None
 _camera_direction_callback = None
+_route_callback = None
 _drive_callback = None
 _telemetry_provider = None
 _qr_scan_callback = None
@@ -577,6 +592,12 @@ def read_pi_health():
             health["ai_error"] = f"{type(e).__name__}: {e}"
 
     return health
+
+
+def set_route_callback(cb):
+    """경로 녹화·재생 콜백. cb(action, params) -> dict."""
+    global _route_callback
+    _route_callback = cb
 
 
 def set_camera_direction_callback(cb):
