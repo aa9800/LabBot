@@ -9,6 +9,7 @@ FrameBroker, NCNN 추론 워커, 임무/야간경비 엔진과 RealHAL의 생명
   - SPACE/C/R/M/F/N 같은 pygame 키 조작은 실물에는 해당 사항이 없다(화면이 없음).
 """
 import datetime
+import json
 import math
 import os
 import signal
@@ -559,8 +560,35 @@ def main():
     # 비운 동안에는 아예 못 움직이게 잠가둔다.
     #
     # 카메라·센서·AI 는 그대로 돈다. 막는 것은 바퀴뿐이다.
-    motion_lock = {"locked": os.environ.get("LABKEEPER_MOTION_LOCK") == "1",
-                   "reason": os.environ.get("LABKEEPER_MOTION_LOCK_REASON", "")}
+    # 잠금은 파일로 남긴다. 재시작할 때마다 풀리면 안전장치가 아니다 -
+    # 사람이 자리를 비운 사이 서비스가 한 번 재시작되면(코드 배포, 크래시,
+    # 전원 복구) 그때부터 로봇이 움직일 수 있게 된다.
+    def _lock_path():
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "state", "motion_lock.json")
+
+    def _load_lock():
+        try:
+            with open(_lock_path(), encoding="utf-8") as f:
+                d = json.load(f)
+            return {"locked": bool(d.get("locked")), "reason": str(d.get("reason", ""))}
+        except Exception:
+            return {"locked": os.environ.get("LABKEEPER_MOTION_LOCK") == "1",
+                    "reason": os.environ.get("LABKEEPER_MOTION_LOCK_REASON", "")}
+
+    def _save_lock(d):
+        try:
+            path = _lock_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(d, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"[labkeeper] 잠금 저장 실패(무시): {e}")
+
+    motion_lock = _load_lock()
+    if motion_lock["locked"]:
+        print(f"[labkeeper] 바퀴가 잠긴 채로 시작합니다 ({motion_lock['reason']}) — "
+              f"/patrol/unlock 으로 풉니다")
 
     def motion_blocked():
         return motion_lock["locked"]
@@ -903,10 +931,12 @@ def main():
             if motion_lock["locked"]:
                 patrol.stop()
                 hal.stop()
+            _save_lock(motion_lock)
             return dict(motion_lock)
         if action == "unlock":
             motion_lock["locked"] = False
             motion_lock["reason"] = ""
+            _save_lock(motion_lock)
             return dict(motion_lock)
         # 실물 로봇과 아이작 심은 서로 다른 공간이다. 웹이 어느 쪽인지 알려준다.
         env = params.get("env")
@@ -992,6 +1022,7 @@ def main():
 
             def _dock():
                 with WheelLease("dock"):
+                    patrol.clear_abort()   # 위와 같은 이유
                     patrol.goto(0, 0)
                     _dist, delta = odometry.vector_to(100.0, 0.0)
                     patrol.turn_in_place(delta)
@@ -1231,6 +1262,9 @@ def main():
         """
         pmap = load_map()
         shelf = shelf_map.locate(item_id, pmap)
+        # 지난번 취소로 중단 신호가 켜져 있을 수 있다. 새 주행은 깨끗한
+        # 상태에서 시작해야 한다 - 안 지우면 시작하자마자 멈춘다.
+        patrol.clear_abort()
         delivery.update(running=True, item_id=item_id, shelf=shelf,
                         phase="navigating", qr=None, error_cm=None, message="")
         try:
@@ -1251,15 +1285,18 @@ def main():
                 else:
                     self_return = False
 
-                blocked = bool(r.get("blocked")) and not delivery.get("cancel")
-                delivery.update(phase="blocked" if blocked else "arrived",
-                                error_cm=r["error_cm"],
-                                message="막혀서 못 감" if blocked else "도착")
-                event_queue.push("delivery_arrived", {
-                    "item_id": item_id, "shelf_code": shelf["code"],
-                    "x_cm": r["pose"]["x_cm"], "y_cm": r["pose"]["y_cm"],
-                    "error_cm": r["error_cm"], "blocked": blocked,
-                })
+                blocked = bool(r.get("blocked")) and not self_return
+                if not self_return:
+                    # 취소된 배달을 "도착"으로 적으면 안 된다. 기록상 성공한
+                    # 배달로 남아서 나중에 뭐가 실제로 이뤄졌는지 알 수 없다.
+                    delivery.update(phase="blocked" if blocked else "arrived",
+                                    error_cm=r["error_cm"],
+                                    message="막혀서 못 감" if blocked else "도착")
+                    event_queue.push("delivery_arrived", {
+                        "item_id": item_id, "shelf_code": shelf["code"],
+                        "x_cm": r["pose"]["x_cm"], "y_cm": r["pose"]["y_cm"],
+                        "error_cm": r["error_cm"], "blocked": blocked,
+                    })
 
                 if not blocked and not self_return:
                     # 재고 확인용 QR 스캔. 이동과는 무관하고 실패해도 넘어간다.
