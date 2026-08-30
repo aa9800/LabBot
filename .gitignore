@@ -70,3 +70,6 @@ yolo11n_ncnn_model/
 
 # Roboflow 데이터셋 후보 조회 결과 — 조회할 때마다 달라지는 임시 파일
 robot-sim/rf_candidates.json
+
+# ArUco 뷰어에 마커를 박아 넣을 때 쓰는 중간 산출물 — 스크립트로 다시 만든다
+robot-sim/ai_vision/aruco_b64.json
