@@ -850,6 +850,16 @@ class PatrolRunner:
         self.hal.stop()
         return {"status": "stopping"}
 
+    def abort(self):
+        """지금 진행 중인 주행만 멈춘다. 배달 취소에서 쓴다."""
+        self._abort.set()
+        self.hal.stop()
+
+    def clear_abort(self):
+        """중단 신호를 푼다. 취소 뒤 복귀 주행을 돌리려면 반드시 필요하다 -
+        안 풀면 복귀 goto 도 즉시 중단돼 로봇이 그 자리에 남는다."""
+        self._abort.clear()
+
     def _run(self, data, laps):
         wps = data["waypoints"]
         try:

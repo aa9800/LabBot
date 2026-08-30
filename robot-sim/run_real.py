@@ -925,6 +925,16 @@ def main():
                     "안내": "켜면 막혔을 때 옆으로 비켜서고, 끄면 그 지점을 포기하고 다음으로 간다"}
         if action == "delivery_status":
             return dict(delivery)
+        if action == "deliver_cancel":
+            # 안내를 취소하면 로봇이 그 자리에서 멈추고 대기 자리로 돌아간다.
+            # 창만 닫고 로봇을 그대로 두면, 사용자는 끝났다고 생각하는데 로봇은
+            # 선반 앞에 서 있게 된다.
+            if not delivery.get("running"):
+                return {"error": "배달 중이 아니다"}
+            delivery["cancel"] = True
+            patrol.abort()          # 지금 가고 있던 주행을 즉시 멈춘다
+            return {"status": "취소함 — 대기 자리로 돌아갑니다",
+                    "phase": delivery.get("phase")}
         if action == "recall":
             # 기다리는 중이면 바로 복귀시킨다. 사람이 물건을 이미 가져갔는데
             # 남은 대기 시간을 다 채우고 있을 이유가 없다.
@@ -1187,7 +1197,18 @@ def main():
 
             with WheelLease("deliver"):
                 r = patrol.goto(shelf["x_cm"], shelf["y_cm"])
-                blocked = bool(r.get("blocked"))
+
+                # 가는 도중에 취소됐으면 남은 일을 건너뛰고 곧장 돌아간다.
+                # patrol 의 중단 신호를 여기서 풀어줘야 복귀 주행이 돈다 -
+                # 안 풀면 복귀 goto 도 즉시 중단돼 로봇이 선반 앞에 남는다.
+                if delivery.get("cancel"):
+                    patrol.clear_abort()
+                    delivery.update(phase="cancelled", message="안내 취소됨")
+                    self_return = True
+                else:
+                    self_return = False
+
+                blocked = bool(r.get("blocked")) and not delivery.get("cancel")
                 delivery.update(phase="blocked" if blocked else "arrived",
                                 error_cm=r["error_cm"],
                                 message="막혀서 못 감" if blocked else "도착")
@@ -1197,7 +1218,7 @@ def main():
                     "error_cm": r["error_cm"], "blocked": blocked,
                 })
 
-                if not blocked:
+                if not blocked and not self_return:
                     # 재고 확인용 QR 스캔. 이동과는 무관하고 실패해도 넘어간다.
                     # 여기 물품이 실제로 있는지를 기록으로 남기는 것이 목적이다.
                     try:
@@ -1214,9 +1235,14 @@ def main():
                     # 사람이 물건을 집어갈 시간을 준다. recall 이 오면 바로 끝낸다.
                     delivery.update(phase="waiting")
                     waited = 0.0
-                    while waited < DELIVERY_DWELL_S and not delivery.get("recall"):
+                    while (waited < DELIVERY_DWELL_S
+                           and not delivery.get("recall")
+                           and not delivery.get("cancel")):
                         time.sleep(0.5)
                         waited += 0.5
+                    if delivery.get("cancel"):
+                        patrol.clear_abort()
+                        delivery.update(phase="cancelled", message="안내 취소됨")
 
                 if return_after:
                     delivery.update(phase="returning", message="대기 자리로 복귀")
@@ -1233,7 +1259,7 @@ def main():
                     if not blocked:
                         delivery.update(phase="docked", message="복귀 완료")
 
-            delivery.update(running=False, recall=False)
+            delivery.update(running=False, recall=False, cancel=False)
         except Exception as e:
             delivery.update(running=False, phase="error", message=str(e))
             print(f"[deliver] 실패: {e}")
@@ -1249,6 +1275,7 @@ def main():
             return {"error": f"물품 {item_id} 의 선반이 정해져 있지 않다. "
                              f"/patrol/assign_shelves 를 먼저 부르세요"}
         delivery["recall"] = False
+        delivery["cancel"] = False
         threading.Thread(target=_deliver, args=(item_id, from_home, return_after),
                          daemon=True).start()
         return {"status": "navigating", "item_id": item_id, "shelf": shelf}

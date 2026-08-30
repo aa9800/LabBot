@@ -67,6 +67,60 @@ STREAM_EVERY_N_TICKS = max(1, int(os.environ.get("LABKEEPER_STREAM_EVERY_N_TICKS
 LAB_PREVIEW_WIDTH = int(os.environ.get("LABKEEPER_PREVIEW_WIDTH", "1280"))
 LAB_PREVIEW_HEIGHT = int(os.environ.get("LABKEEPER_PREVIEW_HEIGHT", "720"))
 LAB_PREVIEW_EVERY_N_TICKS = max(15, int(os.environ.get("LABKEEPER_PREVIEW_EVERY_N_TICKS", "30")))
+ISAAC_AUTO_PATROL_DEFAULT = os.environ.get("LABKEEPER_ISAAC_AUTO_PATROL", "1").lower() not in (
+    "0", "false", "no"
+)
+ISAAC_PATROL_WAYPOINT_NAMES = (
+    "대기 위치",
+    "보안 게이트",
+    "입구 좌측 진입",
+    "입구 좌측 보급공간",
+    "입구 중앙",
+    "입구 우측 보급공간",
+    "입구 우측 진입",
+    "보안 게이트 복귀",
+    "중앙 복도",
+    "일반실험실",
+    "서측 통로 진입",
+    "서측 통로",
+    "기기실-1",
+    "기기실-2",
+    "세포배양실",
+    "시약보관실",
+    "냉동보관실",
+    "냉장보관실",
+    "소모품보관실",
+    "동측 통로",
+    "동측 통로 복귀",
+    "중앙 복도 복귀",
+    "대기 위치 복귀",
+)
+
+
+def _isaac_patrol_map():
+    """웹 좌표 순찰 패널이 바로 그릴 수 있는 cm 단위 Isaac 전용 경로."""
+    waypoints = []
+    for index, point in enumerate(LAB_TRACK_POINTS_M):
+        name = (
+            ISAAC_PATROL_WAYPOINT_NAMES[index]
+            if index < len(ISAAC_PATROL_WAYPOINT_NAMES)
+            else f"순찰 지점 {index}"
+        )
+        waypoints.append({
+            "name": name,
+            "marker": None,
+            "x_cm": round(float(point[0]) * 100.0, 1),
+            "y_cm": round(float(point[1]) * 100.0, 1),
+        })
+    return {
+        "name": "Isaac 전체 연구실 자동순찰",
+        "env": "isaac",
+        "source": "isaac-sim",
+        "units": "cm",
+        "closed": True,
+        "description": "입구 보급공간부터 실험실·보관실을 순회한 뒤 대기 위치로 복귀합니다.",
+        "waypoints": waypoints,
+    }
 
 
 def _create_obstacle(stage):
@@ -232,11 +286,45 @@ def main():
 
     # 스트림 서버 콜백 연결 (수동 운전 / 서보 / 온디맨드 QR 스캔 / 실시간 텔레메트리)
     manual_override = {"active": False, "speed": 0.0, "turn": 0.0, "last_at": 0.0}
+    # 실물 Raspbot의 경로 실행기와 무관한 Isaac 전용 자동순찰 스위치다.
+    # 웹에서 auto 모드를 선택하면 켜지고, manual 모드에서는 수동 명령이 우선한다.
+    auto_patrol = {
+        "enabled": ISAAC_AUTO_PATROL_DEFAULT,
+        "requested_laps": 0,
+        "start_completed_laps": 0,
+        "target_completed_laps": None,
+        "repeat_minutes": 0,
+        "next_run_at": None,
+        "emergency_latched": False,
+        "operator_hold": False,
+        "mode": "patrol",
+        "phase": "driving" if ISAAC_AUTO_PATROL_DEFAULT else "idle",
+        "message": (
+            "Isaac 전체 연구실 연속 자동순찰 중"
+            if ISAAC_AUTO_PATROL_DEFAULT
+            else "Isaac 자동순찰 대기"
+        ),
+    }
     qr_scan_hold = {"until": 0.0}
     controller_ref = {"value": None}
 
     def on_drive_cmd(mode, speed, turn):
         manual_override["active"] = (mode == "manual")
+        if mode == "auto":
+            auto_patrol["emergency_latched"] = False
+            auto_patrol["operator_hold"] = False
+            auto_patrol["enabled"] = True
+            auto_patrol["requested_laps"] = 0
+            auto_patrol["target_completed_laps"] = None
+            auto_patrol["next_run_at"] = None
+            auto_patrol["mode"] = "patrol"
+            auto_patrol["phase"] = "driving"
+            auto_patrol["message"] = "Isaac 전체 연구실 연속 자동순찰 중"
+        elif mode == "manual" and (abs(speed) > 0.01 or abs(turn) > 0.01):
+            # 강제정지 뒤 사용자가 새 주행 명령을 명확히 넣으면 래치를 해제한다.
+            # 자동순찰 자체는 다시 켜지지 않아 손을 놓은 뒤 예기치 않게 출발하지 않는다.
+            auto_patrol["emergency_latched"] = False
+            auto_patrol["operator_hold"] = False
         manual_override["speed"] = speed
         manual_override["turn"] = turn
         manual_override["last_at"] = time.time()
@@ -319,6 +407,8 @@ def main():
             "target_y": target["target"][1],
             "waypoints": route[nearest_index:],
         }
+        auto_patrol["emergency_latched"] = False
+        auto_patrol["operator_hold"] = False
         manual_override["active"] = False
         result = controller_now.start_guide(task)
         run_log.write("guide_started", **{k: v for k, v in result.items() if k != "waypoints"})
@@ -336,6 +426,271 @@ def main():
         result = controller_now.finish_guide(status)
         run_log.write("guide_finished", **result)
         return result
+
+    def provide_patrol_status():
+        controller_now = controller_ref["value"]
+        pos_x, pos_y, forward_x, forward_y = hal._position_and_heading()
+        if controller_now is None:
+            return {
+                "running": False,
+                "phase": "starting",
+                "x_cm": round(pos_x * 100.0, 1),
+                "y_cm": round(pos_y * 100.0, 1),
+                "heading_deg": round(math.degrees(math.atan2(forward_y, forward_x)), 1),
+                "message": "Isaac 순찰 제어기 초기화 중",
+            }
+
+        raw = controller_now.patrol_status()
+        completed_since_start = max(
+            0,
+            controller_now.completed_laps - auto_patrol["start_completed_laps"],
+        )
+        dock_active = bool(controller_now.guide_task and controller_now.guide_task.get("mode") == "dock")
+        running = bool(auto_patrol["enabled"] or dock_active)
+        if auto_patrol["emergency_latched"]:
+            running = False
+            phase = "emergency_stop"
+            message = "강제정지 유지 중 · 새 주행/순찰/복귀 명령 전까지 움직이지 않습니다."
+        elif dock_active:
+            phase = "returning"
+            message = "안전한 웨이포인트 경로로 대기 위치에 복귀 중입니다."
+        elif controller_now.guide_task:
+            phase = "paused_for_guide"
+            message = "물품 안내가 끝나면 현재 경로에서 자동순찰을 이어갑니다."
+        elif controller_now.avoidance_status().get("active"):
+            phase = "blocked"
+            message = "장애물을 확인해 우회한 뒤 순찰 경로에 복귀합니다."
+        elif running:
+            phase = "driving"
+            message = auto_patrol["message"]
+        else:
+            phase = auto_patrol["phase"]
+            message = auto_patrol["message"]
+
+        requested_laps = auto_patrol["requested_laps"]
+        current_lap = completed_since_start + 1 if running else completed_since_start
+        if requested_laps > 0:
+            current_lap = min(max(1, current_lap), requested_laps)
+        return {
+            "running": running,
+            "phase": phase,
+            "map": "Isaac 전체 연구실 자동순찰",
+            "env": "isaac",
+            "lap": current_lap,
+            "laps": requested_laps,
+            "leg": raw["waypoint_index"],
+            "legs": max(1, raw["waypoint_count"] - 1),
+            "completed_laps": controller_now.completed_laps,
+            "repeat_minutes": auto_patrol["repeat_minutes"],
+            "next_run_at": auto_patrol["next_run_at"],
+            "emergency_latched": auto_patrol["emergency_latched"],
+            "operator_hold": auto_patrol["operator_hold"],
+            "control_mode": auto_patrol["mode"],
+            "target_x_cm": round(raw["target_x"] * 100.0, 1),
+            "target_y_cm": round(raw["target_y"] * 100.0, 1),
+            "x_cm": round(pos_x * 100.0, 1),
+            "y_cm": round(pos_y * 100.0, 1),
+            "heading_deg": round(math.degrees(math.atan2(forward_y, forward_x)), 1),
+            "message": message,
+        }
+
+    def start_patrol_cycle(laps=1, message=None, mode="patrol"):
+        controller_now = controller_ref["value"]
+        if controller_now is None:
+            raise RuntimeError("Isaac 순찰 제어기가 아직 준비되지 않았습니다.")
+        laps = max(0, min(int(laps), 99))
+        auto_patrol["emergency_latched"] = False
+        auto_patrol["operator_hold"] = False
+        auto_patrol["enabled"] = True
+        auto_patrol["requested_laps"] = laps
+        auto_patrol["start_completed_laps"] = controller_now.completed_laps
+        auto_patrol["target_completed_laps"] = (
+            controller_now.completed_laps + laps if laps > 0 else None
+        )
+        auto_patrol["next_run_at"] = None
+        auto_patrol["mode"] = mode
+        auto_patrol["phase"] = "driving"
+        auto_patrol["message"] = message or (
+            f"Isaac 전체 연구실 {laps}바퀴 자동순찰 중"
+            if laps
+            else "Isaac 전체 연구실 연속 자동순찰 중"
+        )
+        manual_override["active"] = False
+
+    def dock_route(controller_now):
+        """현재 순찰선에서 앞/뒤 중 짧은 안전 경로를 골라 원점으로 복귀한다."""
+        current_x, current_y, _, _ = hal._position_and_heading()
+        points = [tuple(point) for point in controller_now.track_points]
+        index = controller_now.target_index
+        home = points[0]
+        forward = points[index:]
+        backward = list(reversed(points[:index]))
+
+        def normalized(route):
+            result = list(route)
+            if not result or result[-1] != home:
+                result.append(home)
+            compact = []
+            for point in result:
+                if not compact or point != compact[-1]:
+                    compact.append(point)
+            return compact
+
+        def route_length(route):
+            total = 0.0
+            previous = (current_x, current_y)
+            for point in route:
+                total += math.hypot(point[0] - previous[0], point[1] - previous[1])
+                previous = point
+            return total
+
+        candidates = [normalized(forward), normalized(backward)]
+        return min(candidates, key=route_length)
+
+    def on_patrol(action, params):
+        """실물 순찰과 섞이지 않는 Isaac 전용 좌표 순찰 HTTP API."""
+        requested_env = (params.get("env") or "isaac").lower()
+        if requested_env not in ("isaac", "sim"):
+            raise ValueError("이 서버는 Isaac Sim 순찰 경로만 실행합니다.")
+        controller_now = controller_ref["value"]
+
+        if action == "map":
+            return _isaac_patrol_map()
+        if action == "status":
+            return provide_patrol_status()
+        if action == "pose":
+            status = provide_patrol_status()
+            return {
+                "x_cm": status["x_cm"],
+                "y_cm": status["y_cm"],
+                "heading_deg": status["heading_deg"],
+            }
+        if controller_now is None:
+            raise RuntimeError("Isaac 순찰 제어기가 아직 준비되지 않았습니다.")
+
+        if action == "start":
+            if controller_now.guide_task:
+                return {"error": "물품 안내 중입니다. 안내 완료 후 순찰을 시작해주세요."}
+            try:
+                laps = int(params.get("laps", 1))
+            except (TypeError, ValueError):
+                laps = 1
+            start_patrol_cycle(laps=laps)
+            run_log.write(
+                "patrol_started",
+                mode="route",
+                laps=laps,
+                waypoint_count=len(LAB_TRACK_POINTS_M),
+            )
+            return {
+                "status": "started",
+                "map": "Isaac 전체 연구실 자동순찰",
+                "env": "isaac",
+                "laps": laps,
+                "waypoints": [item["name"] for item in _isaac_patrol_map()["waypoints"]],
+            }
+        if action == "dock":
+            if controller_now.guide_task and controller_now.guide_task.get("mode") != "dock":
+                return {"error": "물품 안내 중입니다. 안내 완료 후 복귀해주세요."}
+            route = dock_route(controller_now)
+            auto_patrol["repeat_minutes"] = 0
+            auto_patrol["next_run_at"] = None
+            auto_patrol["enabled"] = False
+            auto_patrol["emergency_latched"] = False
+            auto_patrol["operator_hold"] = False
+            auto_patrol["mode"] = "dock"
+            auto_patrol["phase"] = "returning"
+            auto_patrol["message"] = "안전한 웨이포인트 경로로 대기 위치에 복귀 중"
+            manual_override["active"] = False
+            result = controller_now.start_guide({
+                "task_id": f"dock-{int(time.time())}",
+                "mode": "dock",
+                "item_name": "대기 위치",
+                "shelf_code": "HOME",
+                "location_detail": "Isaac 대기 위치 (0, 0)",
+                "target_x": 0.0,
+                "target_y": 0.0,
+                "arrival_tolerance": 0.10,
+                "waypoints": route,
+            })
+            run_log.write("dock_started", waypoint_count=len(route))
+            return {
+                "status": "returning",
+                "env": "isaac",
+                "target": [0.0, 0.0],
+                "waypoint_count": len(route),
+                "route": route,
+                "guide": result,
+            }
+        if action == "stop":
+            if controller_now.guide_task and controller_now.guide_task.get("mode") == "dock":
+                controller_now.finish_guide("aborted")
+            auto_patrol["enabled"] = False
+            auto_patrol["target_completed_laps"] = None
+            auto_patrol["repeat_minutes"] = 0
+            auto_patrol["next_run_at"] = None
+            auto_patrol["operator_hold"] = True
+            auto_patrol["mode"] = "stopped"
+            auto_patrol["phase"] = "aborted"
+            auto_patrol["message"] = "사용자가 Isaac 자동순찰을 중지했습니다."
+            if not controller_now.guide_task:
+                hal.stop()
+            run_log.write("patrol_stopped", reason="user")
+            return {"status": "stopped", "env": "isaac"}
+        if action == "emergency_stop":
+            if controller_now.guide_task:
+                controller_now.finish_guide("aborted")
+            auto_patrol["enabled"] = False
+            auto_patrol["target_completed_laps"] = None
+            auto_patrol["repeat_minutes"] = 0
+            auto_patrol["next_run_at"] = None
+            auto_patrol["emergency_latched"] = True
+            auto_patrol["operator_hold"] = True
+            auto_patrol["mode"] = "emergency_stop"
+            auto_patrol["phase"] = "emergency_stop"
+            auto_patrol["message"] = "강제정지 유지 중 · 새 명령 전까지 이동 금지"
+            manual_override.update(active=False, speed=0.0, turn=0.0, last_at=time.time())
+            hal.stop()
+            run_log.write("emergency_stop", source="web")
+            return {"status": "emergency_stopped", "latched": True, "env": "isaac"}
+        if action == "repeat":
+            try:
+                minutes = int(params.get("minutes", 0))
+            except (TypeError, ValueError):
+                raise ValueError("자동반복 간격은 분 단위 숫자여야 합니다.")
+            if minutes < -1 or minutes > 1440:
+                raise ValueError("자동반복 간격은 연속(-1), 끔(0), 1~1440분만 가능합니다.")
+
+            auto_patrol["emergency_latched"] = False
+            if minutes == -1:
+                auto_patrol["repeat_minutes"] = 0
+                start_patrol_cycle(laps=0, message="Isaac 전체 연구실 연속 자동순찰 중")
+                return {"status": "continuous", "repeat_minutes": 0, "next_run_at": None}
+
+            auto_patrol["repeat_minutes"] = minutes
+            auto_patrol["next_run_at"] = None
+            if auto_patrol["enabled"] and auto_patrol["target_completed_laps"] is None:
+                # 연속순찰 중 설정을 바꾸면 현재 바퀴까지만 마치고 새 정책으로 전환한다.
+                auto_patrol["requested_laps"] = 1
+                auto_patrol["start_completed_laps"] = controller_now.completed_laps
+                auto_patrol["target_completed_laps"] = controller_now.completed_laps + 1
+                auto_patrol["message"] = (
+                    f"현재 바퀴 완료 후 {minutes}분 간격 자동반복"
+                    if minutes
+                    else "현재 바퀴 완료 후 대기"
+                )
+            elif not auto_patrol["enabled"] and minutes > 0:
+                auto_patrol["operator_hold"] = True
+                auto_patrol["phase"] = "idle"
+                auto_patrol["next_run_at"] = time.time() + minutes * 60.0
+                auto_patrol["message"] = f"{minutes}분 후 Isaac 자동순찰 예정"
+            return {
+                "status": "scheduled" if minutes else "repeat_off",
+                "repeat_minutes": minutes,
+                "next_run_at": auto_patrol["next_run_at"],
+            }
+
+        raise ValueError(f"지원하지 않는 Isaac 순찰 명령: {action}")
 
     def provide_telemetry():
         dist = hal.read_ultrasonic()
@@ -371,11 +726,18 @@ def main():
             "heading_deg": round(math.degrees(math.atan2(forward_y, forward_x)), 2),
             "streaming": True,
             "operation": (
-                "guide" if controller_now and controller_now.guide_task
+                "emergency_stop" if auto_patrol["emergency_latched"]
+                else "dock" if controller_now and controller_now.guide_task and controller_now.guide_task.get("mode") == "dock"
+                else "guide" if controller_now and controller_now.guide_task
+                else "patrol" if auto_patrol["enabled"] and not is_manual
+                else "patrol_wait" if auto_patrol["repeat_minutes"] > 0 and auto_patrol["next_run_at"]
+                else "docked" if auto_patrol["mode"] == "docked"
+                else "stopped" if auto_patrol["operator_hold"]
                 else "night_guard" if night_guard.status().get("active")
                 else "rental_assist"
             ),
             "guide": controller_now.guide_status() if controller_now else {"status": "initializing"},
+            "patrol": provide_patrol_status(),
             "avoidance": controller_now.avoidance_status() if controller_now else {"active": False, "state": "idle", "label": "초기화 중"},
             "night_guard": night_guard.status(),
         }
@@ -421,10 +783,23 @@ def main():
         now = time.time()
         if now - last_obstacle_alert_time >= OBSTACLE_ALERT_COOLDOWN:
             last_obstacle_alert_time = now
+            pos_x, pos_y, _, _ = hal._position_and_heading()
             print(f"[LabBot] Obstacle detected ({distance:.1f}cm) - Stop + SR-01 alert sent")
-            run_log.write("obstacle_detected", distance_cm=round(distance, 2), rule_id="SR-01")
+            run_log.write(
+                "obstacle_detected",
+                distance_cm=round(distance, 2),
+                rule_id="SR-01",
+                x_m=round(pos_x, 2),
+                y_m=round(pos_y, 2),
+            )
             report_event_async(
-                "SR-01", severity="MEDIUM", note=f"Isaac Sim 순찰 중 장애물 감지 ({distance:.1f}cm)", source="isaac-sim"
+                "SR-01",
+                severity="MEDIUM",
+                note=(
+                    f"Isaac Sim 순찰 중 장애물 감지 ({distance:.1f}cm) · "
+                    f"좌표 ({pos_x:.2f}, {pos_y:.2f})m"
+                ),
+                source="isaac-sim",
             )
 
     def on_obstacle_cleared():
@@ -434,6 +809,19 @@ def main():
         run_log.write("obstacle_cleared", result=result)
 
     def on_guide_arrived(task):
+        if task.get("mode") == "dock":
+            controller_now = controller_ref["value"]
+            if controller_now is not None:
+                controller_now.finish_guide("completed")
+            dock_x, dock_y, _, _ = hal._position_and_heading()
+            auto_patrol["enabled"] = False
+            auto_patrol["operator_hold"] = True
+            auto_patrol["mode"] = "docked"
+            auto_patrol["phase"] = "done"
+            auto_patrol["message"] = "Isaac 로봇이 대기 위치에 복귀했습니다."
+            run_log.write("dock_completed", x_m=round(dock_x, 3), y_m=round(dock_y, 3))
+            print(f"[LabBot] Dock arrived: HOME ({dock_x:.2f}, {dock_y:.2f})")
+            return
         print(f"[LabBot] Guide arrived: {task.get('item_name')} / {task.get('shelf_code')}")
         run_log.write("guide_arrived", item_name=task.get("item_name"), shelf_code=task.get("shelf_code"))
 
@@ -446,10 +834,14 @@ def main():
         on_guide_arrived=on_guide_arrived,
     )
     controller_ref["value"] = controller
+    stream_server.set_patrol_callback(on_patrol)
     last_guard_transition_id = night_guard.status()["transition_id"]
 
     tick = 0
-    print("[LabBot] Isaac Sim Biotech Lab Patrol Started!")
+    print(
+        f"[LabBot] Isaac Sim Biotech Lab Patrol Started! "
+        f"auto={auto_patrol['enabled']} waypoints={len(LAB_TRACK_POINTS_M)}"
+    )
     try:
         while simulation_app.is_running():
             tick += 1
@@ -460,6 +852,24 @@ def main():
             # 1. 수동 조작 vs 자동 순찰 제어
             now = time.time()
             guard = night_guard.update(sonar_cm=hal.read_ultrasonic())
+            next_run_at = auto_patrol["next_run_at"]
+            if (
+                not auto_patrol["emergency_latched"]
+                and not auto_patrol["enabled"]
+                and auto_patrol["repeat_minutes"] > 0
+                and next_run_at is not None
+                and now >= next_run_at
+                and not controller.guide_task
+            ):
+                start_patrol_cycle(
+                    laps=1,
+                    message=f"{auto_patrol['repeat_minutes']}분 간격 Isaac 자동순찰 중",
+                    mode="scheduled_patrol",
+                )
+                run_log.write(
+                    "patrol_repeat_started",
+                    interval_minutes=auto_patrol["repeat_minutes"],
+                )
             if guard["transition_id"] != last_guard_transition_id:
                 last_guard_transition_id = guard["transition_id"]
                 print(f"[LabBot] Night guard: {guard['label']} {guard.get('reason', '')}".rstrip())
@@ -469,13 +879,19 @@ def main():
                     reason=guard.get("reason", ""),
                 )
                 if guard["state"] == "investigating":
+                    event_x, event_y, _, _ = hal._position_and_heading()
                     report_event_async(
                         "NIGHT-GUARD",
                         severity="HIGH" if "사람" in guard.get("reason", "") else "MEDIUM",
-                        note=f"Isaac Sim 야간 경비 출동: {guard.get('reason', '이상 신호')}",
+                        note=(
+                            f"Isaac Sim 야간 경비 출동: {guard.get('reason', '이상 신호')} · "
+                            f"좌표 ({event_x:.2f}, {event_y:.2f})m"
+                        ),
                         source="isaac-sim",
                     )
-            if now < qr_scan_hold["until"]:
+            if auto_patrol["emergency_latched"]:
+                hal.stop()
+            elif now < qr_scan_hold["until"]:
                 hal.stop()
             elif manual_override["active"]:
                 if now - manual_override["last_at"] >= MANUAL_COMMAND_MAX_AGE_SECONDS:
@@ -490,10 +906,35 @@ def main():
                     else:
                         hal.set_motion(manual_override["speed"], manual_override["turn"])
             else:
-                # 물품 안내는 밤에도 최우선. 그 외에는 정기순찰/조사 중에만 움직이고
-                # 대기 상태에서는 모터를 끈 채 센서만 유지한다.
-                if controller.guide_task or guard["should_move"]:
+                # 물품 안내는 밤에도 최우선. 그 외에는 Isaac 자동순찰 또는 야간
+                # 조사 중에만 움직이고, 자동순찰을 끈 대기 상태에서는 모터를 정지한다.
+                guard_should_move = guard["should_move"] and not auto_patrol["operator_hold"]
+                if controller.guide_task or guard_should_move or auto_patrol["enabled"]:
                     controller.tick(TIME_STEP_S)
+                    target_laps = auto_patrol["target_completed_laps"]
+                    if (
+                        auto_patrol["enabled"]
+                        and target_laps is not None
+                        and controller.completed_laps >= target_laps
+                        and not controller.guide_task
+                    ):
+                        auto_patrol["enabled"] = False
+                        auto_patrol["target_completed_laps"] = None
+                        auto_patrol["operator_hold"] = True
+                        repeat_minutes = auto_patrol["repeat_minutes"]
+                        if repeat_minutes > 0:
+                            auto_patrol["next_run_at"] = now + repeat_minutes * 60.0
+                            auto_patrol["phase"] = "idle"
+                            auto_patrol["message"] = f"순찰 완료 · {repeat_minutes}분 후 다음 자동순찰"
+                        else:
+                            auto_patrol["phase"] = "done"
+                            auto_patrol["message"] = "Isaac 전체 연구실 순찰을 완료하고 대기 위치에 복귀했습니다."
+                        hal.stop()
+                        run_log.write(
+                            "patrol_completed",
+                            laps=auto_patrol["requested_laps"],
+                            completed_laps=controller.completed_laps,
+                        )
                 else:
                     hal.stop()
 

@@ -275,7 +275,18 @@ document.addEventListener("DOMContentLoaded", async () => {
       overlay.remove();
     }
 
-    overlay.querySelectorAll('[data-action="cancel"]').forEach((btn) => btn.addEventListener("click", close));
+    overlay.querySelectorAll('[data-action="cancel"]').forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        // 창만 닫으면 로봇은 선반 앞에 계속 서 있는다. 취소는 로봇도 멈춰야
+        // 취소다. 실패해도 창은 닫는다 - 로봇이 안 멈췄다고 사용자를 창에
+        // 가둬둘 이유가 없다(대기 자리 복귀 버튼이 따로 있다).
+        try {
+          await window.LabBotRobotConsole.cancelDelivery();
+        } catch (err) {
+          console.warn("[guide] 로봇 정지 실패:", err);
+        }
+        close();
+      }));
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) close(); // 배경 클릭으로도 닫히게(진행 중인 예약/대여는 그대로 유지됨)
     });

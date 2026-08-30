@@ -51,12 +51,14 @@ def main():
     hal = MockHAL(track)
     controller = WaypointPatrolController(hal, track)
     max_error = 0.0
-    for _ in range(60 * 180):
+    for _ in range(60 * 360):
         controller.tick(DT)
         error = min(distance_to_segment((hal.x, hal.y), track[i], track[i + 1]) for i in range(len(track) - 1))
         max_error = max(max_error, error)
     if max_error > 0.35:
         raise AssertionError(f"웨이포인트 트랙 이탈: {max_error:.3f}m")
+    if controller.patrol_status()["completed_laps"] < 1:
+        raise AssertionError(f"전체 연구실 순환 미완료: {controller.patrol_status()}")
 
     guide_hal = MockHAL(track)
     arrived = []
@@ -79,7 +81,11 @@ def main():
     if guide.guide_status()["status"] != "idle":
         raise AssertionError("안내 완료 뒤 순찰 모드로 복귀하지 못함")
 
-    print(f"WAYPOINT_CONTROLLER_TEST_OK max_error={max_error:.3f}m guide=LAB-G04 position=({guide_hal.x:.2f},{guide_hal.y:.2f})")
+    print(
+        f"WAYPOINT_CONTROLLER_TEST_OK laps={controller.completed_laps} "
+        f"max_error={max_error:.3f}m guide=LAB-G04 "
+        f"position=({guide_hal.x:.2f},{guide_hal.y:.2f})"
+    )
 
 
 if __name__ == "__main__":

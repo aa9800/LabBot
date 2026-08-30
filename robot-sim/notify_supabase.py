@@ -119,6 +119,7 @@ def fetch_item_locations():
     all_items = fetch_items()
     binding_by_item = {int(row["item_id"]): row for row in bindings}
     room_profiles = {
+        "입구 공용비품 보관구역": ("ENT", 0.0, -5.8),
         "일반실험실": ("LAB-G", 0.0, 4.0),
         "기기실-1": ("LAB-I1", -1.8, 10.0),
         "기기실-2": ("LAB-I2", -1.8, 12.4),
@@ -136,7 +137,7 @@ def fetch_item_locations():
         binding = binding_by_item.get(item_id, {})
         db_room = str(item.get("location") or "일반실험실")
         binding_room = str(binding.get("room") or "")
-        room = db_room if "대여" in binding_room or "반납" in binding_room else (binding_room or db_room)
+        room = binding_room or db_room
         prefix, nav_x, nav_y = room_profiles.get(room, ("LAB-ST", 0.0, 4.0))
         shelf_row = binding.get("shelf_row") if enriched else None
         shelf_slot = binding.get("shelf_slot") if enriched else None

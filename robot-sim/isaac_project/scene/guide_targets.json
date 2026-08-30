@@ -5,6 +5,7 @@
     "SAFETY": {"zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-S","location_detail":"남쪽 출입구 안전장비 보관 위치","target":[0.0,0.0],"route":[[0.0,4.0],[0.0,0.0]]}
   },
   "location_defaults": {
+    "입구 공용비품 보관구역": {"zone_type":"lab_inventory","access_level":"authorized","shelf_code":"ENT-COM","fixture_prim_path":"/World/RentalWing/WestPickupShelf","target":[0.0,-5.8],"route":[[0.0,4.0],[0.0,-1.2],[0.0,-5.8]]},
     "일반실험실": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-G00","fixture_prim_path":"/World/MainBench/IslandEast","target":[0.0,4.0],"route":[[0.0,4.0]]},
     "기기실-1": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-I01","fixture_prim_path":"/World/West/InstrumentBench1","target":[-1.8,10.0],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,10.0]]},
     "기기실-2": {"zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-I02","fixture_prim_path":"/World/West/InstrumentBench2","target":[-1.8,12.4],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,12.4]]},
@@ -16,10 +17,12 @@
     "안전장비함": {"zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-S","fixture_prim_path":"/World/Safety/PPECabinet","target":[0.0,0.0],"route":[[0.0,4.0],[0.0,0.0]]}
   },
   "targets": [
-    {"scene_object_id":"eq-pipette-01","item_query":"마이크로피펫","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-G04","shelf_row":2,"shelf_slot":1,"location_detail":"LAB-G04 IslandEast 실험대 2번째 줄, 왼쪽 1번째 스탠드","target":[2.6,5.55],"route":[[0.0,4.0],[1.8,4.0],[2.6,5.55]]},
-    {"scene_object_id":"con-tips-01","item_query":"피펫 팁","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-CON-01","shelf_row":2,"shelf_slot":3,"location_detail":"LAB-CON-01 소모품 선반 2번째 줄, 왼쪽에서 3번째 바구니","target":[1.8,10.0],"route":[[0.0,4.0],[1.8,4.0],[1.8,10.0]]},
-    {"scene_object_id":"eq-centrifuge-01","item_query":"마이크로 원심분리기","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-G03","shelf_row":1,"shelf_slot":1,"location_detail":"LAB-G03 IslandEast 실험대 1번째 위치","target":[2.6,2.35],"route":[[0.0,4.0],[1.8,4.0],[2.6,2.35]]},
-    {"scene_object_id":"eq-scale-01","item_query":"전자저울","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"LAB-G02","shelf_row":2,"shelf_slot":2,"location_detail":"LAB-G02 IslandWest 실험대 2번째 위치","target":[-2.6,5.72],"route":[[0.0,4.0],[-1.8,4.0],[-2.6,5.72]]},
+    {"scene_object_id":"eq-pipette-01","item_query":"마이크로피펫 세트","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"ENT-W01","shelf_row":3,"shelf_slot":1,"location_detail":"ENT-W01 입구 서측 개방 선반 3단, 왼쪽 1번째 피펫 스탠드","target":[-2.6,-5.22],"route":[[0.0,4.0],[0.0,-1.2],[0.0,-4.8],[-2.6,-4.8],[-2.6,-5.22]]},
+    {"scene_object_id":"con-tips-01","item_query":"10 μL 피펫 팁","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"ENT-W02","shelf_row":3,"shelf_slot":1,"location_detail":"ENT-W02 입구 서측 개방 선반 3단, 왼쪽 1번째 바구니","target":[-2.6,-6.47],"route":[[0.0,4.0],[0.0,-1.2],[0.0,-6.0],[-2.6,-6.0],[-2.6,-6.47]]},
+    {"scene_object_id":"con-tips-02","item_query":"200 μL 피펫 팁","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"ENT-W02","shelf_row":3,"shelf_slot":2,"location_detail":"ENT-W02 입구 서측 개방 선반 3단, 왼쪽 2번째 바구니","target":[-2.6,-6.47],"route":[[0.0,4.0],[0.0,-1.2],[0.0,-6.0],[-2.6,-6.0],[-2.6,-6.47]]},
+    {"scene_object_id":"con-tips-03","item_query":"1000 μL 피펫 팁","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"ENT-W02","shelf_row":3,"shelf_slot":3,"location_detail":"ENT-W02 입구 서측 개방 선반 3단, 왼쪽 3번째 바구니","target":[-2.6,-6.47],"route":[[0.0,4.0],[0.0,-1.2],[0.0,-6.0],[-2.6,-6.0],[-2.6,-6.47]]},
+    {"scene_object_id":"eq-centrifuge-01","item_query":"마이크로 원심분리기","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"ENT-E01","shelf_row":3,"shelf_slot":1,"location_detail":"ENT-E01 입구 동측 개방 선반 3단, 오른쪽 1번째 위치","target":[2.6,-5.22],"route":[[0.0,4.0],[0.0,-1.2],[0.0,-4.8],[2.6,-4.8],[2.6,-5.22]]},
+    {"scene_object_id":"eq-scale-01","item_query":"전자저울","zone_type":"lab_inventory","access_level":"authorized","shelf_code":"ENT-E02","shelf_row":3,"shelf_slot":2,"location_detail":"ENT-E02 입구 동측 개방 선반 3단, 오른쪽 2번째 위치","target":[2.6,-6.48],"route":[[0.0,4.0],[0.0,-1.2],[0.0,-6.0],[2.6,-6.0],[2.6,-6.48]]},
     {"scene_object_id":"eq-microscope-01","item_query":"현미경","zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-G01","target":[-2.35,2.1],"route":[[0.0,4.0],[-1.8,4.0],[-2.35,2.1]]},
     {"scene_object_id":"eq-pcr-01","item_query":"PCR 장비","zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-I01","target":[-1.8,10.0],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,10.0]]},
     {"scene_object_id":"eq-phmeter-01","item_query":"pH meter","zone_type":"restricted_lab","access_level":"authorized","shelf_code":"LAB-R01","target":[0.0,13.6],"route":[[0.0,4.0],[-1.8,4.0],[-1.8,12.4],[0.0,13.6]]},

@@ -24,6 +24,7 @@ class WaypointPatrolController:
         self.on_obstacle_cleared = on_obstacle_cleared
         self.on_guide_arrived = on_guide_arrived
         self.target_index = 1
+        self.completed_laps = 0
         self._scanned_marker = None
         self._scan_elapsed = 0.0
         self._obstacle_active = False
@@ -37,6 +38,18 @@ class WaypointPatrolController:
 
     def avoidance_status(self):
         return self._avoider.status()
+
+    def patrol_status(self):
+        """웹과 테스트가 현재 순찰 진행 상황을 동일하게 읽는다."""
+        target = self.track_points[self.target_index]
+        return {
+            "status": "paused_for_guide" if self.guide_task else "patrolling",
+            "waypoint_index": self.target_index,
+            "waypoint_count": len(self.track_points),
+            "completed_laps": self.completed_laps,
+            "target_x": target[0],
+            "target_y": target[1],
+        }
 
     def start_guide(self, task):
         """순찰을 잠시 멈추고 물품/반납대 안내 경로를 시작한다."""
@@ -97,7 +110,8 @@ class WaypointPatrolController:
                 return
             target_x, target_y = self.guide_task["waypoints"][self.guide_waypoint_index]
             distance = self._drive_toward(target_x, target_y, speed_fast=78.0)
-            if distance < 0.22:
+            arrival_tolerance = max(0.05, float(self.guide_task.get("arrival_tolerance", 0.22)))
+            if distance < arrival_tolerance:
                 self.guide_waypoint_index += 1
                 if self.guide_waypoint_index >= len(self.guide_task["waypoints"]):
                     self.guide_waypoint_index = len(self.guide_task["waypoints"]) - 1
@@ -128,6 +142,9 @@ class WaypointPatrolController:
         dx, dy = target_x - x, target_y - y
         distance = math.hypot(dx, dy)
         if distance < 0.18:
+            reached_index = self.target_index
+            if reached_index == len(self.track_points) - 1:
+                self.completed_laps += 1
             self.target_index = (self.target_index + 1) % len(self.track_points)
             target_x, target_y = self.track_points[self.target_index]
             dx, dy = target_x - x, target_y - y

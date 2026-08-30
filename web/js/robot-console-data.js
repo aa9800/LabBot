@@ -362,6 +362,13 @@ const dockRobot = () => {
   return patrolCall("dock", { env }, 6000, env);
 };
 
+// 안내를 취소하면 로봇이 그 자리에서 멈추고 대기 자리로 돌아간다. 창만 닫으면
+// 사용자는 끝났다고 생각하는데 로봇은 선반 앞에 계속 서 있게 된다.
+const cancelDelivery = () => {
+  const env = _currentMode === "sim" ? "isaac" : "real";
+  return patrolCall("deliver_cancel", { env }, 6000, env);
+};
+
 const startPatrol = (env = "real", laps = 1) =>
   patrolCall("start", { env, laps }, 8000, env);
 const stopPatrol = (env = (_currentMode === "sim" ? "isaac" : "real")) =>
@@ -656,6 +663,7 @@ window.LabBotRobotConsole = {
   fetchRobotHealth,
   startPatrol,
   dockRobot,
+  cancelDelivery,
   stopPatrol,
   fetchPatrolStatus,
   fetchPatrolMap,
