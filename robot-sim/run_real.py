@@ -125,23 +125,24 @@ def main():
             "ai_vision",
             "models",
             "edge",
-            "lab_guardian_physical_ai_ncnn",
+            "lab_guardian_unified90_ncnn",
         ),
     )
 
-    # 사람은 커스텀 모델이 아니라 COCO 순정 모델이 판정한다.
-    # 커스텀 모델은 사람 인스턴스 204개로만 파인튜닝돼서, 원래 COCO 6만여 장으로
-    # 학습돼 있던 사람 판별 경계가 뭉개졌다(catastrophic forgetting).
-    # 같은 검증셋 84장으로 측정한 결과:
-    #     커스텀  정밀도 0.356 / 재현율 0.696 / F1 0.471 / 오탐 29
-    #     순정    정밀도 0.640 / 재현율 0.696 / F1 0.667 / 오탐  9
-    # 찾는 능력(재현율)은 같은데 커스텀만 오탐이 3배 이상이라, 사람 판정만 순정에 맡긴다.
-    ai_person_model_dir = os.environ.get(
-        "LABKEEPER_AI_PERSON_MODEL_DIR",
-        os.path.join(
-            _ROBOT_SIM_ROOT, "ai_vision", "models", "edge", "person_coco_ncnn"
-        ),
-    )
+    # 예전에는 모델을 두 개 돌렸다. 실험실 데이터 2,477장'만'으로 재학습한 커스텀
+    # 모델이 COCO 80클래스를 잊어버려서(catastrophic forgetting) 사람 오탐이 3배가
+    # 됐고, 사람 판정을 COCO 순정 모델에 따로 맡겨야 했기 때문이다. 한 프레임에
+    # 추론이 두 번 돌아 66.4ms 가 들었고 그게 발열의 주범이었다.
+    #
+    # 2026-08-30, COCO 6만 장을 리플레이로 섞고 백본 앞 10층을 얼려서 90클래스
+    # 단일 모델로 다시 학습했다. 실측 결과 두 축 모두 기준을 넘었다:
+    #     COCO      0.4786 -> 0.4579 (-4.3%)   1차 시도는 -33% 라 폐기했었다
+    #     실험실    0.6244 -> 0.7352 (+18%)
+    #     한 주기   66.4ms -> 42.3ms (-36%)    입력은 오히려 320 -> 416 으로 키움
+    #     온도      47.4 -> 44.6도
+    # 그래서 사람 전용 모델은 더 이상 쓰지 않는다. 되돌릴 일이 생기면
+    # LABKEEPER_AI_PERSON_MODEL_DIR 를 지정하면 예전 2모델 구성으로 돌아간다.
+    ai_person_model_dir = os.environ.get("LABKEEPER_AI_PERSON_MODEL_DIR", "")
 
     if _env_bool("LABKEEPER_AI_ENABLED", True):
         try:
@@ -151,26 +152,33 @@ def main():
                 num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "4")),
             )
 
-            # 사람 전용 백엔드. 없으면(미배포 등) 조용히 비활성화하고 물품 탐지는 계속한다.
+            # 통합 모델이 사람까지 보므로 평소에는 두 번째 백엔드를 쓰지 않는다.
+            # 환경변수로 경로를 주면 예전 2모델 구성으로 되돌릴 수 있다.
             ai_person_backend = None
-            try:
-                ai_person_backend = NcnnYoloBackend.from_manifest(
-                    ai_person_model_dir,
-                    confidence=float(os.environ.get("LABKEEPER_AI_PERSON_CONFIDENCE", "0.40")),
-                    num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "4")),
-                )
-                print(f"[labkeeper] 사람 판정: COCO 순정 모델 / {ai_person_model_dir}")
-            except Exception as person_exc:
-                print(f"[labkeeper] 사람 전용 모델 없음 — 커스텀 모델의 person을 그대로 씀: {person_exc}")
+            if ai_person_model_dir:
+                try:
+                    ai_person_backend = NcnnYoloBackend.from_manifest(
+                        ai_person_model_dir,
+                        confidence=float(os.environ.get("LABKEEPER_AI_PERSON_CONFIDENCE", "0.40")),
+                        num_threads=int(os.environ.get("LABKEEPER_AI_THREADS", "4")),
+                    )
+                    print(f"[labkeeper] 사람 판정: 별도 모델 사용 / {ai_person_model_dir}")
+                except Exception as person_exc:
+                    print(f"[labkeeper] 사람 전용 모델 로드 실패 — 통합 모델로 계속: {person_exc}")
+            else:
+                print(f"[labkeeper] 통합 90클래스 모델 단독 / {ai_model_dir}")
 
             # 아무도 AI 스트림을 안 볼 때 오버레이를 만드는 최소 간격(초).
             AI_IDLE_DRAW_INTERVAL_S = 1.0
             ai_last_draw = {"at": 0.0}
 
             def on_ai_result(snapshot, source_frame):
-                # 커스텀 모델 결과에서 person은 버린다 — 오탐이 3배라 신뢰할 수 없다.
-                # 물품 탐지만 남기고, 사람은 아래에서 순정 모델로 다시 판정한다.
-                detections = [d for d in snapshot.detections if d.class_name != "person"]
+                # 통합 모델은 사람·일상물체·실험실물품을 한 번에 본다. 따로 거를 게 없다.
+                # 별도 사람 모델을 쓰는 구성일 때만 person 을 버리고 그쪽에 맡긴다.
+                if ai_person_backend is None:
+                    detections = list(snapshot.detections)
+                else:
+                    detections = [d for d in snapshot.detections if d.class_name != "person"]
 
                 if ai_person_backend is not None:
                     try:

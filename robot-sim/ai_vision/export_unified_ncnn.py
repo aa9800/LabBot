@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import time
 from pathlib import Path
@@ -71,9 +72,28 @@ def main():
     print(f"입력   : {w}x{h}" + ("  (정사각형)" if w == h else "  (직사각형 — 레터박스 낭비 없음)"))
     print()
 
-    # ultralytics 의 imgsz 는 [세로, 가로] 순서다.
-    exported = model.export(format="ncnn", imgsz=[h, w], half=False)
+    # 이 저장소는 "바탕 화면/공부/피지컬ai" 처럼 한글이 든 경로에 있다. 변환에
+    # 쓰이는 pnnx 가 그 경로를 깨뜨려서(한글이 통째로 사라진 채 전달된다)
+    # "Parent directory ... does not exist" 로 죽는다. 그래서 ASCII 경로로
+    # 가중치를 복사해 거기서 변환하고, 결과만 가져온다.
+    work = Path(os.environ.get("LABBOT_DATA_ROOT", r"C:\labbot_datasets")) / "_export"
+    if work.exists():
+        shutil.rmtree(work)
+    work.mkdir(parents=True, exist_ok=True)
+    local_weights = work / "model.pt"
+    shutil.copy2(weights, local_weights)
+
+    prev_cwd = os.getcwd()
+    os.chdir(work)
+    try:
+        # ultralytics 의 imgsz 는 [세로, 가로] 순서다.
+        (work / "model_ncnn_model").mkdir(parents=True, exist_ok=True)
+        exported = YOLO(str(local_weights)).export(format="ncnn", imgsz=[h, w], half=False)
+    finally:
+        os.chdir(prev_cwd)
     src = Path(exported)
+    if not src.is_absolute():
+        src = work / src
     print(f"내보냄 : {src}")
 
     dst = EDGE / args.name
