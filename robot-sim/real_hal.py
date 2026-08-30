@@ -34,8 +34,10 @@ Yahboom 데모들이 Car_Run(70, 70)처럼 직접 쓰는 0~100 PWM 스케일과 
 이 프로젝트에서 고른 변환 공식이라는 점을 분명히 해둔다.
 """
 import os
+import statistics
 import threading
 import time
+from collections import deque
 
 import RPi.GPIO as GPIO
 import YB_Pcb_Car
@@ -45,6 +47,9 @@ from frame_broker import FrameBroker
 TRIG_PIN = 16
 ECHO_PIN = 18
 ECHO_TIMEOUT_S = 0.03  # 공식 데모와 동일 — 이 이상 걸리면 에코 없음으로 보고 포기
+# 중앙값을 낼 창 크기. 홀수여야 한다. 3이면 20Hz 기준 약 0.15초 뒤처지는 대신
+# 튄 판독 하나는 완전히 무시된다. 5로 키우면 더 안정적이지만 반응이 0.25초 늦다.
+MEDIAN_WINDOW = 3
 SOUND_SPEED_M_S = 340
 NO_OBSTACLE_CM = 999.0  # 다른 HAL들과 동일한 "장애물 없음" 값(OBSTACLE_STOP_DISTANCE=40보다 훨씬 큼)
 
@@ -128,6 +133,8 @@ class RealHAL:
         self._servo_dir = {}           # 채널 -> -1/0/+1, 누르고 있는 동안 계속 흐른다
         # 프레임을 받아 '최근 탐지 네모를 얹은 JPEG'를 돌려주는 함수. run_real이 건다.
         self._ai_overlay_encoder = None
+        # 초음파는 한 발씩 쏘면 값이 심하게 튄다. 최근 몇 발의 중앙값을 쓴다.
+        self._distance_history = deque(maxlen=MEDIAN_WINDOW)
 
         try:
             # 시작 자세는 중앙. 여기서 한 번 직접 보내고 서보 스레드의 '현재값'도
@@ -267,7 +274,27 @@ class RealHAL:
         )
 
     def read_ultrasonic(self):
-        """cm 단위 거리. 에코 타임아웃/측정 실패 시 NO_OBSTACLE_CM(다른 HAL과 동일한 관례) —
+        """cm 단위 거리. 최근 몇 번의 중앙값을 돌려준다.
+
+        HC-SR04 는 한 발씩 쏘면 값이 심하게 튄다. 같은 자리에서 실측한 연속
+        판독이 이랬다:
+
+            999.0  32.4  31.2  21.0  31.3  31.2  35.2  55.5  31.5  85.2
+
+        999 는 에코를 못 받은 것이고, 21/55/85 는 바닥이나 모서리에 빗맞은
+        것이다. 이 값을 그대로 회피 판단에 넣으면 아무것도 없는데 한 번 튄
+        판독에 멈춰 선다("문턱을 보고 안 간다"는 증상의 상당 부분이 이것이다).
+
+        중앙값은 튄 값 하나에 흔들리지 않는다 — [31, 21, 31] 의 중앙값은 31 이다.
+        새로 쏘는 건 매번 한 발뿐이라 측정 비용은 늘지 않고, 대신 판단이
+        MEDIAN_WINDOW 틱만큼(20Hz 기준 약 0.15초) 뒤처진다.
+        """
+        raw = self._read_ultrasonic_once()
+        self._distance_history.append(raw)
+        return statistics.median(self._distance_history)
+
+    def _read_ultrasonic_once(self):
+        """센서를 한 발 쏘고 그대로 돌려준다. 에코 타임아웃이면 NO_OBSTACLE_CM —
         -1을 그대로 돌려주면 controller.py가 '아주 가까운 장애물'로 오판해서 즉시 멈춘다."""
         GPIO.output(TRIG_PIN, GPIO.LOW)
         time.sleep(0.000002)
@@ -275,20 +302,25 @@ class RealHAL:
         time.sleep(0.000015)
         GPIO.output(TRIG_PIN, GPIO.LOW)
 
-        # 아래 두 루프는 에코 핀을 쉬지 않고 읽는 바쁜 대기다. 그대로 두면 측정하는
-        # 내내 GIL을 붙잡아 다른 스레드(웹의 서보 명령을 처리하는 HTTP 핸들러)가
-        # 굶는다. 그러면 명령이 제때 안 나가고 뭉쳐서 도착해 카메라가 부르르 떤다.
-        # sleep(0)은 지연을 거의 안 주면서 GIL만 놓아준다 — 측정 정확도는 그대로다.
+        # 여기서 sleep(0) 으로 GIL 을 놓아주면 안 된다. 아래 두 번째 루프는 에코
+        # 펄스의 '길이'를 재는 구간이라, 그 사이 다른 스레드가 끼어들면 그만큼
+        # 시간이 부풀려져 거리가 길게 나온다. 2026-08-30 에 그걸 넣었다가 판독이
+        # 통째로 망가졌다:
+        #
+        #     서비스 정지 상태   120/120 판독이 전부 15~20cm   (노이즈 0)
+        #     서비스 가동 상태   20 / 31 / 55 / 85 / 999 뒤죽박죽
+        #
+        # "문턱을 보고 안 간다"는 증상의 실제 원인이 이것이었다. 센서는 멀쩡했다.
+        # 굶김을 걱정했지만 30cm 짜리 에코는 1.7ms 뿐이라(20Hz 에서 3% 점유)
+        # 붙잡고 있어도 문제가 없다. 에코가 아예 없을 때만 30ms 를 쓴다.
         t_send = time.time()
         while not GPIO.input(ECHO_PIN):
             if time.time() - t_send > ECHO_TIMEOUT_S:
                 return NO_OBSTACLE_CM
-            time.sleep(0)
         t1 = time.time()
         while GPIO.input(ECHO_PIN):
             if time.time() - t1 > ECHO_TIMEOUT_S:
                 return NO_OBSTACLE_CM
-            time.sleep(0)
         t2 = time.time()
         return ((t2 - t1) * SOUND_SPEED_M_S / 2) * 100
 
