@@ -126,6 +126,8 @@ class RealHAL:
         self._servo_wake = threading.Event()
         self._servo_thread = None
         self._servo_dir = {}           # 채널 -> -1/0/+1, 누르고 있는 동안 계속 흐른다
+        # 프레임을 받아 '최근 탐지 네모를 얹은 JPEG'를 돌려주는 함수. run_real이 건다.
+        self._ai_overlay_encoder = None
 
         try:
             # 시작 자세는 중앙. 여기서 한 번 직접 보내고 서보 스레드의 '현재값'도
@@ -227,6 +229,20 @@ class RealHAL:
                             ".jpg", bgr_frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 50, int(self._cv2.IMWRITE_JPEG_OPTIMIZE), 0]
                         )
                         self._stream_server.set_camera_frame(jpeg.tobytes())
+
+                    # AI 오버레이는 예전에 추론이 끝난 프레임(8fps)에만 그렸다.
+                    # 그러면 네모뿐 아니라 화면 자체가 8fps 라 뚝뚝 끊긴다.
+                    # 이제 여기서 30fps 프레임마다 '가장 최근 탐지 결과'를 얹는다.
+                    # 네모는 최대 125ms 뒤처지지만 영상이 부드러워진다 — 실시간
+                    # 탐지 화면은 보통 이렇게 만든다.
+                    if (self._ai_overlay_encoder is not None
+                            and self._stream_server.ai_has_viewers()):
+                        try:
+                            ai_jpeg = self._ai_overlay_encoder(bgr_frame)
+                            if ai_jpeg:
+                                self._stream_server.set_ai_frame(ai_jpeg)
+                        except Exception as overlay_err:
+                            print(f"[RealHAL] AI 오버레이 실패(무시): {overlay_err}")
             except Exception as e:
                 print(f"[RealHAL] 카메라 캡처 실패: {e}")
                 time.sleep(0.2)  # 에러 시 CPU 폭주 방지 대기
@@ -446,6 +462,14 @@ class RealHAL:
     # 맞추기 위해 서보로 나가는 각도만 뒤집는다. 웹/텔레메트리가 쓰는 논리 각도
     # (pan 작을수록 화면상 왼쪽)는 그대로 유지된다.
     PAN_INVERT = True
+
+    def set_ai_overlay_encoder(self, fn):
+        """카메라 루프가 30fps 로 AI 오버레이를 만들 때 쓸 인코더를 등록한다.
+
+        fn(bgr_frame) -> jpeg bytes | None. 최근 탐지 결과를 얹어 돌려주면 된다.
+        None 을 돌려주면 그 프레임은 건너뛴다.
+        """
+        self._ai_overlay_encoder = fn
 
     def _servo_limits(self, channel):
         """서보 채널의 하드웨어 각도 범위. 팬은 반전돼 있어도 범위는 같다."""

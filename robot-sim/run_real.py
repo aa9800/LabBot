@@ -178,6 +178,21 @@ def main():
             # 실측: 85 에서 한 장 51KB 로 일반 스트림(24KB)의 2.1배라, 두 스트림을
             # 같이 켜면 브라우저가 MJPEG 두 개를 디코딩하느라 버거워한다.
             AI_JPEG_QUALITY = int(os.environ.get("LABKEEPER_AI_JPEG_QUALITY", "62"))
+            ai_latest_boxes = {"value": []}
+
+            def overlay_encoder(frame):
+                """카메라 루프(30fps)가 부르는 오버레이 인코더.
+
+                추론은 8fps 라 네모는 최대 125ms 뒤처지지만, 영상 자체는 30fps 로
+                흐른다. 예전에는 추론된 프레임에만 그려서 화면까지 8fps 였다.
+                """
+                boxes = ai_latest_boxes["value"]
+                ok, buf = cv2.imencode(
+                    ".jpg", draw_detections(frame, boxes),
+                    [int(cv2.IMWRITE_JPEG_QUALITY), AI_JPEG_QUALITY,
+                     int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
+                )
+                return buf.tobytes() if ok else None
 
             def on_ai_result(snapshot, source_frame):
                 # 통합 모델은 사람·일상물체·실험실물품을 한 번에 본다. 따로 거를 게 없다.
@@ -213,16 +228,21 @@ def main():
                     )
                     return buf.tobytes() if ok else None
 
+                # 보는 사람이 있으면 카메라 루프가 30fps 로 오버레이를 만든다
+                # (아래 set_ai_overlay_encoder). 여기서는 아무도 안 볼 때
+                # /ai/snapshot 이 너무 낡지 않게 1초에 한 장만 만들어 둔다.
                 now_draw = time.time()
                 fresh_jpeg = None
-                if (stream_server.ai_has_viewers()
-                        or now_draw - ai_last_draw["at"] >= AI_IDLE_DRAW_INTERVAL_S):
+                if (not stream_server.ai_has_viewers()
+                        and now_draw - ai_last_draw["at"] >= AI_IDLE_DRAW_INTERVAL_S):
                     ai_last_draw["at"] = now_draw
                     fresh_jpeg = encode_annotated()
                     if fresh_jpeg:
                         stream_server.set_ai_frame(fresh_jpeg)
 
                 ai_corrected["detections"] = [_asdict(d) for d in detections]
+                # 카메라 루프가 매 프레임 얹을 수 있게 최신 탐지를 넘겨둔다.
+                ai_latest_boxes["value"] = detections
 
                 people = [item for item in detections if item.class_name == "person"]
                 now = time.time()
@@ -257,6 +277,8 @@ def main():
                 result_callback=on_ai_result,
             )
             ai_worker.start()
+            # 카메라 루프가 30fps 로 오버레이를 만들도록 연결한다.
+            hal.set_ai_overlay_encoder(overlay_encoder)
             ai_runtime_status.update({"mode": "shadow", "model_dir": ai_model_dir})
             print(f"[labkeeper] 로컬 Physical AI 시작: NCNN Shadow Mode / {ai_model_dir}")
         except Exception as exc:
