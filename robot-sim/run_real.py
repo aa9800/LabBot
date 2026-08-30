@@ -173,6 +173,12 @@ def main():
             AI_IDLE_DRAW_INTERVAL_S = 1.0
             ai_last_draw = {"at": 0.0}
 
+            # 품질 85 는 카메라가 320x240 이던 시절 2배 확대해서 보느라 올려둔
+            # 값이다. 지금은 640x480 원본을 그대로 쓰므로 확대가 없고 85 는 과하다.
+            # 실측: 85 에서 한 장 51KB 로 일반 스트림(24KB)의 2.1배라, 두 스트림을
+            # 같이 켜면 브라우저가 MJPEG 두 개를 디코딩하느라 버거워한다.
+            AI_JPEG_QUALITY = int(os.environ.get("LABKEEPER_AI_JPEG_QUALITY", "62"))
+
             def on_ai_result(snapshot, source_frame):
                 # 통합 모델은 사람·일상물체·실험실물품을 한 번에 본다. 따로 거를 게 없다.
                 # 별도 사람 모델을 쓰는 구성일 때만 person 을 버리고 그쪽에 맡긴다.
@@ -203,7 +209,7 @@ def main():
                     """박스를 그려 넣은 JPEG 한 장. 실패하면 None."""
                     ok, buf = cv2.imencode(
                         ".jpg", draw_detections(source_frame, detections),
-                        [int(cv2.IMWRITE_JPEG_QUALITY), 85, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
+                        [int(cv2.IMWRITE_JPEG_QUALITY), AI_JPEG_QUALITY, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
                     )
                     return buf.tobytes() if ok else None
 
