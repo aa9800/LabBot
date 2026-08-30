@@ -117,6 +117,18 @@ class Odometry:
                     "heading_deg": round(self.heading % 360.0, 1),
                     "last_fix": self._last_fix}
 
+    def nudge_heading(self, delta_deg, note="marker"):
+        """방향만 조금 고친다. 위치는 건드리지 않는다.
+
+        밖에서 self.heading 을 직접 더하면 apply() 가 도는 중에 끼어들어
+        값이 반쯤 갱신된 상태로 읽힐 수 있다. 락 안에서 처리한다.
+        """
+        with self._lock:
+            self.heading += float(delta_deg)
+            self._last_fix = {"at": time.strftime("%H:%M:%S"), "how": note,
+                              "delta_deg": round(float(delta_deg), 1)}
+        return self.pose()
+
     def reset(self, x=0.0, y=0.0, heading=0.0, note="reset"):
         with self._lock:
             self.x, self.y, self.heading = float(x), float(y), float(heading)

@@ -174,7 +174,13 @@ def load_map(env=None):
 
 
 def save_map(data, env=None):
-    env = _env(data.get("env") if isinstance(data, dict) else None or env)
+    # 지도 안에 적힌 env 를 우선하되, 없으면 인자로 받은 것을 쓴다.
+    #
+    # 예전에는 `data.get("env") if isinstance(data, dict) else None or env` 였는데,
+    # 삼항 연산자가 먼저 묶여서 dict 를 넘기면 env 인자가 통째로 무시됐다.
+    # save_map(d, env="isaac") 를 불러도 d 에 env 가 없으면 real.json 을
+    # 덮어쓰는 버그였다.
+    env = _env((data.get("env") if isinstance(data, dict) else None) or env)
     data = dict(data, env=env)
     MAP_DIR.mkdir(parents=True, exist_ok=True)
     map_path(env).write_text(json.dumps(data, ensure_ascii=False, indent=2),
@@ -570,6 +576,23 @@ class PatrolRunner:
 
         mx, my = markers[int(best["id"])]
         pose = self.odometry.pose()
+        believed = math.hypot(mx - pose["x_cm"], my - pose["y_cm"])
+
+        # 믿고 있는 위치가 마커 바로 위면 방향을 못 구한다. 길이가 0 에 가까운
+        # 벡터의 각도는 노이즈일 뿐인데, 그걸로 heading 을 덮어쓰면 엉뚱한
+        # 방향으로 틀어진다.
+        if believed < self.MARKER_FIX_MIN_CM:
+            return False
+
+        # 믿는 거리와 실제로 본 거리가 크게 다르면, 위치 자체가 많이 틀렸다는
+        # 뜻이다. 그 위치를 기준으로 계산한 방향은 믿을 수 없다. 이 검사가
+        # 없으면 위치 오차가 heading 오차로 옮겨 붙는다.
+        observed = float(best["distance_cm"])
+        if abs(believed - observed) > max(40.0, observed * 0.4):
+            self._log(f"마커 {best['id']}: 믿는 거리 {believed:.0f}cm vs 실제 "
+                      f"{observed:.0f}cm — 위치가 많이 틀려 보정을 건너뛴다")
+            return False
+
         phi = math.degrees(math.atan2(my - pose["y_cm"], mx - pose["x_cm"]))
         bearing = bearing_of(best, self._cam_pan())
         want = phi + bearing
@@ -581,7 +604,7 @@ class PatrolRunner:
             self._log(f"마커 {best['id']} 보정 {delta:+.1f}도는 너무 커서 무시한다")
             return False
 
-        self.odometry.heading += delta
+        self.odometry.nudge_heading(delta)
         self._marker_fixes += 1
         self._log(f"마커 {best['id']}({best['distance_cm']:.0f}cm)로 방향 보정 "
                   f"{delta:+.1f}도 -> {self.odometry.pose()['heading_deg']:.1f}도")
@@ -761,7 +784,7 @@ class PatrolRunner:
                 # 사람이면 기다린다. 비키면 그대로 이어서 간다.
                 if self._person_ahead() and self._wait_for_person():
                     continue
-                # 물건이면 옆으로 비켜설 수도 있지만 기본은 끄여 있다. 비켜서기가
+                # 물건이면 옆으로 비켜설 수도 있지만 기본은 꺼져 있다. 비켜서기가
                 # 순찰 모양을 망가뜨리기 때문이다(위 AVOID_DEFAULT 설명).
                 if self.avoid_enabled and detours < MAX_DETOURS and self._detour():
                     detours += 1

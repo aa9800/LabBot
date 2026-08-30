@@ -552,6 +552,19 @@ def main():
     # 지워버린다. 실제로 이것 때문에 순찰이 "소리만 나고 거의 안 움직였다".
     motion_owner = {"name": None}
 
+    # 바퀴 잠금.
+    #
+    # 로봇이 충전 케이블에 묶여 있거나 책상 위에 있을 때, 실수로든 자동
+    # 순찰 타이머로든 움직이면 케이블이 뽑히거나 떨어진다. 사람이 자리를
+    # 비운 동안에는 아예 못 움직이게 잠가둔다.
+    #
+    # 카메라·센서·AI 는 그대로 돈다. 막는 것은 바퀴뿐이다.
+    motion_lock = {"locked": os.environ.get("LABKEEPER_MOTION_LOCK") == "1",
+                   "reason": os.environ.get("LABKEEPER_MOTION_LOCK_REASON", "")}
+
+    def motion_blocked():
+        return motion_lock["locked"]
+
     class WheelLease:
         """with 블록 동안 바퀴 소유권을 가져간다."""
 
@@ -875,7 +888,26 @@ def main():
         person_fn=person_ahead,
     )
 
+    # 바퀴를 쓰는 명령들. 잠겨 있으면 여기서 전부 막는다.
+    MOTION_ACTIONS = {"start", "deliver", "dock", "goto", "testdrive", "testturn",
+                      "autotrim", "calibrate", "refine"}
+
     def on_patrol(action, params):
+        if action in MOTION_ACTIONS and motion_blocked():
+            return {"error": "바퀴가 잠겨 있다"
+                             + (f" ({motion_lock['reason']})" if motion_lock["reason"] else "")
+                             + ". /patrol/unlock 으로 풀 수 있다."}
+        if action == "lock":
+            motion_lock["locked"] = params.get("on", "1") != "0"
+            motion_lock["reason"] = params.get("reason", motion_lock["reason"])
+            if motion_lock["locked"]:
+                patrol.stop()
+                hal.stop()
+            return dict(motion_lock)
+        if action == "unlock":
+            motion_lock["locked"] = False
+            motion_lock["reason"] = ""
+            return dict(motion_lock)
         # 실물 로봇과 아이작 심은 서로 다른 공간이다. 웹이 어느 쪽인지 알려준다.
         env = params.get("env")
         if action == "start":
@@ -889,7 +921,10 @@ def main():
             motion_owner["name"] = None
             return r
         if action == "status":
-            return patrol.status()
+            st = patrol.status()
+            st["motion_locked"] = motion_lock["locked"]
+            st["motion_lock_reason"] = motion_lock["reason"]
+            return st
         if action == "map":
             return load_map(env)
         if action == "maps":
@@ -1300,7 +1335,9 @@ def main():
                 control_source["value"] = "manual"
                 distance = measure_distance()  # 센서를 실제로 쏘는 유일한 지점
                 stale = (time.time() - cmd_time) > MANUAL_COMMAND_MAX_AGE_SECONDS
-                if motion_owner["name"]:
+                if motion_lock["locked"]:
+                    hal.stop()    # 잠겨 있다 — 어떤 명령도 바퀴로 내려보내지 않는다
+                elif motion_owner["name"]:
                     pass          # 자율 주행이 바퀴를 잡고 있다 — 건드리지 않는다
                 elif stale:
                     hal.stop()  # 3초 동안 웹에서 조이스틱 신호가 없으면 자동 정지
