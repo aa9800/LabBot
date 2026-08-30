@@ -247,10 +247,17 @@
       return;
     }
     const running = !!st.running;
-    setBadge(
-      PHASE_LABEL[st.phase] || st.phase || "대기",
-      running ? "badge-st-progress" : "badge-st-open"
-    );
+    // 바퀴가 잠겨 있으면 그걸 먼저 알린다. 이게 안 보이면 "순찰 버튼을 눌러도
+    // 아무 일이 없다"로만 보이고 이유를 알 수 없다.
+    if (st.motion_locked) {
+      setBadge("바퀴 잠김" + (st.motion_lock_reason ? " · " + st.motion_lock_reason : ""),
+               "badge-st-open");
+    } else {
+      setBadge(
+        PHASE_LABEL[st.phase] || st.phase || "대기",
+        running ? "badge-st-progress" : "badge-st-open"
+      );
+    }
 
     if (Number.isFinite(st.x_cm) && Number.isFinite(st.y_cm)) {
       poseText.textContent =
@@ -270,7 +277,13 @@
     legText.textContent = running
       ? (st.leg || 0) + "/" + (st.legs || "?") + " 지점 · " + lapText
       : (st.phase === "done" ? "순찰 완료" : "—");
-    if (st.message) msgEl.textContent = st.message;
+    if (st.motion_locked) {
+      msgEl.textContent = "바퀴가 잠겨 있어 로봇이 움직이지 않습니다"
+        + (st.motion_lock_reason ? ` (${st.motion_lock_reason})` : "")
+        + " · 관리자가 잠금을 풀면 순찰과 배달이 다시 동작합니다.";
+    } else if (st.message) {
+      msgEl.textContent = st.message;
+    }
 
     if (env === "isaac" && autoSel) {
       if (st.running && st.laps === 0 && st.control_mode === "patrol") {

@@ -186,7 +186,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.history.replaceState({}, "", window.location.pathname);
     if (!loan) return;
     const item = loan.items || {};
-    const consumable = (item.item_type || "") === "consumable";
+    // item_type 은 DB 에서 대문자다(CONSUMABLE/EQUIPMENT/...). 직접 문자열을
+    // 비교하면 절대 안 맞는다 - 다른 화면들이 쓰는 헬퍼를 그대로 쓴다.
+    const consumable = window.LabBotRentals.isConsumable(item);
     openGuideModal({ loan, mode: consumable ? "use" : "pickup", qty: 1 });
   }
 

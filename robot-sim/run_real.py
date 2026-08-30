@@ -924,6 +924,14 @@ def main():
             st = patrol.status()
             st["motion_locked"] = motion_lock["locked"]
             st["motion_lock_reason"] = motion_lock["reason"]
+            # 순찰이 안 돌 때도 지금 위치를 실어준다. 그래야 웹 지도에 로봇이
+            # 늘 보인다 - 예전에는 순찰 중에만 좌표가 채워져서, 대기 중에는
+            # 로봇이 지도에서 사라졌다.
+            if not st.get("running"):
+                pose = odometry.pose()
+                st["x_cm"] = pose["x_cm"]
+                st["y_cm"] = pose["y_cm"]
+                st["heading_deg"] = pose["heading_deg"]
             return st
         if action == "map":
             return load_map(env)
@@ -1300,6 +1308,15 @@ def main():
             print(f"[deliver] 실패: {e}")
 
     def start_delivery(item_id, from_home=True, return_after=True):
+        """배달 시작. 여기서도 잠금을 본다.
+
+        /patrol/deliver 만 막으면 새는 구멍이 있다 - 웹에서 대여를 걸면
+        /guide/start 로 들어와 이 함수를 직접 부른다. 잠금은 바퀴를 쓰는
+        모든 입구에서 확인해야 의미가 있다.
+        """
+        if motion_blocked():
+            return {"error": "바퀴가 잠겨 있다"
+                             + (f" ({motion_lock['reason']})" if motion_lock["reason"] else "")}
         """배달을 시작한다. 곧바로 돌아오고 실제 주행은 배경에서 돈다."""
         if delivery["running"]:
             return {"error": f"이미 물품 {delivery['item_id']} 배달 중"}
