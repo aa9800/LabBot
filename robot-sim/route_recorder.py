@@ -183,13 +183,21 @@ class RoutePlayer:
     #
     # 그래서 힘은 세게(60) 주되 시간을 짧게 끊는다. 한 펄스에 약 2.7도씩 도므로
     # 3도 허용오차 안으로 들어올 수 있다.
-    ALIGN_ANGLE_TOL = 3.0      # 이 각도 안이면 방향은 맞은 것으로 본다
-    ALIGN_DIST_TOL = 6.0       # 이 거리 안이면 위치도 맞은 것으로 본다(cm)
+    ALIGN_ANGLE_TOL = 4.0      # 이 각도 안이면 맞은 것으로 본다
     ALIGN_TURN_SPEED = 60.0    # 이보다 약하면 정지마찰을 못 이긴다
     ALIGN_TURN_PULSE_S = 0.10  # 한 펄스 약 2.7도
-    ALIGN_MOVE_SPEED = 45.0    # 직진도 같은 이유로 너무 낮으면 안 움직인다
-    ALIGN_MOVE_PULSE_S = 0.12
-    ALIGN_MAX_TRIES = 16
+    ALIGN_MAX_TRIES = 6        # 짧게 끝낸다 — 못 맞추면 다음 구간에서 다시 만난다
+
+    # 거리는 맞추지 않고 기록만 한다.
+    #
+    # 처음에는 각도와 거리를 둘 다 녹화 때 값으로 되돌리려 했는데 수렴하지
+    # 않았다. 전진하면 각도가 틀어지고 회전하면 거리가 바뀌는데, 이 로봇은
+    # 한 번에 1.4cm(speed 45, 0.12s) / 2.7도(turn 60, 0.10s) 단위로만 움직인다.
+    # 13cm 를 좁히려면 열 번 가까이 필요하고 그때마다 각도가 어긋나서, 16회를
+    # 헤매다 포기했다. 그 시간 동안 로봇은 제자리에서 돌기만 했다.
+    #
+    # 드리프트의 주범은 각도다. 방향이 틀어지면 다음 구간 내내 벌어지지만
+    # 거리 몇 cm 는 그 자리에서 끝난다. 그래서 각도만 맞추고 거리는 남겨둔다.
 
     def __init__(self, hal, distance_fn=None, stop_distance=10.0, on_marker=None,
                  speed_cap_fn=None, marker_fn=None):
@@ -281,7 +289,7 @@ class RoutePlayer:
         seen = self._see(want_id)
         if seen is None:
             # 안 보이면 좌우로 조금씩 돌며 찾는다. 재생 중 틀어졌을 때를 대비한다.
-            for i in range(6):
+            for i in range(4):
                 if self._abort.is_set():
                     break
                 self._nudge(0, self.ALIGN_TURN_SPEED * (1 if i % 2 == 0 else -1),
@@ -315,23 +323,12 @@ class RoutePlayer:
                 self._nudge(0, turn, self.ALIGN_TURN_PULSE_S * pulses)
                 continue
 
-            if abs(d_dist) > self.ALIGN_DIST_TOL:
-                # 지금이 더 멀면 앞으로, 더 가까우면 뒤로.
-                speed = self.ALIGN_MOVE_SPEED if d_dist > 0 else -self.ALIGN_MOVE_SPEED
-                if speed > 0 and self.distance_fn is not None:
-                    d = self.distance_fn()
-                    if d is not None and d < self.stop_distance:
-                        break   # 앞이 막혔으면 더 못 간다
-                pulses = max(1, min(4, int(abs(d_dist) / 5.0)))
-                self._nudge(speed, 0, self.ALIGN_MOVE_PULSE_S * pulses)
-                continue
-
             entry["result"] = "aligned"
             entry["final"] = [seen["distance_cm"], seen["angle_deg"]]
             self.align_log.append(entry)
-            print(f"[route] 마커 {want_id} 정렬 완료 · "
-                  f"{seen['distance_cm']:.1f}cm {seen['angle_deg']:+.1f}도 "
-                  f"(목표 {want_dist:.1f}cm {want_angle:+.1f}도, {entry['tries']}회)")
+            print(f"[route] 마커 {want_id} 방향 정렬 · "
+                  f"{seen['angle_deg']:+.1f}도 (목표 {want_angle:+.1f}도, {entry['tries']}회) · "
+                  f"거리차 {d_dist:+.1f}cm(보정 안 함)")
             return
 
         entry["result"] = "gave_up"
