@@ -172,11 +172,26 @@ class RoutePlayer:
     어긋나므로, 회피는 상위(PatrolController)에 맡기고 여기서는 대기만 한다.
     """
 
-    def __init__(self, hal, distance_fn=None, stop_distance=10.0, on_marker=None):
+    # 마커 보정 파라미터. 녹화 때와 지금 보이는 값의 차이를 이 안에서 줄인다.
+    ALIGN_ANGLE_TOL = 3.0      # 이 각도 안이면 방향은 맞은 것으로 본다
+    ALIGN_DIST_TOL = 6.0       # 이 거리 안이면 위치도 맞은 것으로 본다(cm)
+    ALIGN_TURN_SPEED = 30.0    # 보정 회전 속도 — 느려야 넘어가지 않는다
+    ALIGN_MOVE_SPEED = 35.0
+    ALIGN_MAX_TRIES = 12       # 무한히 흔들리지 않도록 상한을 둔다
+
+    def __init__(self, hal, distance_fn=None, stop_distance=10.0, on_marker=None,
+                 speed_cap_fn=None, marker_fn=None):
         self.hal = hal
         self.distance_fn = distance_fn
         self.stop_distance = float(stop_distance)
         self.on_marker = on_marker
+        # 거리에 따라 속도를 줄이는 함수. 수동 주행·자동순찰과 같은 것을 쓴다.
+        # 없으면 녹화된 속도를 그대로 내보내는데, 그러면 벽까지 전속으로 달리다
+        # 임계값에서 급정거해 관성으로 밀고 들어간다(실측: 4.6cm 까지 박았다).
+        self.speed_cap_fn = speed_cap_fn
+        # 지금 보이는 마커 목록을 돌려주는 함수. 없으면 보정 없이 재생만 한다.
+        self.marker_fn = marker_fn
+        self.align_log = []
         self._abort = threading.Event()
         self._lock = threading.Lock()
         self._state = {"playing": False, "index": 0, "total": 0, "name": None}
@@ -202,7 +217,7 @@ class RoutePlayer:
                     self._state["index"] = i
 
                 if "marker" in seg:
-                    # 위치 확인 지점. 실제 보정은 상위에서 처리한다.
+                    self._align_to_marker(seg, tick_s)
                     if self.on_marker:
                         try:
                             self.on_marker(seg)
@@ -216,6 +231,97 @@ class RoutePlayer:
             with self._lock:
                 self._state["playing"] = False
         return self.status()
+
+    def _see(self, marker_id):
+        """지금 보이는 마커 중 해당 ID 를 찾는다. 없으면 None."""
+        if self.marker_fn is None:
+            return None
+        try:
+            for m in self.marker_fn() or []:
+                if int(m.get("id", -1)) == int(marker_id):
+                    return m
+        except Exception as e:
+            print(f"[route] 마커 조회 실패: {e}")
+        return None
+
+    def _nudge(self, speed, turn, seconds):
+        """짧게 움직이고 멈춘다. 보정은 조금씩 여러 번이 안전하다."""
+        self.hal.set_motion(speed, turn)
+        time.sleep(seconds)
+        self.hal.stop()
+        time.sleep(0.25)   # 관성이 멎고 카메라가 안정될 때까지 기다린다
+
+    def _align_to_marker(self, seg, tick_s):
+        """녹화 때 이 지점에서 봤던 마커 값으로 지금 위치를 되돌린다.
+
+        녹화 때  마커 1번 · 60cm · +3도
+        지금     마커 1번 · 75cm · -8도
+          -> 11도 오른쪽으로 돌고 15cm 앞으로 가면 그때 자리에 선다.
+
+        이것이 티치 앤 리피트의 오차를 끊어주는 지점이다. 여기서 맞춰두면
+        다음 구간은 다시 깨끗한 상태에서 시작한다.
+        """
+        want_id = seg.get("marker")
+        want_dist = float(seg.get("distance_cm", 0))
+        want_angle = float(seg.get("angle_deg", 0))
+        entry = {"marker": want_id, "want": [want_dist, want_angle], "tries": 0}
+
+        seen = self._see(want_id)
+        if seen is None:
+            # 안 보이면 좌우로 조금씩 돌며 찾는다. 재생 중 틀어졌을 때를 대비한다.
+            for i in range(6):
+                if self._abort.is_set():
+                    break
+                self._nudge(0, self.ALIGN_TURN_SPEED * (1 if i % 2 == 0 else -1), 0.18 * (i + 1))
+                seen = self._see(want_id)
+                if seen is not None:
+                    break
+        if seen is None:
+            entry["result"] = "not_found"
+            self.align_log.append(entry)
+            print(f"[route] 마커 {want_id} 을(를) 못 찾음 — 보정 없이 진행")
+            return
+
+        entry["found"] = [seen["distance_cm"], seen["angle_deg"]]
+        for _ in range(self.ALIGN_MAX_TRIES):
+            if self._abort.is_set():
+                break
+            seen = self._see(want_id)
+            if seen is None:
+                break
+            d_angle = seen["angle_deg"] - want_angle
+            d_dist = seen["distance_cm"] - want_dist
+            entry["tries"] += 1
+
+            if abs(d_angle) > self.ALIGN_ANGLE_TOL:
+                # 마커가 오른쪽에 더 치우쳐 보이면 오른쪽으로 돌아야 가운데로 온다.
+                turn = self.ALIGN_TURN_SPEED if d_angle > 0 else -self.ALIGN_TURN_SPEED
+                self._nudge(0, turn, min(0.30, 0.012 * abs(d_angle) + 0.06))
+                continue
+
+            if abs(d_dist) > self.ALIGN_DIST_TOL:
+                # 지금이 더 멀면 앞으로, 더 가까우면 뒤로.
+                speed = self.ALIGN_MOVE_SPEED if d_dist > 0 else -self.ALIGN_MOVE_SPEED
+                if speed > 0 and self.distance_fn is not None:
+                    d = self.distance_fn()
+                    if d is not None and d < self.stop_distance:
+                        break   # 앞이 막혔으면 더 못 간다
+                self._nudge(speed, 0, min(0.35, 0.006 * abs(d_dist) + 0.08))
+                continue
+
+            entry["result"] = "aligned"
+            entry["final"] = [seen["distance_cm"], seen["angle_deg"]]
+            self.align_log.append(entry)
+            print(f"[route] 마커 {want_id} 정렬 완료 · "
+                  f"{seen['distance_cm']:.1f}cm {seen['angle_deg']:+.1f}도 "
+                  f"(목표 {want_dist:.1f}cm {want_angle:+.1f}도, {entry['tries']}회)")
+            return
+
+        entry["result"] = "gave_up"
+        if seen:
+            entry["final"] = [seen["distance_cm"], seen["angle_deg"]]
+        self.align_log.append(entry)
+        print(f"[route] 마커 {want_id} 정렬 미완 — {entry['tries']}회 시도 후 진행")
 
     def _run_segment(self, seg, tick_s):
         speed = float(seg.get("speed", 0))
@@ -232,7 +338,16 @@ class RoutePlayer:
                     time.sleep(tick_s)
                     continue
 
-            self.hal.set_motion(speed, turn)
+            drive_speed = speed
+            if speed > 0 and self.speed_cap_fn is not None and self.distance_fn is not None:
+                cap = self.speed_cap_fn(self.distance_fn())
+                drive_speed = min(speed, cap)
+                if drive_speed <= 0:
+                    # 감속 곡선이 0 을 주면 정지선 안이다. 시간을 세지 않고 기다린다.
+                    self.hal.stop()
+                    time.sleep(tick_s)
+                    continue
+            self.hal.set_motion(drive_speed, turn)
             step = min(tick_s, remaining)
             time.sleep(step)
             remaining -= step

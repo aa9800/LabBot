@@ -643,6 +643,10 @@ def main():
         hal,
         distance_fn=cached_distance,
         stop_distance=OBSTACLE_STOP_DISTANCE,
+        speed_cap_fn=speed_cap_for_distance,
+        # 재생 중 마커를 보고 위치를 되돌리는 데 쓴다. 마커 인식기가 없으면
+        # 보정 없이 녹화한 구간만 재생한다.
+        marker_fn=(lambda: marker_locator.find(hal.capture_frame())) if marker_locator else None,
     )
     route_play_thread = {"t": None}
 
