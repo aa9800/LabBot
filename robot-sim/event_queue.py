@@ -19,21 +19,138 @@
 
 용량 제한
 ---------
-메모리만 쓰므로 상한을 둔다. 중계기가 오래 꺼져 있으면 오래된 것부터 밀려나지만,
+상한을 둔다. 중계기가 오래 꺼져 있으면 오래된 것부터 밀려나지만,
 `run_logger.py`가 같은 내용을 JSONL로 디스크에 남기고 있어서 원본은 보존된다.
+
+디스크에 남기는 이유
+------------------
+예전에는 메모리에만 있었다. 그러면 로봇이 재부팅될 때 seq가 1로 돌아가는데,
+PC 중계기의 커서는 이전 값(예: 236)을 그대로 들고 있다. 중계기는 seq > 236 인
+것만 가져가므로, 재부팅 뒤에 생긴 seq 1,2,3...은 영원히 전송되지 않는다.
+유실이 조용히 일어나고 로그에도 안 남는다.
+
+그래서 이벤트와 seq를 디스크에 남기고 시작할 때 되읽는다. 이벤트는 안전
+사건이라 자주 생기지 않으므로(쿨다운이 걸려 있다) 디스크 쓰기 비용은 문제가
+되지 않는다. JSONL 이라 마지막 줄이 쓰다 만 상태여도 그 줄만 버리면 된다.
 """
+import json
+import os
 import threading
 import time
 from collections import deque
+from pathlib import Path
 
 MAX_EVENTS = 500        # 약 20초 쿨다운 기준이면 며칠치 안전 이벤트가 들어간다
 MAX_SNAPSHOTS = 20      # 증거 사진은 용량이 커서 최근 것만 들고 있는다 (약 5~10MB)
+
+# 상태를 남길 위치. 서비스가 pi 계정으로 도니 홈 아래에 둔다.
+STATE_DIR = Path(os.environ.get(
+    "LABKEEPER_STATE_DIR",
+    str(Path(__file__).resolve().parent / "state"),
+))
+EVENTS_FILE = STATE_DIR / "events.jsonl"
+SNAPSHOT_DIR = STATE_DIR / "snapshots"
+# 줄이 이만큼 쌓이면 현재 큐 내용만 남기고 다시 쓴다(압축).
+COMPACT_AT_LINES = MAX_EVENTS * 4
 
 _lock = threading.Lock()
 _events = deque(maxlen=MAX_EVENTS)
 _snapshots = {}                    # seq -> JPEG bytes
 _snapshot_order = deque(maxlen=MAX_SNAPSHOTS)
 _next_seq = 1
+_lines_written = 0
+_persist_ok = True                 # 디스크가 막혀도 로봇은 계속 돌아야 한다
+
+
+def _append_line(event):
+    """이벤트 한 줄을 파일에 덧붙인다. 실패해도 예외를 밖으로 내지 않는다."""
+    global _lines_written, _persist_ok
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with EVENTS_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + chr(10))
+        _lines_written += 1
+        if _lines_written >= COMPACT_AT_LINES:
+            _compact()
+    except Exception as e:
+        if _persist_ok:
+            print(f"[event_queue] 디스크 기록 실패(메모리로만 계속): {e}")
+            _persist_ok = False
+
+
+def _compact():
+    """파일에 현재 큐 내용만 남긴다. 원자적으로 바꿔치기한다."""
+    global _lines_written
+    tmp = EVENTS_FILE.with_suffix(".jsonl.tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        for e in _events:
+            f.write(json.dumps(e, ensure_ascii=False) + chr(10))
+    os.replace(tmp, EVENTS_FILE)
+    _lines_written = len(_events)
+
+
+def _save_snapshot(seq, data):
+    try:
+        SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        (SNAPSHOT_DIR / f"{seq}.jpg").write_bytes(data)
+    except Exception:
+        pass                       # 사진은 없어도 이벤트 자체는 살아야 한다
+
+
+def _drop_snapshot(seq):
+    try:
+        (SNAPSHOT_DIR / f"{seq}.jpg").unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _load():
+    """부팅 시 디스크에서 이벤트와 seq를 되읽는다."""
+    global _next_seq, _lines_written
+    if not EVENTS_FILE.exists():
+        return
+    loaded = []
+    try:
+        with EVENTS_FILE.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    loaded.append(json.loads(line))
+                except json.JSONDecodeError:
+                    # 쓰다 만 마지막 줄일 수 있다. 그 줄만 버리고 넘어간다.
+                    continue
+    except Exception as e:
+        print(f"[event_queue] 상태 파일을 못 읽었다(새로 시작): {e}")
+        return
+
+    if not loaded:
+        return
+    for e in loaded[-MAX_EVENTS:]:
+        _events.append(e)
+    _next_seq = max(e.get("seq", 0) for e in loaded) + 1
+    _lines_written = len(loaded)
+
+    # 남아 있는 증거 사진을 최근 것부터 다시 붙인다.
+    if SNAPSHOT_DIR.is_dir():
+        have = sorted(
+            (int(p.stem) for p in SNAPSHOT_DIR.glob("*.jpg") if p.stem.isdigit()),
+        )
+        for seq in have[-MAX_SNAPSHOTS:]:
+            try:
+                _snapshots[seq] = (SNAPSHOT_DIR / f"{seq}.jpg").read_bytes()
+                _snapshot_order.append(seq)
+            except Exception:
+                pass
+        for seq in have[:-MAX_SNAPSHOTS]:
+            _drop_snapshot(seq)
+
+    print(f"[event_queue] 디스크에서 복원: 이벤트 {len(_events)}건 · "
+          f"사진 {len(_snapshots)}장 · 다음 seq {_next_seq}")
+
+
+_load()
 
 
 def push(kind, payload=None, snapshot_bytes=None):
@@ -47,19 +164,25 @@ def push(kind, payload=None, snapshot_bytes=None):
     with _lock:
         seq = _next_seq
         _next_seq += 1
-        _events.append({
+        event = {
             "seq": seq,
             "kind": kind,
             "ts": time.time(),
             "payload": payload or {},
             "has_snapshot": snapshot_bytes is not None,
-        })
+        }
+        _events.append(event)
         if snapshot_bytes is not None:
             # maxlen에 걸려 밀려나는 seq의 사진은 같이 지워서 메모리 누수를 막는다
             if len(_snapshot_order) == _snapshot_order.maxlen:
-                _snapshots.pop(_snapshot_order[0], None)
+                dropped = _snapshot_order[0]
+                _snapshots.pop(dropped, None)
+                _drop_snapshot(dropped)
             _snapshot_order.append(seq)
             _snapshots[seq] = snapshot_bytes
+            _save_snapshot(seq, snapshot_bytes)
+        # 재부팅해도 seq가 1로 돌아가지 않도록 디스크에 남긴다.
+        _append_line(event)
         return seq
 
 
@@ -84,4 +207,7 @@ def stats():
             "oldest_seq": _events[0]["seq"] if _events else None,
             "latest_seq": _next_seq - 1,
             "snapshots_held": len(_snapshots),
+            # 디스크 기록이 막히면 재부팅 시 seq가 되감기므로 중계기가 알아야 한다.
+            "persisted": _persist_ok,
+            "state_dir": str(STATE_DIR),
         }

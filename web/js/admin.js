@@ -697,6 +697,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   // ---------- Robot Console (카메라 스냅샷 + 수동조작) ----------
   const robotCameraImg = document.getElementById("robotCameraImg");
   const robotCameraStatus = document.getElementById("robotCameraStatus");
+  // 실측(2026-08-30, 2.4GHz 전환 후): 평소 0.02~0.08초인데 가끔 1.1초까지 튄다.
+  // 600ms 로는 그때마다 끊긴 것으로 오인한다.
+  const TELEMETRY_TIMEOUT_MS = 2000;
+  const TELEMETRY_MISS_LIMIT = 3;      // 연속 3회(=3초) 놓쳐야 진짜 끊김으로 본다
+  let telemetryMisses = 0;
+
   const robotModeBadge = document.getElementById("robotModeBadge");
   const robotAutoBtn = document.getElementById("robotAutoBtn");
   const driveButtons = document.querySelectorAll("[data-drive]");
@@ -829,7 +835,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function refreshRobotModeBadge() {
     try {
       // 1. 로컬 실시간 텔레메트리 최우선 반영
-      const telemetry = await window.LabBotRobotConsole.fetchTelemetry(600);
+      const telemetry = await window.LabBotRobotConsole.fetchTelemetry(TELEMETRY_TIMEOUT_MS);
       if (telemetry && telemetry.mode) {
         const isManual = telemetry.mode === "manual";
         robotModeBadge.className = `badge ${isManual ? "badge-st-in_progress" : "badge-st-resolved"}`;
@@ -1580,8 +1586,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (robotHudOverlay) robotHudOverlay.style.display = "flex";
 
     try {
-      const telemetry = await window.LabBotRobotConsole.fetchTelemetry(600);
+      const telemetry = await window.LabBotRobotConsole.fetchTelemetry(TELEMETRY_TIMEOUT_MS);
       if (telemetry) {
+        telemetryMisses = 0;
         if (telemetry.night_guard) renderNightGuardStatus(telemetry.night_guard);
         const dist = telemetry.distance_cm;
         if (hudDistanceBadge) {
@@ -1620,6 +1627,11 @@ document.addEventListener("DOMContentLoaded", async () => {
           // 보였다. 실제 값이 있으면 그걸 쓰고 없으면 표시를 지운다.
           hudFpsBadge.textContent = telemetry.fps ? `⚡ ${telemetry.fps} FPS` : "";
         }
+      } else if (++telemetryMisses < TELEMETRY_MISS_LIMIT) {
+        // 와이파이가 순간적으로 튀는 일은 흔하다(실측: 5번 중 1번이 1초를 넘김).
+        // 한 번 놓쳤다고 바로 "끊김"이라 하면 화면이 계속 깜빡여서, 정작 진짜로
+        // 끊겼을 때 구분이 안 된다. 연속으로 놓쳤을 때만 끊김으로 본다.
+        return;
       } else {
         // 텔레메트리를 못 받으면 마지막 값을 그대로 두지 않는다 — 죽은 로봇의
         // 거리/속도를 계속 보여주면 운영자가 살아있는 걸로 오인한다.
