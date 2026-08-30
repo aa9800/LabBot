@@ -46,7 +46,12 @@ from notify_supabase import (
     upload_snapshot_sync,
 )
 
-ROBOT_HOST = sys.argv[1] if len(sys.argv) > 1 else "10.42.0.1"
+# 2026-08-30 구조 변경: 로봇이 공유기(iptime)에 붙어 인터넷을 직접 쓰게 되면서
+# 이 중계기는 더 이상 필수가 아니다. 로봇이 Supabase 에 직접 쓴다.
+# 그래도 남겨두는 이유: 로봇이 공유기 범위를 벗어나거나 공유기가 죽으면 로봇은
+# 이벤트를 디스크 큐에 쌓아둔다. 그때 PC 가 로봇에 닿을 수 있는 상황이라면
+# 이 중계기로 밀린 것을 대신 올릴 수 있다.
+ROBOT_HOST = sys.argv[1] if len(sys.argv) > 1 else "192.168.0.22"
 ROBOT_PORT = 8080
 BASE = f"http://{ROBOT_HOST}:{ROBOT_PORT}"
 

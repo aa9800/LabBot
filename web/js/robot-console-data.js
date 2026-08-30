@@ -45,9 +45,17 @@ let _lastPersistedGuideStatus = null;
 
 // 모드별 기본 로봇 주소. 시뮬은 웹서버와 같은 PC에서 돌므로 페이지를 서빙한
 // 호스트를 쓴다(휴대폰/다른 PC에서 열어도 올바른 대상을 가리키도록).
+//
+// 실물 로봇은 이제 공유기(iptime)에 붙어서 DHCP 로 주소를 받으므로 주소가 고정이
+// 아니다. 대신 로봇이 부팅할 때 자기 IP 를 Supabase 의 robot_commands.local_ip 에
+// 직접 적는다(예전에는 인터넷이 없어 PC 중계기가 대신 적었다). fetchRobotIp() 가
+// 그 값을 읽어오므로 평소에는 이 기본값을 쓸 일이 없다. 여기 값은 DB 를 아직 못
+// 읽은 아주 초기 순간에만 쓰이는 마지막 수단이다.
+const FALLBACK_ROBOT_IP = "192.168.0.22";
+
 function _defaultIpForMode() {
   if (_currentMode === "sim") return window.location.hostname || "127.0.0.1";
-  return "10.42.0.1";
+  return FALLBACK_ROBOT_IP;
 }
 
 async function sendDirectCommand(ip, path, params = {}, timeoutMs = 1200, externalSignal = null) {
@@ -159,7 +167,7 @@ async function fetchRobotIp() {
       return _cachedLocalIp;
     }
   } catch {}
-  return _cachedLocalIp || "10.42.0.1";
+  return _cachedLocalIp || FALLBACK_ROBOT_IP;
 }
 
 function getDirectStreamUrl(localIp, port = 8080) {
@@ -205,7 +213,7 @@ async function fetchCameraAngle() {
 
 // mode: "auto" | "manual". manual일 때만 speed/turn이 실제로 로봇을 움직인다.
 // cam_pan/cam_tilt: 0~180도 서보 각도.
-// 로컬 직결 스트림 IP(127.0.0.1 또는 10.42.0.1)로 초저지연 직접 전송하고, Supabase에도 상태를 동기화한다.
+// 로봇 IP로 초저지연 직접 전송하고, Supabase에도 상태를 동기화한다.
 async function setRobotCommand({ mode, speed = 0, turn = 0, cam_pan, cam_tilt }) {
   const targetIp = _cachedLocalIp || _defaultIpForMode();
   const sequence = ++_driveCommandSequence;
@@ -306,8 +314,10 @@ async function fetchRobotHealth(timeoutMs = 2000) {
   }
 }
 
-async function fetchTelemetry(timeoutMs = 1000) {
-  const targetIp = _cachedLocalIp || _defaultIpForMode();
+async function fetchTelemetry(timeoutMs = 1000, targetMode = null) {
+  const targetIp = targetMode === "sim"
+    ? (window.location.hostname || "127.0.0.1")
+    : (_cachedLocalIp || _defaultIpForMode());
   if (!targetIp) return null;
   const url = `http://${targetIp}:8080/telemetry`;
   try {
@@ -368,8 +378,10 @@ async function fetchVirtualBinding(itemId) {
   }
 }
 
-async function startRobotGuide({ loanId, item, mode = "pickup" }) {
-  const targetIp = _cachedLocalIp || _defaultIpForMode();
+async function startRobotGuide({ loanId, item, mode = "pickup", targetMode = null }) {
+  const targetIp = targetMode === "sim"
+    ? (window.location.hostname || "127.0.0.1")
+    : (_cachedLocalIp || _defaultIpForMode());
   const binding = item?.id ? await fetchVirtualBinding(item.id) : null;
   const result = await sendDirectCommand(targetIp, "/guide/start", {
     loan_id: loanId,
@@ -544,6 +556,7 @@ window.LabBotRobotConsole = {
   setRobotCommand,
   setCameraAngle,
   fetchRobotHealth,
+  getFallbackRobotIp: () => FALLBACK_ROBOT_IP,
   setTargetMode,
   getTargetMode,
 };

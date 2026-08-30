@@ -775,7 +775,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       updateTargetSwitcherUI("real");
       robotCameraMode = "init";
       refreshRobotCamera();
-      window.LabBotToast.success("🤖 관제 대상: 실물 로봇 (Raspbot · 10.42.0.1) 전환");
+      window.LabBotToast.success("🤖 관제 대상: 실물 로봇 (Raspbot) 전환");
     });
 
     targetSimBtn.addEventListener("click", async () => {
@@ -889,7 +889,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
 
       try {
-        const localIp = robotCurrentIp || "10.42.0.1";
+        // 로봇이 Supabase에 자기 IP를 직접 적으므로 보통 robotCurrentIp가 채워져 있다.
+        const localIp = robotCurrentIp || window.LabBotRobotConsole.getFallbackRobotIp();
         const result = await window.LabBotRobotConsole.triggerQrScan(localIp);
         if (result && result.found) {
           const rawCode = String(result.code).trim();
