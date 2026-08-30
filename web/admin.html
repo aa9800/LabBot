@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LabBot – 연구실 물품 대여관리 시스템</title>
-  <link rel="stylesheet" href="css/style.css?v=20260830-health2" />
+  <link rel="stylesheet" href="css/style.css?v=20260830-health3" />
 </head>
 <body data-page="admin">
   <header class="navbar">
@@ -283,6 +283,7 @@
           </div>
 
           <div class="robot-camera-wrap">
+            <div class="robot-camera-frame">
             <img
               id="robotCameraImg"
               alt="로봇 카메라 실시간 스트림"
@@ -301,6 +302,7 @@
                 <!-- 로봇이 지금 무엇을 인식하고 있는지. AI 비전 모드에서만 채워진다. -->
                 <span class="hud-tag hud-ai-tag" id="hudAiBadge" style="display: none;" aria-live="polite">🧠 AI 대기</span>
               </div>
+            </div>
             </div>
             <div class="robot-camera-status" id="robotCameraStatus"></div>
             <div class="camera-size-row">

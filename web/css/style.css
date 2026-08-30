@@ -3221,8 +3221,12 @@ tbody tr:hover td {
 
 /* ---------- Robot Console FPV 실시간 HUD 오버레이 ---------- */
 
-.robot-camera-wrap {
+/* HUD 는 영상 위에만 겹쳐야 한다. 예전에는 .robot-camera-wrap 이 기준이라
+   그 아래 붙인 상태 문구와 화면 크기 버튼까지 덮어버렸다. 영상과 HUD 만
+   이 프레임에 묶고, 나머지는 프레임 밖에 둔다. */
+.robot-camera-frame {
   position: relative;
+  line-height: 0;   /* img 아래 생기는 여백 제거 */
 }
 
 .robot-hud-overlay {
