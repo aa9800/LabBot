@@ -172,12 +172,24 @@ class RoutePlayer:
     어긋나므로, 회피는 상위(PatrolController)에 맡기고 여기서는 대기만 한다.
     """
 
-    # 마커 보정 파라미터. 녹화 때와 지금 보이는 값의 차이를 이 안에서 줄인다.
+    # 마커 보정 파라미터. 2026-08-30 실측으로 정했다.
+    #
+    # 처음에는 "느리게 돌리면 정밀하겠지" 하고 turn=30 을 썼는데, 실측하니 그
+    # 값으로는 로봇이 아예 안 돈다. 정지마찰 때문이다:
+    #
+    #     turn=25 0.08s -> -0.2도    turn=40 0.08s -> -0.4도
+    #     turn=25 0.12s -> -0.2도    turn=40 0.12s -> -0.1도
+    #     turn=60 0.10s -> -2.7도    <- 여기서야 겨우 움직인다
+    #
+    # 그래서 힘은 세게(60) 주되 시간을 짧게 끊는다. 한 펄스에 약 2.7도씩 도므로
+    # 3도 허용오차 안으로 들어올 수 있다.
     ALIGN_ANGLE_TOL = 3.0      # 이 각도 안이면 방향은 맞은 것으로 본다
     ALIGN_DIST_TOL = 6.0       # 이 거리 안이면 위치도 맞은 것으로 본다(cm)
-    ALIGN_TURN_SPEED = 30.0    # 보정 회전 속도 — 느려야 넘어가지 않는다
-    ALIGN_MOVE_SPEED = 35.0
-    ALIGN_MAX_TRIES = 12       # 무한히 흔들리지 않도록 상한을 둔다
+    ALIGN_TURN_SPEED = 60.0    # 이보다 약하면 정지마찰을 못 이긴다
+    ALIGN_TURN_PULSE_S = 0.10  # 한 펄스 약 2.7도
+    ALIGN_MOVE_SPEED = 45.0    # 직진도 같은 이유로 너무 낮으면 안 움직인다
+    ALIGN_MOVE_PULSE_S = 0.12
+    ALIGN_MAX_TRIES = 16
 
     def __init__(self, hal, distance_fn=None, stop_distance=10.0, on_marker=None,
                  speed_cap_fn=None, marker_fn=None):
@@ -272,7 +284,8 @@ class RoutePlayer:
             for i in range(6):
                 if self._abort.is_set():
                     break
-                self._nudge(0, self.ALIGN_TURN_SPEED * (1 if i % 2 == 0 else -1), 0.18 * (i + 1))
+                self._nudge(0, self.ALIGN_TURN_SPEED * (1 if i % 2 == 0 else -1),
+                            self.ALIGN_TURN_PULSE_S * (i + 1))
                 seen = self._see(want_id)
                 if seen is not None:
                     break
@@ -295,8 +308,11 @@ class RoutePlayer:
 
             if abs(d_angle) > self.ALIGN_ANGLE_TOL:
                 # 마커가 오른쪽에 더 치우쳐 보이면 오른쪽으로 돌아야 가운데로 온다.
+                # 한 펄스가 약 2.7도이므로, 남은 각도만큼 펄스 길이를 늘리되
+                # 한 번에 크게 넘지 않도록 상한을 둔다.
                 turn = self.ALIGN_TURN_SPEED if d_angle > 0 else -self.ALIGN_TURN_SPEED
-                self._nudge(0, turn, min(0.30, 0.012 * abs(d_angle) + 0.06))
+                pulses = max(1, min(4, int(abs(d_angle) / 2.7)))
+                self._nudge(0, turn, self.ALIGN_TURN_PULSE_S * pulses)
                 continue
 
             if abs(d_dist) > self.ALIGN_DIST_TOL:
@@ -306,7 +322,8 @@ class RoutePlayer:
                     d = self.distance_fn()
                     if d is not None and d < self.stop_distance:
                         break   # 앞이 막혔으면 더 못 간다
-                self._nudge(speed, 0, min(0.35, 0.006 * abs(d_dist) + 0.08))
+                pulses = max(1, min(4, int(abs(d_dist) / 5.0)))
+                self._nudge(speed, 0, self.ALIGN_MOVE_PULSE_S * pulses)
                 continue
 
             entry["result"] = "aligned"
