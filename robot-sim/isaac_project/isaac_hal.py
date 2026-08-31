@@ -12,9 +12,19 @@ LINE_TOLERANCE = 0.08
 # 실제 Raspbot 실측값(2026-08-26): 바퀴 지름 6.5cm, 트랙 폭 13.5cm
 WHEEL_RADIUS = 0.0325
 AXLE_LENGTH = 0.135
-# 웹/자동순찰의 speed=100을 약 0.7m/s로 변환한다. (기존 0.0035에서 0.007로 2배 상향)
-SPEED_SCALE = 0.007
-ANGULAR_SPEED_SCALE = 0.024
+# 명령값(0~100)을 속도로 바꾸는 배율.
+#
+# 0.007 이면 speed=100 이 0.7m/s 다. 물리는 60Hz 고정이라 적분은 정확하지만,
+# 렌더링이 무거우면 시뮬 시간이 실제 시간보다 느리게 흘러서 화면에서는 더
+# 느려 보인다. 시연에서 "너무 느리다"는 지적이 있어 올렸다.
+#
+# 회전도 같은 비율로 올린다. 직진만 빠르게 하면 코너에서 목표를 지나친다.
+#
+# 환경변수로 조절할 수 있게 둔다 - 아이작을 띄운 채로 값을 바꿔가며 맞추는
+# 편이 코드를 고치고 재시작하는 것보다 빠르다.
+#   LABKEEPER_ISAAC_SPEED_SCALE=0.007  로 예전 속도로 되돌릴 수 있다.
+SPEED_SCALE = float(os.environ.get("LABKEEPER_ISAAC_SPEED_SCALE", "0.012"))
+ANGULAR_SPEED_SCALE = float(os.environ.get("LABKEEPER_ISAAC_TURN_SCALE", "0.041"))
 
 NO_OBSTACLE_CM = 999.0
 ULTRASONIC_MAX_M = 3.0
