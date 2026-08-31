@@ -750,9 +750,26 @@ def main():
 
     tick = 0
 
+    # 네트워크로 온 명령은 순서가 뒤바뀔 수 있다. 웹이 85 를 보낸 뒤 대기열에
+    # 남아 있던 51 이 뒤늦게 도착하면, 모터가 85 -> 51 -> 85 로 튄다. 실제
+    # 로그에서 그렇게 나왔고 약한 모터는 그때 못 일어나고 소리만 냈다.
+    #
+    # 웹에서도 고쳤지만 로봇 쪽에도 두는 이유는, 브라우저가 옛 파일을 캐시하고
+    # 있거나 다른 클라이언트가 붙어도 로봇이 스스로를 지켜야 하기 때문이다.
+    DRIVE_STALE_MS = 0.25
+
     def on_direct_drive(mode, speed, turn):
         nonlocal was_manual, last_command_time
         with command_lock:
+            # 방금 더 큰 값을 받았는데 곧바로 작은 값이 오면 순서가 뒤바뀐
+            # 것으로 본다. 사람이 정말 감속한 것이라면 다음 명령에서 다시
+            # 작은 값이 오므로, 0.25초만 무시해도 조작감은 그대로다.
+            recent = time.time() - last_command_time < DRIVE_STALE_MS
+            shrank = abs(speed) + abs(turn) < abs(command["speed"]) + abs(command["turn"])
+            if recent and shrank and mode == command.get("mode") and (speed or turn):
+                last_command_time = time.time()
+                return {"mode": mode, "speed": command["speed"],
+                        "turn": command["turn"], "note": "순서 뒤바뀐 명령 무시"}
             command["mode"] = mode
             command["speed"] = speed
             command["turn"] = turn
@@ -941,7 +958,7 @@ def main():
 
     # 바퀴를 쓰는 명령들. 잠겨 있으면 여기서 전부 막는다.
     MOTION_ACTIONS = {"start", "deliver", "dock", "goto", "testdrive", "testturn",
-                      "autotrim", "calibrate", "refine"}
+                      "autotrim", "calibrate", "refine", "wheeltest"}
 
     def on_patrol(action, params):
         if action in MOTION_ACTIONS and motion_blocked():
@@ -1104,6 +1121,25 @@ def main():
                          "/patrol/testdrive?cm=190 후 줄자로 재서 "
                          "/patrol/trim_from_offset 으로 넣어야 정확하다")
             return r
+        if action == "wheeltest":
+            # 한쪽 바퀴만 지정한 값으로 돌린다. "오른쪽이 안 돈다"가 하드웨어인지
+            # 소프트웨어인지 가리는 유일한 방법이다 - 엔코더가 없어서 로봇은
+            # 바퀴가 실제로 돌았는지 모르므로, 사람이 보고 판단해야 한다.
+            #
+            # set_motion 이 left = speed + turn, right = speed - turn 이므로
+            # 한쪽만 v 로 돌리려면 speed = v/2, turn = ±v/2 를 준다.
+            #   왼쪽만:  turn = +v/2  (right = 0)
+            #   오른쪽만: turn = -v/2  (left = 0)
+            side = params.get("side", "right")
+            v = float(params.get("v", 60))
+            secs = min(3.0, float(params.get("secs", 1.5)))
+            sign = 1.0 if side == "left" else -1.0
+            with WheelLease("wheeltest"):
+                hal.set_motion(v / 2.0, sign * v / 2.0)
+                time.sleep(secs)
+            return {"side": side, "value": v, "seconds": secs,
+                    "안내": "바퀴를 띄운 채로 보세요. 이 값에서 돌았는지 알려주면 "
+                            "정지마찰 임계값을 알 수 있습니다."}
         if action == "trim":
             # 직진 보정값. 왼쪽으로 휘면 양수를 키운다.
             model = dict(odometry.model)

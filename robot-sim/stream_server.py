@@ -213,6 +213,12 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok", "applied": applied}).encode("utf-8"))
         elif req_path.startswith("/drive"):
+            # 두 곳에서 동시에 조작하면 서로 다른 속도가 번갈아 나가 모터가
+            # 세게/약하게를 반복한다. 약한 모터는 아예 못 일어나고 소리만 낸다.
+            # 실제로 관리자 페이지를 두 탭에서 연 채로 "오른쪽 바퀴가 안 돈다"를
+            # 한참 뒤쫓았다. 화면 두 개를 켜둔 걸 사람이 알아채기 어려우므로
+            # 로봇이 알려준다.
+            _note_drive_client(self.client_address[0] if self.client_address else "?")
             # 초저지연 로컬 조이스틱 주행 직결 엔드포인트 (0ms 반응)
             parsed = urlparse(self.path)
             qs = parse_qs(parsed.query)
@@ -453,6 +459,24 @@ class StreamingHandler(BaseHTTPRequestHandler):
 
 _camera_angle_callback = None
 _camera_direction_callback = None
+# 최근에 주행 명령을 보낸 곳들. 둘 이상이면 경고한다.
+_drive_clients = {}
+_drive_conflict_warned_at = [0.0]
+
+
+def _note_drive_client(ip):
+    now = time.time()
+    _drive_clients[ip] = now
+    for old_ip, seen in list(_drive_clients.items()):
+        if now - seen > 5.0:
+            del _drive_clients[old_ip]
+    if len(_drive_clients) > 1 and now - _drive_conflict_warned_at[0] > 10.0:
+        _drive_conflict_warned_at[0] = now
+        print(f"[stream_server] 주행 명령이 {len(_drive_clients)}곳에서 오고 있습니다: "
+              f"{', '.join(sorted(_drive_clients))} — 화면을 하나만 열어두세요. "
+              f"서로 다른 속도가 번갈아 나가면 모터가 제대로 돌지 않습니다.")
+
+
 _route_callback = None
 _patrol_callback = None
 _drive_callback = None

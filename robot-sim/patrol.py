@@ -92,6 +92,13 @@ PATROL_SLOW_CM = 40.0      # 이 안쪽부터 감속을 시작한다
 # 짧은 쪽으로만 틀리는 고장이라, 하한을 두고 버리는 게 안전하다. 진짜로
 # 8cm 앞에 벽이 있다면 그건 이미 10cm 정지선을 지난 것이라 다른 문제다.
 SONAR_MIN_TRUST_CM = 8.0
+
+# 최소 구동 속도 위로 얼마나 여유를 둘 것인가.
+#
+# 실측 최소 구동 속도는 50 인데, 그건 "그 값에서 겨우 돈다"는 뜻이다. 배터리가
+# 처지거나 바닥이 조금 더 거칠면 같은 값에서 멈춘다. 실제로 감속 구간에서
+# 오른쪽 바퀴에 48 이 나가 멈췄고, 로봇이 제자리에서 돌았다.
+STALL_MARGIN = 3.0
 BLOCKED_LIMIT = 8          # 막힌 상태가 이만큼 이어지면 회피를 시도한다
 LEG_TIMEOUT_S = 90.0       # 한 구간에 이 이상 걸리면 뭔가 잘못된 것이다
 
@@ -501,6 +508,7 @@ class PatrolRunner:
             chunk = min(self.DRIVE_CHUNK_S,
                         max(0.12, self.odometry.seconds_for_cm(remaining, allowed)))
             self.hal.set_motion(allowed, self._trim(allowed))
+            effective = allowed
             time.sleep(chunk)
             # 달리는 도중에 마커가 보이면 그때 방향을 고친다. 멈춰 서서 찾지
             # 않는 이유는, 순찰이 매번 서면 느려지고 정지·재출발 자체가 또
@@ -510,7 +518,7 @@ class PatrolRunner:
                 self._fix_heading_from_markers()
             # 오도메트리에는 회전 0 으로 넣는다. trim 은 방향을 바꾸려는 게 아니라
             # 휘는 걸 상쇄해 똑바로 가게 하는 값이므로, 결과는 직진이다.
-            moved, _ = self.odometry.apply(allowed, 0, chunk)
+            moved, _ = self.odometry.apply(effective, 0, chunk)
             gone += abs(moved)
             self._set(**self._pose_fields())
         self.hal.stop()
@@ -729,11 +737,20 @@ class PatrolRunner:
             return want                      # 못 읽으면(허공) 그냥 간다
         if d <= PATROL_STOP_CM:
             return 0.0
+        # 하한은 "바퀴에 실제로 나가는 값" 기준이어야 한다.
+        #
+        # set_motion 이 left = speed + trim, right = speed - trim 으로 나누므로,
+        # 기준 속도만 50 위로 잡아두면 약한 쪽 바퀴에는 50 - trim 이 나간다.
+        # 실측 로그에서 "속도 50.0 -> 왼 51 / 오 48" 이 나왔고, 48 은 정지마찰을
+        # 못 이겨 오른쪽 바퀴가 멈췄다. 왼쪽만 돌아 로봇이 제자리에서 돌았다.
+        #
+        # 벽에서 40cm 안이면 감속이 걸리므로, 좁은 방에서는 코너마다 이 상태가
+        # 된다. trim 만큼 얹어서 약한 쪽도 하한을 넘게 한다.
         floor = float(self.odometry.model.get("min_move_speed", 50))
+        # 임계값에 딱 맞추면 배터리가 조금만 처져도 다시 멈춘다. 여유를 둔다.
+        floor += abs(self._trim(want)) + STALL_MARGIN
         if d < PATROL_SLOW_CM:
             ratio = (d - PATROL_STOP_CM) / (PATROL_SLOW_CM - PATROL_STOP_CM)
-            # 줄이되 바닥 아래로는 안 내린다. 정지마찰 때문에 그 아래는 소리만
-            # 나고 안 가는데, 그걸 "막혔다"로 읽으면 멀쩡한 데서 순찰이 선다.
             want = max(floor, want * ratio)
         return want
 

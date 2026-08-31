@@ -161,6 +161,8 @@ class RealHAL:
         # 웹의 카메라 명령이 서로 다른 스레드에서 동시에 쓰면 MCU가 PWM을 흔들어
         # 서보가 부르르 떤다. 모든 I2C 명령을 이 락으로 한 줄로 세운다.
         self._i2c_lock = threading.Lock()
+        self._log_wheels = os.environ.get("LABKEEPER_LOG_WHEELS") == "1"
+        self._last_logged = None
         self._is_stopped = False   # 이미 멈춰 있으면 정지 명령을 또 보내지 않는다
         self._motion_prev_gray = None
         self._camera_thread = None
@@ -450,6 +452,14 @@ class RealHAL:
         with self._i2c_lock:
             self.car.Control_Car(int(left), int(right))
         self._is_stopped = (int(left) == 0 and int(right) == 0)
+
+        # 바퀴에 실제로 나간 값을 남긴다. "오른쪽이 안 돈다"는 신고가 왔을 때
+        # 소프트웨어가 0 을 보낸 것인지, 값은 보냈는데 모터가 안 도는 것인지를
+        # 갈라야 원인을 찾을 수 있다. 켤 때만 찍는다(LABKEEPER_LOG_WHEELS=1).
+        if self._log_wheels and (int(left), int(right)) != self._last_logged:
+            self._last_logged = (int(left), int(right))
+            print(f"[wheels] 속도 {speed:+.1f} 회전 {turn:+.1f} "
+                  f"-> 왼 {int(left)} / 오 {int(right)}")
 
     def stop(self):
         """정지. 이미 멈춰 있으면 I2C에 아무것도 보내지 않는다.
