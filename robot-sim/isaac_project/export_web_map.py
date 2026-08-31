@@ -43,6 +43,25 @@ FIXTURE_SPECS = (
     ("/World/Safety/FireExtinguisher", "Fire Extinguisher", "safety"),
     ("/World/Safety/SpillKit", "Spill Kit", "safety"),
     ("/World/Safety/EyeWash", "Eye Wash", "safety"),
+    ("/World/RentalWing/CenterLane", "Entry Aisle", "aisle"),
+    ("/World/RentalWing/WestPickupShelf", "Entry Shelf West", "storage"),
+    ("/World/RentalWing/EastPickupShelf", "Entry Shelf East", "storage"),
+    ("/World/RentalWing/WestWallStorage_0", "Entry Storage West 1", "storage"),
+    ("/World/RentalWing/WestWallStorage_1", "Entry Storage West 2", "storage"),
+    ("/World/RentalWing/WestWallStorage_2", "Entry Storage West 3", "storage"),
+    ("/World/RentalWing/EastWallStorage_0", "Entry Storage East 1", "storage"),
+    ("/World/RentalWing/EastWallStorage_1", "Entry Storage East 2", "storage"),
+    ("/World/RentalWing/EastWallStorage_2", "Entry Storage East 3", "storage"),
+    ("/World/RentalWing/PackingBench", "Packing Bench", "bench"),
+    ("/World/RentalWing/ReturnDesk", "Service Desk", "bench"),
+    ("/World/RentalWing/KioskBase", "Guide Kiosk", "equipment"),
+    ("/World/RentalWing/DockPad", "Robot Dock", "dock"),
+)
+
+FLOOR_PRIM_PATHS = ("/World/LabFloor", "/World/RentalWing/Floor")
+ARCHITECTURE_ROOT_PATHS = ("/World/Architecture", "/World/RentalWing")
+ARCHITECTURE_NAME_TOKENS = (
+    "Wall", "Divider", "RoomFront", "Jamb", "SecurityGlass", "DoorRail",
 )
 
 
@@ -80,15 +99,31 @@ def world_box(stage: Usd.Stage, cache: UsdGeom.BBoxCache, prim_path: str):
     }
 
 
+def combined_world_box(stage: Usd.Stage, cache: UsdGeom.BBoxCache, prim_paths):
+    boxes = [world_box(stage, cache, prim_path) for prim_path in prim_paths]
+    boxes = [box for box in boxes if box is not None]
+    if not boxes:
+        return None
+
+    minimum = [min(box["min"][axis] for box in boxes) for axis in range(3)]
+    maximum = [max(box["max"][axis] for box in boxes) for axis in range(3)]
+    return {
+        "min": minimum,
+        "max": maximum,
+        "center": [rounded((minimum[axis] + maximum[axis]) / 2) for axis in range(3)],
+        "size": [rounded(maximum[axis] - minimum[axis]) for axis in range(3)],
+    }
+
+
 def export_map():
     stage = Usd.Stage.Open(str(ASSET_PATH))
     if stage is None:
         raise RuntimeError(f"Could not open Isaac asset: {ASSET_PATH}")
     cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_])
 
-    floor_box = world_box(stage, cache, "/World/LabFloor")
+    floor_box = combined_world_box(stage, cache, FLOOR_PRIM_PATHS)
     if floor_box is None:
-        raise RuntimeError("/World/LabFloor is missing or has no valid world bounds")
+        raise RuntimeError("No configured laboratory floor has valid world bounds")
 
     fixtures = []
     missing_fixtures = []
@@ -100,17 +135,22 @@ def export_map():
         fixtures.append({"prim_path": prim_path, "label": label, "type": fixture_type, "bbox": bbox})
 
     architecture = []
-    architecture_root = stage.GetPrimAtPath("/World/Architecture")
-    if architecture_root and architecture_root.IsValid():
+    seen_architecture_paths = set()
+    for root_path in ARCHITECTURE_ROOT_PATHS:
+        architecture_root = stage.GetPrimAtPath(root_path)
+        if not architecture_root or not architecture_root.IsValid():
+            continue
         for prim in Usd.PrimRange(architecture_root):
             if prim == architecture_root or not prim.IsA(UsdGeom.Gprim):
                 continue
             name = prim.GetName()
-            if not any(token in name for token in ("Wall", "Divider", "RoomFront", "Jamb")):
+            prim_path = str(prim.GetPath())
+            if prim_path in seen_architecture_paths or not any(token in name for token in ARCHITECTURE_NAME_TOKENS):
                 continue
-            bbox = world_box(stage, cache, str(prim.GetPath()))
+            bbox = world_box(stage, cache, prim_path)
             if bbox is not None:
-                architecture.append({"prim_path": str(prim.GetPath()), "label": name, "type": "wall", "bbox": bbox})
+                seen_architecture_paths.add(prim_path)
+                architecture.append({"prim_path": prim_path, "label": name, "type": "wall", "bbox": bbox})
 
     bindings_doc = load_json(SCENE_DIR / "object_bindings.json")
     guide_doc = load_json(SCENE_DIR / "guide_targets.json")
@@ -161,7 +201,7 @@ def export_map():
         "source": {
             "asset": str(ASSET_PATH.relative_to(REPO_ROOT)).replace("\\", "/"),
             "asset_sha256": hashlib.sha256(ASSET_PATH.read_bytes()).hexdigest(),
-            "coordinate_system": "Isaac world XY in meters; web top view inverts Y only",
+            "coordinate_system": "Isaac world XY in meters; portrait web top view maps X left-to-right and Y bottom-to-top",
         },
         "world": {
             "min_x": floor_box["min"][0],

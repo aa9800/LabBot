@@ -161,6 +161,8 @@ class RealHAL:
         # 웹의 카메라 명령이 서로 다른 스레드에서 동시에 쓰면 MCU가 PWM을 흔들어
         # 서보가 부르르 떤다. 모든 I2C 명령을 이 락으로 한 줄로 세운다.
         self._i2c_lock = threading.Lock()
+        self._log_wheels = os.environ.get("LABKEEPER_LOG_WHEELS") == "1"
+        self._last_logged = None
         self._is_stopped = False   # 이미 멈춰 있으면 정지 명령을 또 보내지 않는다
         self._motion_prev_gray = None
         self._camera_thread = None
@@ -324,6 +326,31 @@ class RealHAL:
         t2 = time.time()
         return ((t2 - t1) * SOUND_SPEED_M_S / 2) * 100
 
+    def find_qr_boxes(self, frame):
+        """프레임에서 QR 위치와 값을 찾는다. 화면에 그려주기 위한 것.
+
+        scan_qr_now 와 달리 값만이 아니라 위치도 돌려준다. 사용자가 "QR 인식이
+        안 된다"고 할 때, 화면에 네모가 그려지면 "보이지만 각도·거리 문제",
+        안 그려지면 "아예 안 보임"으로 원인이 바로 갈린다.
+        """
+        if frame is None or self._pyzbar is None:
+            return []
+        try:
+            gray = (self._cv2.cvtColor(frame, self._cv2.COLOR_BGR2GRAY)
+                    if self._cv2 is not None else frame)
+            out = []
+            for code in self._pyzbar.decode(gray):
+                r = code.rect
+                out.append({
+                    "x": int(r.left), "y": int(r.top),
+                    "w": int(r.width), "h": int(r.height),
+                    "text": code.data.decode("utf-8", "replace"),
+                })
+            return out
+        except Exception as e:
+            print(f"[RealHAL] QR 위치 탐색 실패(무시): {e}")
+            return []
+
     def scan_qr_now(self):
         """웹 버튼 클릭 시 온디맨드로 단 1회 현재 카메라 프레임에서 QR을 정밀 디코딩한다."""
         frame = self.capture_frame()
@@ -425,6 +452,14 @@ class RealHAL:
         with self._i2c_lock:
             self.car.Control_Car(int(left), int(right))
         self._is_stopped = (int(left) == 0 and int(right) == 0)
+
+        # 바퀴에 실제로 나간 값을 남긴다. "오른쪽이 안 돈다"는 신고가 왔을 때
+        # 소프트웨어가 0 을 보낸 것인지, 값은 보냈는데 모터가 안 도는 것인지를
+        # 갈라야 원인을 찾을 수 있다. 켤 때만 찍는다(LABKEEPER_LOG_WHEELS=1).
+        if self._log_wheels and (int(left), int(right)) != self._last_logged:
+            self._last_logged = (int(left), int(right))
+            print(f"[wheels] 속도 {speed:+.1f} 회전 {turn:+.1f} "
+                  f"-> 왼 {int(left)} / 오 {int(right)}")
 
     def stop(self):
         """정지. 이미 멈춰 있으면 I2C에 아무것도 보내지 않는다.

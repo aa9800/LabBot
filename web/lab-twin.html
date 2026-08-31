@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>가상 생명공학 실험실 – LabBot 디지털 트윈</title>
   <link rel="stylesheet" href="css/style.css" />
-  <link rel="stylesheet" href="css/virtual-lab.css" />
+  <link rel="stylesheet" href="css/virtual-lab.css?v=20260830-entry-db-1" />
 </head>
 <body data-page="lab-twin">
   <header class="navbar">
@@ -75,8 +75,10 @@
       <div class="lab-main-layout">
         <div class="lab-viewport-card">
           <div class="lab-viewport-osd">
-            <span class="osd-badge">SIM MAP: LABKEEPER-01</span>
-            <span class="osd-badge">INVENTORY: SUPABASE</span>
+            <span class="osd-badge">ISAAC DIGITAL TWIN · USD LIVE</span>
+            <span class="osd-badge" id="inventorySyncBadge" data-state="loading">INVENTORY: 동기화 중</span>
+            <span class="osd-badge" id="robotSyncBadge" data-state="loading">ROBOT: ISAAC 연결 확인 중</span>
+            <span class="osd-badge" id="routeProgressBadge" data-state="idle" hidden>ROUTE: 대기</span>
           </div>
 
           <!-- robot-sim 구역/경로 데이터 기반 조감도 인터페이스 -->
@@ -86,41 +88,41 @@
         <!-- 우측 물품 상세 및 가상 예약/스캔 패널 -->
         <div class="lab-inspector-card">
           <div class="inspector-header">
-            <h3 id="inspectTitle">물품을 선택하세요</h3>
-            <span class="inspector-room-badge" id="inspectRoom">실험실 구역 미선택</span>
+            <h3 id="inspectTitle">보관 장소를 선택하세요</h3>
+            <span class="inspector-room-badge" id="inspectRoom">지도에서 장소를 선택하세요</span>
           </div>
 
           <div class="inspector-info-grid">
-            <span class="info-label">분류</span>
-            <span class="info-value" id="inspectCategory">-</span>
+            <span class="info-label" data-field="category">분류</span>
+            <span class="info-value" id="inspectCategory" data-field="category">-</span>
 
-            <span class="info-label">실시간 재고</span>
-            <span class="info-value" id="inspectStock" style="color:var(--accent-text);">-</span>
+            <span class="info-label" data-field="stock">실시간 재고</span>
+            <span class="info-value" id="inspectStock" data-field="stock" style="color:var(--accent-text);">-</span>
 
-            <span class="info-label">재고 상태</span>
-            <span class="info-value" id="inspectStatus">-</span>
+            <span class="info-label" data-field="status">재고 상태</span>
+            <span class="info-value" id="inspectStatus" data-field="status">-</span>
 
-            <span class="info-label">보관 조건</span>
-            <span class="info-value" id="inspectStorage">-</span>
+            <span class="info-label" data-field="storage">보관 조건</span>
+            <span class="info-value" id="inspectStorage" data-field="storage">-</span>
 
-            <span class="info-label">유효기간</span>
-            <span class="info-value" id="inspectExpires">-</span>
+            <span class="info-label" data-field="expires">유효기간</span>
+            <span class="info-value" id="inspectExpires" data-field="expires">-</span>
 
-            <span class="info-label">보관 위치코드</span>
-            <span class="info-value info-value-mono" id="inspectShelfCode">-</span>
+            <span class="info-label" data-field="shelf">보관 위치코드</span>
+            <span class="info-value info-value-mono" id="inspectShelfCode" data-field="shelf">-</span>
 
-            <span class="info-label">Isaac 좌표</span>
-            <span class="info-value info-value-mono" id="inspectIsaacPosition">-</span>
+            <span class="info-label" data-field="isaac">Isaac 좌표</span>
+            <span class="info-value info-value-mono" id="inspectIsaacPosition" data-field="isaac">-</span>
 
-            <span class="info-label">로봇 정차 좌표</span>
-            <span class="info-value info-value-mono" id="inspectRobotTarget">-</span>
+            <span class="info-label" data-field="target">로봇 정차 좌표</span>
+            <span class="info-value info-value-mono" id="inspectRobotTarget" data-field="target">-</span>
 
-            <span class="info-label">USD Prim</span>
-            <span class="info-value info-value-mono info-value-path" id="inspectPrimPath">-</span>
+            <span class="info-label" data-field="prim">USD Prim</span>
+            <span class="info-value info-value-mono info-value-path" id="inspectPrimPath" data-field="prim">-</span>
           </div>
 
           <p id="inspectDesc" style="color:var(--text-muted); font-size:0.85rem; line-height:1.4; margin-bottom:1.25rem;">
-            Isaac 실험실의 장비 또는 보관 거점을 선택하면 물품 위치와 로봇 안내 좌표를 확인할 수 있습니다.
+            지도에서 냉장보관소, 냉동보관소, 기기실 같은 장소를 선택하면 보관 물품과 상세 위치를 확인할 수 있습니다.
           </p>
 
           <div class="inspector-actions" id="inspectActions"></div>
@@ -139,9 +141,12 @@
   <script src="js/transitions.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/nav.js"></script>
-  <script src="js/items-data.js"></script>
-  <script src="js/rentals.js"></script>
-  <script src="js/virtual-lab-data.js?v=20260829-usd-map"></script>
-  <script src="js/virtual-lab.js?v=20260829-location-guide"></script>
+  <script src="js/items-data.js?v=20260830-storage-fixtures-2"></script>
+  <!-- 물품 QR 을 그려서 로봇 카메라에 보여주기 위한 것 -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+  <script src="js/rentals.js?v=20260831-qr-embed"></script>
+  <script src="js/robot-console-data.js?v=20260830-map-detail-2"></script>
+  <script src="js/virtual-lab-data.js?v=20260830-entry-db-1"></script>
+  <script src="js/virtual-lab.js?v=20260831-item-qr"></script>
 </body>
 </html>

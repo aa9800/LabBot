@@ -52,6 +52,7 @@ function categoryIconOf(key) {
 // 믿으면 날짜가 지나도 상태가 안 바뀌는 문제가 생기기 때문이다.
 const STOCK_STATUS_LABEL = {
   AVAILABLE: "대여 가능",
+  FIXED_ASSET: "고정 설비",
   LOW_STOCK: "재고 부족",
   OUT_OF_STOCK: "품절",
   EXPIRING_SOON: "유효기간 임박",
@@ -61,6 +62,7 @@ const STOCK_STATUS_LABEL = {
 
 const STOCK_STATUS_BADGE_CLASS = {
   AVAILABLE: "badge-available",
+  FIXED_ASSET: "badge-inuse",
   LOW_STOCK: "badge-sev-medium",
   OUT_OF_STOCK: "badge-sev-high",
   EXPIRING_SOON: "badge-sev-medium",
@@ -78,6 +80,10 @@ const NON_RENTABLE_STATUSES = new Set(["MAINTENANCE", "EXPIRED", "OUT_OF_STOCK"]
 function computeStockStatus(item) {
   if (item.manual_status === "MAINTENANCE") {
     return "MAINTENANCE";
+  }
+
+  if (item.is_rentable === false) {
+    return "FIXED_ASSET";
   }
 
   let expirationDate = null;
@@ -136,7 +142,7 @@ function escapeHtml(value) {
 
 // 대여 가능 여부도 여기서만 판단한다 — items.js 등 다른 파일이 각자 다시 계산하지 않는다.
 function canRentItem(item) {
-  return !NON_RENTABLE_STATUSES.has(computeStockStatus(item));
+  return item.is_rentable !== false && !NON_RENTABLE_STATUSES.has(computeStockStatus(item));
 }
 
 function categoryLabelOf(key) {
@@ -189,6 +195,16 @@ async function fetchLocations() {
   const { data, error } = await supabaseClient.from("items").select("location");
   if (error) throw error;
   return [...new Set(data.map((row) => row.location))].sort();
+}
+
+async function fetchStorageFixtures() {
+  const { data, error } = await supabaseClient
+    .from("items")
+    .select("id,name")
+    .eq("is_rentable", false)
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return data || [];
 }
 
 // 등록: qr_code는 DB 트리거가 서버에서 랜덤 발급, available_qty는 total_qty로 시작
@@ -278,6 +294,7 @@ window.LabBotItems = {
   searchItems,
   fetchItemById,
   fetchLocations,
+  fetchStorageFixtures,
   createItem,
   updateItemStock,
   updateItemDetails,

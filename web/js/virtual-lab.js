@@ -9,10 +9,72 @@
   let _matchedItem = null;
   let _activeUserLoans = [];
   let _routeActive = false;
+  let _routeItemId = null;
   let _isaacMap = null;
   let _isaacObjectMap = new Map();
   let _storageLocationMap = new Map();
   let _selectedStorageLocation = null;
+  let _catalogLoadState = "loading";
+  let _robotTelemetryTimer = null;
+  let _robotTelemetryBusy = false;
+  let _guideStatus = { status: "idle" };
+  let _robotPose = {
+    x: 0,
+    y: 0,
+    headingDeg: 90,
+    connected: false,
+    hasWorldPose: false,
+    source: "isaac",
+    updatedAt: 0
+  };
+
+  const ROBOT_TELEMETRY_INTERVAL_MS = 250;
+  const ROBOT_TELEMETRY_STALE_MS = 1800;
+  const SIM_ROOM_AREAS = [
+    { location: "입구 공용비품 보관구역", code: "ENT-COM", kind: "entry", min: [-6.85, -9.85], max: [6.85, -2.05], anchor: [0, -6] },
+    { location: "일반실험실", code: "GEN", kind: "general", min: [-6.85, -1.85], max: [6.85, 9.35], anchor: [-5.0, 8.55] },
+    { location: "안전장비함", code: "SAF", kind: "safety", min: [-6.8, -1.72], max: [-4.85, -0.12], anchor: [-5.82, -0.92] },
+    { location: "기기실-1", code: "EQ-1", kind: "equipment", min: [-6.85, 9.4], max: [-2.55, 11.45], anchor: [-4.72, 9.82] },
+    { location: "기기실-2", code: "EQ-2", kind: "equipment", min: [-6.85, 11.55], max: [-2.55, 13.85], anchor: [-4.72, 12.0] },
+    { location: "세포배양실", code: "CELL", kind: "cell", min: [-6.85, 13.95], max: [-2.55, 15.85], anchor: [-4.72, 14.35] },
+    { location: "소모품보관실", code: "CON", kind: "storage", min: [2.55, 9.4], max: [6.85, 11.45], anchor: [4.72, 9.82] },
+    { location: "냉장보관실", code: "4C", kind: "cold", min: [2.55, 11.55], max: [4.35, 13.85], anchor: [3.42, 12.0] },
+    { location: "냉동보관실", code: "-80C", kind: "frozen", min: [4.35, 11.55], max: [6.85, 13.85], anchor: [5.62, 12.0] },
+    { location: "시약보관실", code: "REAG", kind: "reagent", min: [-2.4, 13.95], max: [6.85, 15.85], anchor: [0.2, 14.35] }
+  ];
+  const LOCATION_META = {
+    "입구 공용비품 보관구역": { name: "입구 공용비품", icon: "tips" },
+    "일반실험실": { name: "중앙 실험실", icon: "microscope" },
+    "안전장비함": { name: "안전장비 보관소", icon: "safety" },
+    "기기실-1": { name: "기기 분석실 1", icon: "pcr" },
+    "기기실-2": { name: "기기 분석실 2", icon: "centrifuge" },
+    "세포배양실": { name: "세포배양실", icon: "microscope" },
+    "소모품보관실": { name: "소모품 보관소", icon: "tips" },
+    "냉장보관실": { name: "냉장보관소", icon: "freezer" },
+    "냉동보관실": { name: "냉동보관소", icon: "freezer" },
+    "시약보관실": { name: "시약 보관소", icon: "reagent" }
+  };
+  const FIXTURE_TYPE_LABELS = {
+    aisle: "AMR NAVIGATION AISLE",
+    bench: "MODULAR LAB BENCH",
+    equipment: "INSTRUMENT STATION",
+    storage: "BIN STORAGE RACK",
+    cold: "COLD STORAGE",
+    reagent: "REAGENT PREP",
+    safety: "SAFETY FIXTURE",
+    dock: "ROBOT DOCK"
+  };
+
+  const ITEM_CATALOG_COLUMNS = [
+    "id", "name", "category", "location", "item_type", "available_qty", "total_qty",
+    "minimum_qty", "unit", "status", "manual_status", "storage_condition", "expires_at", "notes",
+    "is_rentable", "storage_parent_item_id", "storage_position"
+  ].join(",");
+
+  const BINDING_COLUMNS = [
+    "scene_object_id", "item_id", "room", "display_mode", "zone_type", "access_level",
+    "shelf_code", "shelf_row", "shelf_slot", "location_detail", "nav_x", "nav_y", "nav_heading"
+  ].join(",");
 
   // SVG 아이콘 세트
   const SVG_ICONS = {
@@ -37,17 +99,37 @@
     renderLabCanvas();
     setupEventListeners();
     subscribeRealtime();
+    startRobotTelemetrySync();
 
     // URL 파라미터 확인 (?findItem=12 or ?room=기기실-1)
     const urlParams = new URLSearchParams(window.location.search);
     const targetItemId = urlParams.get("findItem");
     const targetRoom = urlParams.get("room");
+    const startGuide = urlParams.get("guide") === "1";
+    const targetLoanId = urlParams.get("loanId");
 
     if (targetRoom) {
       filterByRoom(targetRoom);
     }
     if (targetItemId) {
-      focusItemById(parseInt(targetItemId, 10));
+      const parsedItemId = parseInt(targetItemId, 10);
+      focusItemById(parsedItemId);
+      if (startGuide) {
+        const reservation = _activeUserLoans.find((loan) => (
+          loan.status === "예약중"
+          && Number(loan.item_id) === parsedItemId
+          && (!targetLoanId || String(loan.id) === targetLoanId)
+        ));
+        if (reservation) {
+          await beginRobotGuide(reservation, { notify: true });
+        } else {
+          _routeActive = true;
+          _routeItemId = parsedItemId;
+          _guideStatus = { status: "preview" };
+          renderLabCanvas();
+          updateInspectorPanel();
+        }
+      }
     }
   }
 
@@ -74,10 +156,12 @@
 
   // 2. Supabase items 테이블 데이터 로드
   async function loadDbItems() {
+    _catalogLoadState = "loading";
+    updateInventorySyncBadge();
     try {
       const { data, error } = await supabaseClient
         .from("items")
-        .select("*")
+        .select(ITEM_CATALOG_COLUMNS)
         .order("name", { ascending: true });
 
       if (error) throw error;
@@ -88,10 +172,25 @@
         _itemsMap.set(item.name, item);
       });
 
-      const { data: bindings, error: bindingError } = await supabaseClient
+      // RLS가 조회를 막으면 Supabase는 오류 대신 200 + 빈 배열을 반환할 수 있다.
+      // 실제 동기화처럼 보이는 "DB 0종"을 표시하지 않고 권한 상태를 명확히 구분한다.
+      _catalogLoadState = data && data.length > 0 ? "ready" : "restricted";
+
+      let { data: bindings, error: bindingError } = await supabaseClient
         .from("virtual_lab_objects")
-        .select("scene_object_id, item_id, room, display_mode")
+        .select(BINDING_COLUMNS)
         .eq("enabled", true);
+
+      // 상세 위치 마이그레이션 전 운영 DB도 화면 전체가 깨지지 않도록 구형 컬럼으로 재시도한다.
+      if (bindingError && bindingError.code === "42703") {
+        const legacyResult = await supabaseClient
+          .from("virtual_lab_objects")
+          .select("scene_object_id, item_id, room, display_mode")
+          .eq("enabled", true);
+        bindings = legacyResult.data;
+        bindingError = legacyResult.error;
+      }
+
       if (bindingError) {
         console.warn("[VirtualLab] virtual_lab_objects migration is not applied yet:", bindingError);
         _sceneBindings.clear();
@@ -101,11 +200,38 @@
 
       console.log(`[VirtualLab] Supabase items loaded: ${data ? data.length : 0} items`);
     } catch (err) {
+      _catalogLoadState = "error";
+      _itemsMap.clear();
+      _sceneBindings.clear();
       console.error("[VirtualLab] Failed to load DB items:", err);
       if (window.LabBotToast) {
         LabBotToast.show("물품 데이터를 불러오는 중 오류가 발생했습니다.", "error");
       }
+    } finally {
+      updateInventorySyncBadge();
     }
+  }
+
+  function updateInventorySyncBadge() {
+    const badge = document.getElementById("inventorySyncBadge");
+    if (!badge) return;
+    if (_catalogLoadState === "ready") {
+      badge.innerText = "INVENTORY: SUPABASE LIVE";
+      badge.dataset.state = "ready";
+      return;
+    }
+    if (_catalogLoadState === "restricted") {
+      badge.innerText = "INVENTORY: DB 조회 권한 확인 필요";
+      badge.dataset.state = "restricted";
+      return;
+    }
+    if (_catalogLoadState === "error") {
+      badge.innerText = "INVENTORY: DB 연결 오류";
+      badge.dataset.state = "error";
+      return;
+    }
+    badge.innerText = "INVENTORY: 동기화 중";
+    badge.dataset.state = "loading";
   }
 
   // 3. 사용자 대여/예약 내역 로드
@@ -184,6 +310,29 @@
     return getAllDbItems().filter((item) => resolveStorageLocation(item) === location);
   }
 
+  function getContainedItems(parentItemId) {
+    return getAllDbItems().filter((item) => item.storage_parent_item_id === parentItemId);
+  }
+
+  function findBindingEntryForItem(itemId) {
+    if (!itemId) return null;
+    return Array.from(_sceneBindings.entries()).find(([, binding]) => binding.item_id === itemId) || null;
+  }
+
+  function formatShelfPosition(binding, fallbackShelfCode = "미지정") {
+    const parts = [binding?.shelf_code || fallbackShelfCode];
+    if (binding?.shelf_row) parts.push(`${binding.shelf_row}단`);
+    if (binding?.shelf_slot) parts.push(`${binding.shelf_slot}칸`);
+    return parts.join(" · ");
+  }
+
+  function getCatalogSummary() {
+    if (_catalogLoadState === "ready") return "SUPABASE LIVE";
+    if (_catalogLoadState === "restricted") return "DB 조회 권한 확인 필요";
+    if (_catalogLoadState === "error") return "DB 연결 오류";
+    return "DB 동기화 중";
+  }
+
   function resolveStorageLocation(item) {
     if (_storageLocationMap.has(item.location)) return item.location;
     if (item.item_type === "CONSUMABLE") return "소모품보관실";
@@ -214,67 +363,343 @@
     return `left:${left}%;top:${top}%;width:${width}%;height:${height}%`;
   }
 
-  function buildRouteSvg() {
-    if (!_routeActive || !_selectedVirtualObj) return "";
-    const mapObject = _selectedStorageLocation
+  function worldAreaStyle(area) {
+    return worldRectStyle({ min: [area.min[0], area.min[1]], max: [area.max[0], area.max[1]] });
+  }
+
+  function sameWorldPoint(a, b, tolerance = 0.04) {
+    return Boolean(a && b && Math.hypot(Number(a[0]) - Number(b[0]), Number(a[1]) - Number(b[1])) <= tolerance);
+  }
+
+  function dedupeWorldPoints(points) {
+    return points.reduce((result, point) => {
+      if (!Array.isArray(point) || !Number.isFinite(Number(point[0])) || !Number.isFinite(Number(point[1]))) return result;
+      const normalized = [Number(point[0]), Number(point[1])];
+      if (!result.length || !sameWorldPoint(result[result.length - 1], normalized)) result.push(normalized);
+      return result;
+    }, []);
+  }
+
+  function getSelectedMapObject() {
+    if (!_selectedVirtualObj) return null;
+    return _selectedStorageLocation
       ? _storageLocationMap.get(_selectedStorageLocation)
       : _isaacObjectMap.get(_selectedVirtualObj.sceneObjectId);
-    const configuredRoute = mapObject ? mapObject.route || [] : [];
-    const points = configuredRoute.length && (configuredRoute[0][0] !== 0 || configuredRoute[0][1] !== 0)
-      ? [[0, 0], ...configuredRoute]
-      : configuredRoute;
+  }
+
+  function guideMatchesSelectedItem() {
+    if (!_matchedItem) return false;
+    if (_guideStatus?.item_id !== undefined && _guideStatus?.item_id !== null) {
+      return Number(_guideStatus.item_id) === Number(_matchedItem.id);
+    }
+    if (_guideStatus?.item_name) {
+      return String(_guideStatus.item_name).trim() === String(_matchedItem.name).trim();
+    }
+    return Number(_routeItemId) === Number(_matchedItem.id);
+  }
+
+  function getActiveRoutePoints() {
+    const mapObject = getSelectedMapObject();
+    if (!mapObject) return [];
+
+    let route = Array.isArray(mapObject.route) ? mapObject.route.map((point) => [...point]) : [];
+    const bindingEntry = _matchedItem ? findBindingEntryForItem(_matchedItem.id) : null;
+    const binding = bindingEntry ? bindingEntry[1] : null;
+    const bindingTarget = Number.isFinite(binding?.nav_x) && Number.isFinite(binding?.nav_y)
+      ? [Number(binding.nav_x), Number(binding.nav_y)]
+      : null;
+    const target = bindingTarget || mapObject.robot_target;
+    if (target && (!route.length || !sameWorldPoint(route[route.length - 1], target))) route.push([...target]);
+
+    const start = _robotPose.hasWorldPose ? [_robotPose.x, _robotPose.y] : [0, 0];
+    if (_robotPose.hasWorldPose && route.length) {
+      const nearestIndex = route.reduce((bestIndex, point, index) => (
+        Math.hypot(point[0] - start[0], point[1] - start[1])
+          < Math.hypot(route[bestIndex][0] - start[0], route[bestIndex][1] - start[1])
+          ? index
+          : bestIndex
+      ), 0);
+      let routeStartIndex = nearestIndex;
+      const guideIndex = Number(_guideStatus?.waypoint_index);
+      const waypointCount = Number(_guideStatus?.waypoint_count);
+      if (guideMatchesSelectedItem() && ["navigating", "arrived"].includes(_guideStatus?.status) && Number.isFinite(guideIndex)) {
+        const guideRouteStart = Number.isFinite(waypointCount)
+          ? Math.max(0, route.length - waypointCount)
+          : 0;
+        routeStartIndex = Math.max(routeStartIndex, guideRouteStart + guideIndex);
+      }
+      route = route.slice(Math.min(routeStartIndex, route.length - 1));
+    }
+
+    if (!route.length) route = [start, target].filter(Boolean);
+    else if (sameWorldPoint(start, route[0])) route[0] = start;
+    else route.unshift(start);
+    return dedupeWorldPoints(route);
+  }
+
+  function buildRoundedPath(points, radius = 1.25) {
+    if (points.length < 2) return "";
+    const fmt = (value) => Number(value).toFixed(3);
+    let path = `M ${fmt(points[0][0])} ${fmt(points[0][1])}`;
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const next = points[index + 1];
+      const incomingLength = Math.hypot(current[0] - previous[0], current[1] - previous[1]);
+      const outgoingLength = Math.hypot(next[0] - current[0], next[1] - current[1]);
+      const cornerRadius = Math.min(radius, incomingLength / 2, outgoingLength / 2);
+      const incoming = [
+        current[0] - ((current[0] - previous[0]) / Math.max(incomingLength, 0.0001)) * cornerRadius,
+        current[1] - ((current[1] - previous[1]) / Math.max(incomingLength, 0.0001)) * cornerRadius
+      ];
+      const outgoing = [
+        current[0] + ((next[0] - current[0]) / Math.max(outgoingLength, 0.0001)) * cornerRadius,
+        current[1] + ((next[1] - current[1]) / Math.max(outgoingLength, 0.0001)) * cornerRadius
+      ];
+      path += ` L ${fmt(incoming[0])} ${fmt(incoming[1])} Q ${fmt(current[0])} ${fmt(current[1])} ${fmt(outgoing[0])} ${fmt(outgoing[1])}`;
+    }
+    const last = points[points.length - 1];
+    return `${path} L ${fmt(last[0])} ${fmt(last[1])}`;
+  }
+
+  function routeDistanceMeters(points) {
+    return points.slice(1).reduce((total, point, index) => total + Math.hypot(
+      point[0] - points[index][0],
+      point[1] - points[index][1]
+    ), 0);
+  }
+
+  function buildRouteSvg() {
+    if (!_routeActive || !_selectedVirtualObj) return "";
+    const points = getActiveRoutePoints();
     if (points.length < 2) return "";
     const projected = points.map(worldToPercent);
-    const pointString = projected.map(([x, y]) => `${x},${y}`).join(" ");
+    const pathData = buildRoundedPath(projected);
     const checkpoints = projected.slice(1).map(([x, y], index) => `
       <g class="overview-checkpoint" transform="translate(${x} ${y})">
-        <circle r="1.7"></circle><circle r="0.55"></circle>
-        <text x="2.8" y="-2">CP-${index + 1}</text>
+        <circle r="1.45"></circle><circle r="0.48"></circle>
+        <text x="2.3" y="-1.8">${index === projected.length - 2 ? "DEST" : `W${index + 1}`}</text>
       </g>`).join("");
-    return `<svg class="overview-route" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="로봇 안내 경로">
-      <polyline points="${pointString}"></polyline>${checkpoints}
+    const distance = routeDistanceMeters(points);
+    return `<svg class="overview-route" id="overviewRouteOverlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="로봇 안내 경로 ${distance.toFixed(1)}미터">
+      <defs><marker id="routeArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
+      <path class="overview-route-halo" d="${pathData}"></path>
+      <path class="overview-route-main" d="${pathData}" marker-end="url(#routeArrow)"></path>
+      ${checkpoints}
+      <g class="overview-route-label" transform="translate(${projected[0][0]} ${projected[0][1]})"><text x="2.3" y="3.4">앞으로 ${distance.toFixed(1)}m</text></g>
     </svg>`;
+  }
+
+  function buildRobotMarker() {
+    const point = _robotPose.hasWorldPose ? [_robotPose.x, _robotPose.y] : [0, 0];
+    const [robotX, robotY] = worldToPercent(point);
+    const heading = Number.isFinite(_robotPose.headingDeg) ? _robotPose.headingDeg : 90;
+    const stateClass = _robotPose.hasWorldPose ? "is-live" : _robotPose.connected ? "is-unlocalized" : "is-waiting";
+    const label = _robotPose.hasWorldPose
+      ? `X ${_robotPose.x.toFixed(2)} · Y ${_robotPose.y.toFixed(2)}`
+      : _robotPose.connected ? "POSITION N/A" : "ISAAC WAIT";
+    return `<div class="overview-robot ${stateClass}" id="overviewRobot" style="left:${robotX}%;top:${robotY}%">
+      <div class="overview-robot-body" style="transform:rotate(${-heading}deg)">
+        <svg class="overview-robot-icon" viewBox="0 0 44 44" aria-hidden="true">
+          <rect class="robot-wheel" x="7" y="2" width="10" height="6" rx="2"></rect>
+          <rect class="robot-wheel" x="27" y="2" width="10" height="6" rx="2"></rect>
+          <rect class="robot-wheel" x="7" y="36" width="10" height="6" rx="2"></rect>
+          <rect class="robot-wheel" x="27" y="36" width="10" height="6" rx="2"></rect>
+          <rect class="robot-chassis" x="5" y="6" width="34" height="32" rx="10"></rect>
+          <path class="robot-front" d="M31 10 L40 22 L31 34 Z"></path>
+          <circle class="robot-camera-ring" cx="25" cy="22" r="7"></circle>
+          <circle class="robot-camera" cx="25" cy="22" r="3.2"></circle>
+          <path class="robot-sensor" d="M10 16h7M10 22h5M10 28h7"></path>
+        </svg>
+      </div>
+      <small>${label}</small>
+    </div>`;
+  }
+
+  function updateRobotSyncBadge() {
+    const badge = document.getElementById("robotSyncBadge");
+    if (!badge) return;
+
+    if (_robotPose.hasWorldPose) {
+      badge.textContent = `ROBOT: ISAAC LIVE · X ${_robotPose.x.toFixed(2)} · Y ${_robotPose.y.toFixed(2)}`;
+      badge.dataset.state = "ready";
+      return;
+    }
+
+    if (_robotPose.connected) {
+      badge.textContent = "ROBOT: ISAAC LIVE · 위치 좌표 수신 대기";
+      badge.dataset.state = "limited";
+      return;
+    }
+
+    badge.textContent = "ROBOT: ISAAC 연결 대기";
+    badge.dataset.state = "offline";
+  }
+
+  function updateRouteProgressBadge() {
+    const badge = document.getElementById("routeProgressBadge");
+    if (!badge) return;
+    badge.hidden = !_routeActive;
+    if (!_routeActive) return;
+
+    const points = getActiveRoutePoints();
+    const remaining = points.length > 1 ? routeDistanceMeters(points) : 0;
+    const status = guideMatchesSelectedItem() ? (_guideStatus?.status || "preview") : "preview";
+    if (status === "navigating") {
+      const index = Number(_guideStatus.waypoint_index || 0) + 1;
+      const count = Number(_guideStatus.waypoint_count || Math.max(1, points.length - 1));
+      badge.textContent = `ROUTE: 이동 ${Math.min(index, count)}/${count} · ${remaining.toFixed(1)}m`;
+      badge.dataset.state = "navigating";
+    } else if (status === "arrived") {
+      badge.textContent = `ROUTE: 목적지 도착 · ${_guideStatus.shelf_code || "선반 앞"}`;
+      badge.dataset.state = "arrived";
+    } else if (String(status).startsWith("awaiting_")) {
+      badge.textContent = "ROUTE: 경로 미리보기 · 실물 주행 준비 필요";
+      badge.dataset.state = "limited";
+    } else {
+      badge.textContent = `ROUTE: 경로 미리보기 · ${remaining.toFixed(1)}m`;
+      badge.dataset.state = "preview";
+    }
+  }
+
+  function refreshRouteOverlay() {
+    if (!_routeActive) {
+      updateRouteProgressBadge();
+      return;
+    }
+    const map = document.querySelector(".physical-map");
+    if (!map) return;
+    const current = document.getElementById("overviewRouteOverlay");
+    const markup = buildRouteSvg();
+    if (current && markup) current.outerHTML = markup;
+    else if (current) current.remove();
+    else if (markup) map.insertAdjacentHTML("afterbegin", markup);
+    updateRouteProgressBadge();
+  }
+
+  function applyRobotPoseToMap() {
+    const marker = document.getElementById("overviewRobot");
+    if (marker) {
+      marker.classList.toggle("is-live", _robotPose.hasWorldPose);
+      marker.classList.toggle("is-unlocalized", _robotPose.connected && !_robotPose.hasWorldPose);
+      marker.classList.toggle("is-waiting", !_robotPose.connected);
+
+      const label = marker.querySelector("small");
+      if (_robotPose.hasWorldPose) {
+        const [x, y] = worldToPercent([_robotPose.x, _robotPose.y]);
+        marker.style.left = `${x}%`;
+        marker.style.top = `${y}%`;
+        const body = marker.querySelector(".overview-robot-body");
+        if (body) body.style.transform = `rotate(${-_robotPose.headingDeg}deg)`;
+        if (label) label.textContent = `X ${_robotPose.x.toFixed(2)} · Y ${_robotPose.y.toFixed(2)}`;
+      } else if (label) {
+        label.textContent = _robotPose.connected ? "POSITION N/A" : "ISAAC WAIT";
+      }
+    }
+    updateRobotSyncBadge();
+    refreshRouteOverlay();
+  }
+
+  async function pollRobotTelemetry() {
+    if (_robotTelemetryBusy) return;
+    _robotTelemetryBusy = true;
+    try {
+      const robotApi = window.LabBotRobotConsole;
+      const telemetry = robotApi?.fetchTelemetry
+        ? await robotApi.fetchTelemetry(800, "sim")
+        : null;
+
+      if (telemetry) {
+        const x = Number(telemetry.x);
+        const y = Number(telemetry.y);
+        const heading = Number(telemetry.heading_deg);
+        const hasWorldPose = telemetry.x !== null && telemetry.x !== undefined
+          && telemetry.y !== null && telemetry.y !== undefined
+          && Number.isFinite(x) && Number.isFinite(y);
+        _robotPose = {
+          ..._robotPose,
+          x: hasWorldPose ? x : _robotPose.x,
+          y: hasWorldPose ? y : _robotPose.y,
+          headingDeg: Number.isFinite(heading) ? heading : _robotPose.headingDeg,
+          connected: true,
+          hasWorldPose,
+          source: "isaac",
+          updatedAt: Date.now()
+        };
+        _guideStatus = telemetry.guide || telemetry.mission || _guideStatus;
+      } else if (Date.now() - _robotPose.updatedAt > ROBOT_TELEMETRY_STALE_MS) {
+        _robotPose = {
+          ..._robotPose,
+          connected: false,
+          hasWorldPose: false,
+          source: "isaac"
+        };
+      }
+      applyRobotPoseToMap();
+    } finally {
+      _robotTelemetryBusy = false;
+      _robotTelemetryTimer = window.setTimeout(
+        pollRobotTelemetry,
+        document.hidden ? 1000 : ROBOT_TELEMETRY_INTERVAL_MS
+      );
+    }
+  }
+
+  function startRobotTelemetrySync() {
+    if (_robotTelemetryTimer) window.clearTimeout(_robotTelemetryTimer);
+    pollRobotTelemetry();
+  }
+
+  function buildRoomZones() {
+    return SIM_ROOM_AREAS.map((area) => {
+      if (_currentFilterRoom !== "all" && area.location !== _currentFilterRoom) return "";
+      return `<div class="sim-room-zone sim-room-zone-${area.kind}" style="${worldAreaStyle(area)}" aria-hidden="true"></div>`;
+    }).join("");
+  }
+
+  function buildGlassPartitions() {
+    const partitions = window.VIRTUAL_LAB_SIM_GEOMETRY?.partitions || [];
+    return partitions
+      .filter((partition) => partition.h > partition.w * 4)
+      .map((partition) => {
+        const area = {
+          min: [partition.x - partition.w / 2, partition.y - partition.h / 2],
+          max: [partition.x + partition.w / 2, partition.y + partition.h / 2]
+        };
+        return `<div class="sim-glass-partition" style="${worldAreaStyle(area)}"></div>`;
+      })
+      .join("");
   }
 
   function renderOverview() {
     const fixtures = _isaacMap.fixtures.map((fixture) => `
-      <div class="sim-fixture sim-fixture-${fixture.type}" style="${worldRectStyle(fixture.bbox)}">
-        <span>${fixture.label}</span>
-      </div>`).join("");
+      <div class="sim-fixture sim-fixture-${fixture.type}" style="${worldRectStyle(fixture.bbox)}"
+        title="${escapeHtml(fixture.label)} · ${FIXTURE_TYPE_LABELS[fixture.type] || "LAB FIXTURE"}"></div>`).join("");
     const partitions = _isaacMap.architecture.map((wall) => `
       <div class="sim-partition" style="${worldRectStyle(wall.bbox)}"></div>`).join("");
 
     const storageNodes = _isaacMap.storage_locations.map((storage) => {
       if (_currentFilterRoom !== "all" && storage.location !== _currentFilterRoom) return "";
       const items = getStorageItems(storage.location);
-      const [x, y] = worldToPercent(storage.bbox.center);
+      const area = SIM_ROOM_AREAS.find((entry) => entry.location === storage.location);
+      const [x, y] = worldToPercent(area?.anchor || storage.bbox.center);
       const selected = _selectedStorageLocation === storage.location;
       const alertCount = items.filter((item) => computeStockStatus(item) !== "AVAILABLE").length;
+      const meta = LOCATION_META[storage.location] || { name: storage.location, icon: "reagent" };
       return `<button type="button" class="overview-storage ${selected ? "is-selected" : ""}"
         style="left:${x}%;top:${y}%" data-storage-location="${escapeHtml(storage.location)}"
         aria-label="${escapeHtml(storage.location)} 보관 물품 ${items.length}종">
-        <b>${escapeHtml(storage.shelf_code || storage.location)}</b><span>${items.length}종</span>${alertCount ? `<em>${alertCount} 경고</em>` : ""}
+        <span class="overview-storage-icon">${SVG_ICONS[meta.icon] || SVG_ICONS.reagent}</span>
+        <span class="overview-storage-copy"><strong>${escapeHtml(meta.name)}</strong><small>${escapeHtml(storage.shelf_code || area?.code || "STORAGE")}</small></span>
+        ${alertCount ? `<i title="재고 확인이 필요한 물품이 있습니다"></i>` : ""}
       </button>`;
     }).join("");
 
-    const nodes = _isaacMap.mapped_objects.map((mapObject) => {
-      const vObj = VIRTUAL_LAB_OBJECTS.find((entry) => entry.sceneObjectId === mapObject.scene_object_id);
-      if (!vObj) return "";
-      if (_currentFilterRoom !== "all" && mapObject.room !== _currentFilterRoom) return "";
-      const [x, y] = worldToPercent(mapObject.bbox.center);
-      const state = getItemVisualState(vObj);
-      const selected = _selectedVirtualObj && _selectedVirtualObj.sceneObjectId === vObj.sceneObjectId;
-      return `<button type="button" class="overview-item ${selected ? "is-selected" : ""}"
-        style="left:${x}%;top:${y}%;--item-color:${state.color}" data-obj-id="${vObj.sceneObjectId}"
-        aria-label="${state.name}"><span></span><em>${vObj.label}</em></button>`;
-    }).join("");
-
-    const [robotX, robotY] = worldToPercent([0, 0]);
     return `<div class="overview-map physical-map"><div class="overview-grid"></div>
-      <div class="sim-floor-outline"></div>${fixtures}${partitions}${buildRouteSvg()}${storageNodes}${nodes}
-      <div class="overview-robot" style="left:${robotX}%;top:${robotY}%"><span>RZ</span><small>WORLD 0,0</small></div>
-      <div class="sim-axis sim-axis-x">X −7m ↔ +7m</div><div class="sim-axis sim-axis-y">Y −2m ↔ +16m</div>
-      <div class="overview-map-title"><b>ISAAC LAB · TOP VIEW 1:1</b><span>USD ${_isaacMap.source.asset_sha256.slice(0, 10)} · DB ${getAllDbItems().length}종 · 9 storage nodes</span></div>
+      ${buildRoomZones()}<div class="sim-floor-outline"></div>${fixtures}${partitions}${buildGlassPartitions()}${buildRouteSvg()}${storageNodes}
+      ${buildRobotMarker()}
+      <div class="sim-axis sim-axis-x">X −7m ↔ +7m</div><div class="sim-axis sim-axis-y">Y −10m ↔ +16m</div>
+      <div class="overview-map-title"><b>ISAAC LAB · TOP VIEW 1:1</b><span>USD ${_isaacMap.source.asset_sha256.slice(0, 10)} · ${getCatalogSummary()} · LOCATION MAP</span></div>
     </div>`;
   }
 
@@ -324,6 +749,8 @@
     canvas.querySelectorAll("[data-room-id]").forEach((el) => {
       el.addEventListener("click", () => filterByRoom(el.getAttribute("data-room-id")));
     });
+    updateRobotSyncBadge();
+    updateRouteProgressBadge();
   }
 
   // 5. 물체 선택 및 사이드 인스펙터 패널 갱신
@@ -334,6 +761,7 @@
     _selectedVirtualObj = vObj;
     _selectedStorageLocation = null;
     _matchedItem = findMatchingItem(vObj);
+    if (_routeActive && Number(_routeItemId) !== Number(_matchedItem?.id)) _routeActive = false;
 
     renderLabCanvas();
     updateInspectorPanel();
@@ -343,20 +771,22 @@
     const storage = _storageLocationMap.get(location);
     if (!storage) return;
     const items = getStorageItems(location);
-    const matched = items.find((item) => item.id === preferredItemId) || items[0] || null;
-    const dbBinding = matched
-      ? Array.from(_sceneBindings.entries()).find(([, binding]) => binding.item_id === matched.id)
-      : null;
+    const matched = preferredItemId === null
+      ? null
+      : (items.find((item) => Number(item.id) === Number(preferredItemId)) || null);
+    const dbBinding = matched ? findBindingEntryForItem(matched.id) : null;
+    const meta = LOCATION_META[location] || { name: location };
     _selectedStorageLocation = location;
     _matchedItem = matched;
+    if (_routeActive && Number(_routeItemId) !== Number(_matchedItem?.id)) _routeActive = false;
     _selectedVirtualObj = {
       sceneObjectId: dbBinding ? dbBinding[0] : `storage:${location}`,
       label: storage.shelf_code || "STORAGE",
-      displayNameFallback: `${location} 보관 물품`,
+      displayNameFallback: meta.name,
       category: matched ? matched.category : "INVENTORY",
       room: location,
-      zoneTag: `${storage.shelf_code || location} · ${items.length}종`,
-      description: `${location}의 Isaac 보관 설비에 연결된 DB 물품입니다.`
+      zoneTag: storage.shelf_code || location,
+      description: `${meta.name}입니다. 아래 목록에서 보관 물품을 선택하면 재고와 선반 위치를 확인할 수 있습니다.`
     };
     renderLabCanvas();
     updateInspectorPanel();
@@ -376,32 +806,56 @@
     const primPathEl = document.getElementById("inspectPrimPath");
     const descEl = document.getElementById("inspectDesc");
     const actionsEl = document.getElementById("inspectActions");
+    const infoGridEl = document.querySelector(".inspector-info-grid");
 
     if (!_selectedVirtualObj) return;
 
     const matched = _matchedItem;
+    const isLocationOverview = Boolean(_selectedStorageLocation && !matched);
+    const locationMeta = LOCATION_META[_selectedStorageLocation || _selectedVirtualObj.room] || { name: _selectedVirtualObj.room };
     const itemName = matched ? matched.name : _selectedVirtualObj.displayNameFallback;
     const category = matched ? matched.category : _selectedVirtualObj.category;
     const room = matched ? matched.location : _selectedVirtualObj.room;
-    const stockStr = matched ? `${matched.available_qty} / ${matched.total_qty} ${matched.unit || "개"}` : "DB 조회 중";
+    const stockStr = matched ? `${matched.available_qty} / ${matched.total_qty} ${matched.unit || "개"}` : "물품을 선택해 확인";
     const statusKey = matched ? computeStockStatus(matched) : "AVAILABLE";
     const statusLabel = STOCK_STATUS_LABEL[statusKey] || statusKey;
     const storage = matched ? (matched.storage_condition || "실온") : "실온";
     const expires = matched ? (matched.expires_at || "해당 없음") : "해당 없음";
+    const bindingEntry = matched ? findBindingEntryForItem(matched.id) : null;
+    const itemBinding = bindingEntry ? bindingEntry[1] : null;
     const locationMap = _selectedStorageLocation
       ? _storageLocationMap.get(_selectedStorageLocation)
       : _isaacObjectMap.get(_selectedVirtualObj.sceneObjectId);
     const isaacPosition = locationMap && locationMap.bbox ? locationMap.bbox.center : null;
-    const robotTarget = locationMap ? locationMap.robot_target : null;
+    const robotTarget = Number.isFinite(itemBinding?.nav_x) && Number.isFinite(itemBinding?.nav_y)
+      ? [itemBinding.nav_x, itemBinding.nav_y]
+      : (locationMap ? locationMap.robot_target : null);
+    const shelfPosition = formatShelfPosition(itemBinding, locationMap?.shelf_code || "미지정");
+    const parentItem = matched?.storage_parent_item_id ? _itemsMap.get(matched.storage_parent_item_id) : null;
+    const containedItems = matched && matched.is_rentable === false ? getContainedItems(matched.id) : [];
 
-    if (titleEl) titleEl.innerText = `${_selectedVirtualObj.label}: ${itemName}`;
-    if (roomEl) roomEl.innerText = `${room} (${_selectedVirtualObj.zoneTag})`;
-    if (categoryEl) categoryEl.innerText = category;
+    if (infoGridEl) {
+      infoGridEl.dataset.mode = isLocationOverview ? "location" : "item";
+      const categoryLabel = infoGridEl.querySelector('.info-label[data-field="category"]');
+      const statusLabelEl = infoGridEl.querySelector('.info-label[data-field="status"]');
+      const shelfLabelEl = infoGridEl.querySelector('.info-label[data-field="shelf"]');
+      if (categoryLabel) categoryLabel.textContent = isLocationOverview ? "장소 유형" : "분류";
+      if (statusLabelEl) statusLabelEl.textContent = isLocationOverview ? "DB 상태" : "재고 상태";
+      if (shelfLabelEl) shelfLabelEl.textContent = isLocationOverview ? "장소 코드" : "보관 위치코드";
+    }
+
+    if (titleEl) titleEl.innerText = isLocationOverview ? locationMeta.name : itemName;
+    if (roomEl) roomEl.innerText = isLocationOverview
+      ? `보관 구역 · ${_selectedVirtualObj.zoneTag}`
+      : `${locationMeta.name} · ${shelfPosition}`;
+    if (categoryEl) categoryEl.innerText = isLocationOverview ? "보관 구역" : category;
     if (stockEl) stockEl.innerText = stockStr;
-    if (statusEl) statusEl.innerText = statusLabel;
-    if (storageEl) storageEl.innerText = storage;
-    if (expiresEl) expiresEl.innerText = expires;
-    if (shelfCodeEl) shelfCodeEl.innerText = locationMap?.shelf_code || "미지정";
+    if (statusEl) statusEl.innerText = isLocationOverview
+      ? (_catalogLoadState === "ready" ? "Supabase 실시간 연결" : "DB 연결 확인 필요")
+      : statusLabel;
+    if (storageEl) storageEl.innerText = isLocationOverview ? "물품별 보관조건 확인" : storage;
+    if (expiresEl) expiresEl.innerText = isLocationOverview ? "물품별 유효기간 확인" : expires;
+    if (shelfCodeEl) shelfCodeEl.innerText = shelfPosition;
     if (isaacPositionEl) isaacPositionEl.innerText = isaacPosition
       ? `X ${isaacPosition[0].toFixed(2)}m · Y ${isaacPosition[1].toFixed(2)}m`
       : "좌표 없음";
@@ -412,7 +866,17 @@
       primPathEl.innerText = locationMap?.prim_path || locationMap?.fixture_prim_path || "미지정";
       primPathEl.title = primPathEl.innerText;
     }
-    if (descEl) descEl.innerText = _selectedVirtualObj.description;
+    if (descEl) {
+      if (isLocationOverview) {
+        descEl.innerText = _selectedVirtualObj.description;
+      } else if (parentItem) {
+        descEl.innerText = `${parentItem.name} 내부 · ${matched.storage_position || "세부 위치 미지정"}`;
+      } else if (containedItems.length > 0) {
+        descEl.innerText = `${_selectedVirtualObj.description} 내부 보관 물품이 DB에 연결되어 있습니다.`;
+      } else {
+        descEl.innerText = itemBinding?.location_detail || _selectedVirtualObj.description;
+      }
+    }
 
     // 해당 물품에 대한 사용자 예약 건이 있는지 확인
     const userReservation = matched ? _activeUserLoans.find((l) => l.item_id === matched.id && l.status === "예약중") : null;
@@ -420,19 +884,40 @@
     const isConsumable = matched && window.LabBotRentals && window.LabBotRentals.isConsumable(matched);
 
     let actionBtnsHtml = "";
+    if (containedItems.length > 0) {
+      actionBtnsHtml += `<div class="storage-inventory-list"><strong>${escapeHtml(itemName)} 내부 보관 물품</strong><div>`;
+      actionBtnsHtml += containedItems.map((item) => `<button type="button" class="storage-inventory-item" data-storage-item-id="${item.id}">
+        <span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.category || item.item_type || "미분류")} · ${escapeHtml(item.storage_position || "위치 미지정")}<br>재고 ${item.available_qty}/${item.total_qty} ${escapeHtml(item.unit || "개")}</small>
+      </button>`).join("");
+      actionBtnsHtml += `</div></div>`;
+    }
     if (_selectedStorageLocation) {
       const storageItems = getStorageItems(_selectedStorageLocation);
-      actionBtnsHtml += `<div class="storage-inventory-list"><strong>${escapeHtml(_selectedStorageLocation)} 물품 ${storageItems.length}종</strong><div>`;
+      if (matched) {
+        actionBtnsHtml += `<button type="button" class="location-overview-back" id="btnLocationOverview">← ${escapeHtml(locationMeta.name)} 전체 보기</button>`;
+      }
+      actionBtnsHtml += `<div class="storage-inventory-list"><strong>${escapeHtml(locationMeta.name)} 보관 물품</strong><div>`;
       actionBtnsHtml += storageItems.map((item) => {
         const status = computeStockStatus(item);
+        const itemBindingEntry = findBindingEntryForItem(item.id);
+        const itemBinding = itemBindingEntry ? itemBindingEntry[1] : null;
+        const shelfLabel = formatShelfPosition(itemBinding, _storageLocationMap.get(_selectedStorageLocation)?.shelf_code || "미지정");
         return `<button type="button" class="storage-inventory-item ${_matchedItem && _matchedItem.id === item.id ? "is-selected" : ""}" data-storage-item-id="${item.id}">
-          <span>${escapeHtml(item.name)}</span><small>${escapeHtml(STOCK_STATUS_LABEL[status] || status)} · ${item.available_qty}/${item.total_qty} ${escapeHtml(item.unit || "개")}</small>
+          <span>${escapeHtml(item.name)}</span><small>${escapeHtml(item.category || item.item_type || "미분류")} · ${escapeHtml(shelfLabel)}<br>${escapeHtml(STOCK_STATUS_LABEL[status] || status)} · ${item.available_qty}/${item.total_qty} ${escapeHtml(item.unit || "개")}</small>
         </button>`;
       }).join("");
       actionBtnsHtml += `</div></div>`;
     }
 
-    if (userReservation) {
+    if (!matched) {
+      actionBtnsHtml += "";
+    } else if (matched.is_rentable === false) {
+      actionBtnsHtml += `
+        <button class="btn-virtual-action" style="background:var(--surface-2); color:var(--text-faint); cursor:not-allowed;" disabled>
+          고정 보관 설비 · 대여 불가
+        </button>
+      `;
+    } else if (userReservation) {
       actionBtnsHtml += `
         <button class="btn-virtual-action btn-virtual-scan" id="btnVirtualPickup">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/></svg>
@@ -464,7 +949,7 @@
     actionBtnsHtml += `
       <button class="btn-virtual-action btn-virtual-route" id="btnGuideRoute">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-        로봇 이동 경로 안내
+        ${_routeActive ? "경로 안내 숨기기" : "로봇 이동 경로 보기"}
       </button>
     `;
 
@@ -483,9 +968,56 @@
       const routeBtn = document.getElementById("btnGuideRoute");
       if (routeBtn) routeBtn.addEventListener("click", toggleRouteGuide);
 
+      const overviewBtn = document.getElementById("btnLocationOverview");
+      if (overviewBtn) overviewBtn.addEventListener("click", () => selectStorageLocation(_selectedStorageLocation));
+
       actionsEl.querySelectorAll("[data-storage-item-id]").forEach((button) => {
         button.addEventListener("click", () => selectStorageLocation(_selectedStorageLocation, Number(button.getAttribute("data-storage-item-id"))));
       });
+    }
+  }
+
+  async function beginRobotGuide(loan, { notify = false } = {}) {
+    if (!_matchedItem || !loan) return null;
+
+    _routeActive = true;
+    _routeItemId = _matchedItem.id;
+    _currentFilterRoom = "all";
+    renderRoomTabs();
+    renderLabCanvas();
+    updateInspectorPanel();
+
+    try {
+      if (!window.LabBotRobotConsole?.startRobotGuide) {
+        throw new Error("로봇 안내 API가 준비되지 않았습니다.");
+      }
+      const mode = window.LabBotRentals?.isConsumable?.(_matchedItem) ? "use" : "pickup";
+      const result = await LabBotRobotConsole.startRobotGuide({
+        loanId: loan.id,
+        item: _matchedItem,
+        mode,
+        targetMode: "sim"
+      });
+      _guideStatus = result || { status: "preview" };
+      refreshRouteOverlay();
+
+      if (notify && window.LabBotToast) {
+        const message = result?.status === "navigating"
+          ? "로봇을 따라가세요. 실시간 위치와 남은 경로를 표시합니다."
+          : result?.status === "arrived"
+            ? "로봇이 물품 선반 앞에 도착했습니다."
+            : "경로를 표시했습니다. 로봇 주행 준비 상태를 확인하세요.";
+        LabBotToast.show(message, "info");
+      }
+      return result;
+    } catch (error) {
+      console.info("[VirtualLab] Guide unavailable, keeping route preview:", error);
+      _guideStatus = { status: "preview", message: error.message };
+      refreshRouteOverlay();
+      if (notify && window.LabBotToast) {
+        LabBotToast.show("계획 경로를 표시했습니다. Isaac Sim을 켜면 RZ 위치가 실시간으로 연결됩니다.", "info");
+      }
+      return null;
     }
   }
 
@@ -502,18 +1034,23 @@
     }
 
     if (!_matchedItem) return;
+    const reservedItem = _matchedItem;
 
     try {
+      let loan = null;
       if (window.LabBotRentals) {
-        await LabBotRentals.reserveItem(_matchedItem, session, "manual");
-      }
-      if (window.LabBotToast) {
-        LabBotToast.show(`[${_matchedItem.name}] 예약이 완료되었습니다. 가상 픽업 스캔을 진행하세요!`, "success");
+        loan = await LabBotRentals.reserveItem(reservedItem, session, "manual");
       }
       await loadDbItems();
       await loadUserLoans();
-      updateInspectorPanel();
-      renderLabCanvas();
+      focusItemById(reservedItem.id);
+      const guideResult = loan ? await beginRobotGuide(loan) : null;
+      if (window.LabBotToast) {
+        const message = guideResult?.status === "navigating"
+          ? `[${reservedItem.name}] 예약 완료. 로봇을 따라가세요.`
+          : `[${reservedItem.name}] 예약 완료. 선반까지의 계획 경로를 표시합니다.`;
+        LabBotToast.show(message, "success");
+      }
     } catch (err) {
       console.error("[VirtualLab] Reservation error:", err);
       if (window.LabBotToast) LabBotToast.show(err.message || "예약에 실패했습니다.", "error");
@@ -530,7 +1067,9 @@
         <div class="virtual-scanner-modal">
           <h3>${mode === "pickup" ? "가상 QR 수령 스캔" : mode === "usage" ? "가상 QR 사용 스캔" : "가상 QR 반납 스캔"}</h3>
           <p style="color:var(--text-muted); font-size:0.85rem; margin-top:4px;">
-            디지털 트윈 로봇이 대상 물품의 QR 라벨을 확인 중입니다.
+            아이작 심(가상 연구실) 로봇이 QR 라벨을 확인합니다.
+            <br>실물 로봇으로 대여하려면 마이페이지에서 진행하세요 — 이 화면의
+            경로는 가상 연구실 기준이라 실물 로봇과 다릅니다.
           </p>
           <div class="scanner-viewfinder">
             <div class="scanner-laser-line"></div>
@@ -538,6 +1077,20 @@
               [SCANNING ITEM]
             </div>
           </div>
+          <!-- 실물 로봇용 QR. 이 화면을 로봇 카메라에 대면 로봇이 읽는다.
+               흰 바탕을 강제하는 이유는 어두운 배경에서는 인식률이 떨어지기
+               때문이다. -->
+          <div id="virtualItemQrBox"
+            style="display:flex; flex-direction:column; align-items:center; gap:6px;
+                   margin-top:0.75rem; padding:12px; background:#fff; border-radius:10px;">
+            <canvas id="virtualItemQr" width="180" height="180"></canvas>
+            <span id="virtualItemQrCode"
+              style="font-family:var(--font-mono); font-size:0.72rem; color:#333;
+                     text-align:center; word-break:break-all;"></span>
+          </div>
+          <p style="color:var(--text-muted); font-size:0.78rem; margin:6px 0 0; text-align:center;">
+            실물 로봇으로 대여하려면 위 QR을 로봇 카메라에 보여주세요
+          </p>
           ${mode === "usage" ? `
             <label for="virtualUsageQty" style="display:block; margin:0.75rem 0; color:var(--text);">
               사용 수량
@@ -553,6 +1106,27 @@
         </div>
       </div>
     `;
+
+    // 실물 QR 을 그린다. 값은 자기가 예약중·대여중인 물품만 내려온다(RLS).
+    (function renderVirtualItemQr() {
+      const canvas = document.getElementById("virtualItemQr");
+      const codeEl = document.getElementById("virtualItemQrCode");
+      const box = document.getElementById("virtualItemQrBox");
+      if (!canvas || !codeEl) return;
+      const code = window.LabBotItems && window.LabBotItems.qrCodeOf
+        ? window.LabBotItems.qrCodeOf(loan.items)
+        : null;
+      if (!code) {
+        // 값이 없으면 가상 스캔만 쓰는 상황이다. 빈 흰 상자를 남기지 않는다.
+        if (box) box.style.display = "none";
+        return;
+      }
+      codeEl.textContent = code;
+      if (!window.QRCode) return;
+      window.QRCode.toCanvas(canvas, code, { width: 180, margin: 1 }, (err) => {
+        if (err) canvas.style.display = "none";
+      });
+    })();
 
     document.getElementById("btnCloseScanner").addEventListener("click", () => {
       modalContainer.innerHTML = "";
@@ -596,15 +1170,32 @@
   }
 
   // 8. 로봇 이동 경로 가이드 토글
-  function toggleRouteGuide() {
-    _routeActive = !_routeActive;
+  async function toggleRouteGuide() {
     if (_routeActive) {
-      _currentFilterRoom = "all";
-      renderRoomTabs();
+      _routeActive = false;
+      renderLabCanvas();
+      updateInspectorPanel();
+      if (window.LabBotToast) LabBotToast.show("경로 표시를 해제했습니다.", "info");
+      return;
     }
+
+    const reservation = _matchedItem
+      ? _activeUserLoans.find((loan) => Number(loan.item_id) === Number(_matchedItem.id) && loan.status === "예약중")
+      : null;
+    if (reservation) {
+      await beginRobotGuide(reservation, { notify: true });
+      return;
+    }
+
+    _routeActive = true;
+    _routeItemId = _matchedItem?.id || null;
+    _currentFilterRoom = "all";
+    _guideStatus = { status: "preview" };
+    renderRoomTabs();
     renderLabCanvas();
+    updateInspectorPanel();
     if (window.LabBotToast) {
-      LabBotToast.show(_routeActive ? "로봇 순찰 및 안내 경로가 표시되었습니다." : "경로 표시를 해제했습니다.", "info");
+      LabBotToast.show("현재 RZ 위치에서 선반 앞까지의 계획 경로를 표시합니다.", "info");
     }
   }
 
@@ -620,22 +1211,10 @@
     const item = _itemsMap.get(itemId);
     if (!item) return;
 
-    const directBinding = Array.from(_sceneBindings.entries()).find(([, binding]) => binding.item_id === itemId);
-    const vObj = VIRTUAL_LAB_OBJECTS.find((o) => o.itemId === itemId || (directBinding && o.sceneObjectId === directBinding[0]));
-
-    if (vObj) {
-      _currentFilterRoom = "all";
-      renderRoomTabs();
-      selectObjectById(vObj.sceneObjectId);
-      if (window.LabBotToast) {
-        LabBotToast.show(`가상 실험실에서 [${item.name}] 위치를 찾았습니다!`, "info");
-      }
-    } else {
-      _currentFilterRoom = "all";
-      renderRoomTabs();
-      selectStorageLocation(resolveStorageLocation(item), item.id);
-      if (window.LabBotToast) LabBotToast.show(`가상 실험실에서 [${item.name}] 보관 위치를 찾았습니다!`, "info");
-    }
+    _currentFilterRoom = "all";
+    renderRoomTabs();
+    selectStorageLocation(resolveStorageLocation(item), item.id);
+    if (window.LabBotToast) LabBotToast.show(`가상 실험실에서 [${item.name}] 보관 위치를 찾았습니다!`, "info");
   }
 
   function setupEventListeners() {
@@ -687,5 +1266,8 @@
       .subscribe();
   }
 
+  window.addEventListener("pagehide", () => {
+    if (_robotTelemetryTimer) window.clearTimeout(_robotTelemetryTimer);
+  });
   window.addEventListener("DOMContentLoaded", initVirtualLab);
 })();

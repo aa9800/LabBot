@@ -24,6 +24,7 @@ class WaypointPatrolController:
         self.on_obstacle_cleared = on_obstacle_cleared
         self.on_guide_arrived = on_guide_arrived
         self.target_index = 1
+        self.completed_laps = 0
         self._scanned_marker = None
         self._scan_elapsed = 0.0
         self._obstacle_active = False
@@ -37,6 +38,18 @@ class WaypointPatrolController:
 
     def avoidance_status(self):
         return self._avoider.status()
+
+    def patrol_status(self):
+        """웹과 테스트가 현재 순찰 진행 상황을 동일하게 읽는다."""
+        target = self.track_points[self.target_index]
+        return {
+            "status": "paused_for_guide" if self.guide_task else "patrolling",
+            "waypoint_index": self.target_index,
+            "waypoint_count": len(self.track_points),
+            "completed_laps": self.completed_laps,
+            "target_x": target[0],
+            "target_y": target[1],
+        }
 
     def start_guide(self, task):
         """순찰을 잠시 멈추고 물품/반납대 안내 경로를 시작한다."""
@@ -72,7 +85,14 @@ class WaypointPatrolController:
             "waypoint_count": len(self.guide_task["waypoints"]),
         }
 
-    def _drive_toward(self, target_x, target_y, speed_fast=62.0):
+    # 순찰·안내 주행 속도(0~100 명령값). 실제 m/s 는 isaac_hal 의 SPEED_SCALE
+    # 이 정한다. 여기 값은 "얼마나 세게 밟을 것인가"이고, 방향이 많이 틀어졌을
+    # 때는 SLOW 로 떨어뜨려 제자리에서 방향부터 잡는다.
+    DRIVE_FAST = float(os.environ.get("LABKEEPER_ISAAC_DRIVE_FAST", "80"))
+    GUIDE_FAST = float(os.environ.get("LABKEEPER_ISAAC_GUIDE_FAST", "92"))
+    DRIVE_SLOW = float(os.environ.get("LABKEEPER_ISAAC_DRIVE_SLOW", "32"))
+
+    def _drive_toward(self, target_x, target_y, speed_fast=None):
         x, y, forward_x, forward_y = self.hal._position_and_heading()
         dx, dy = target_x - x, target_y - y
         distance = math.hypot(dx, dy)
@@ -80,7 +100,9 @@ class WaypointPatrolController:
         desired_heading = math.atan2(dy, dx)
         heading_error = _wrap_angle(desired_heading - current_heading)
         turn = max(-85.0, min(85.0, -math.degrees(heading_error) * 1.15))
-        speed = speed_fast if abs(heading_error) < 0.35 else 24.0
+        if speed_fast is None:
+            speed_fast = self.DRIVE_FAST
+        speed = speed_fast if abs(heading_error) < 0.35 else self.DRIVE_SLOW
         self.hal.set_motion(speed, turn)
         return distance
 
@@ -96,8 +118,9 @@ class WaypointPatrolController:
                 self.hal.stop()
                 return
             target_x, target_y = self.guide_task["waypoints"][self.guide_waypoint_index]
-            distance = self._drive_toward(target_x, target_y, speed_fast=78.0)
-            if distance < 0.22:
+            distance = self._drive_toward(target_x, target_y, speed_fast=self.GUIDE_FAST)
+            arrival_tolerance = max(0.05, float(self.guide_task.get("arrival_tolerance", 0.22)))
+            if distance < arrival_tolerance:
                 self.guide_waypoint_index += 1
                 if self.guide_waypoint_index >= len(self.guide_task["waypoints"]):
                     self.guide_waypoint_index = len(self.guide_task["waypoints"]) - 1
@@ -128,6 +151,9 @@ class WaypointPatrolController:
         dx, dy = target_x - x, target_y - y
         distance = math.hypot(dx, dy)
         if distance < 0.18:
+            reached_index = self.target_index
+            if reached_index == len(self.track_points) - 1:
+                self.completed_laps += 1
             self.target_index = (self.target_index + 1) % len(self.track_points)
             target_x, target_y = self.track_points[self.target_index]
             dx, dy = target_x - x, target_y - y

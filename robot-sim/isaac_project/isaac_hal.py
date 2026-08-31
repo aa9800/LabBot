@@ -12,9 +12,19 @@ LINE_TOLERANCE = 0.08
 # 실제 Raspbot 실측값(2026-08-26): 바퀴 지름 6.5cm, 트랙 폭 13.5cm
 WHEEL_RADIUS = 0.0325
 AXLE_LENGTH = 0.135
-# 웹/자동순찰의 speed=100을 약 0.7m/s로 변환한다. (기존 0.0035에서 0.007로 2배 상향)
-SPEED_SCALE = 0.007
-ANGULAR_SPEED_SCALE = 0.024
+# 명령값(0~100)을 속도로 바꾸는 배율.
+#
+# 0.007 이면 speed=100 이 0.7m/s 다. 물리는 60Hz 고정이라 적분은 정확하지만,
+# 렌더링이 무거우면 시뮬 시간이 실제 시간보다 느리게 흘러서 화면에서는 더
+# 느려 보인다. 시연에서 "너무 느리다"는 지적이 있어 올렸다.
+#
+# 회전도 같은 비율로 올린다. 직진만 빠르게 하면 코너에서 목표를 지나친다.
+#
+# 환경변수로 조절할 수 있게 둔다 - 아이작을 띄운 채로 값을 바꿔가며 맞추는
+# 편이 코드를 고치고 재시작하는 것보다 빠르다.
+#   LABKEEPER_ISAAC_SPEED_SCALE=0.007  로 예전 속도로 되돌릴 수 있다.
+SPEED_SCALE = float(os.environ.get("LABKEEPER_ISAAC_SPEED_SCALE", "0.012"))
+ANGULAR_SPEED_SCALE = float(os.environ.get("LABKEEPER_ISAAC_TURN_SCALE", "0.041"))
 
 NO_OBSTACLE_CM = 999.0
 ULTRASONIC_MAX_M = 3.0
@@ -83,6 +93,9 @@ class IsaacHAL:
         self.last_turn = 0.0
         self.cam_pan = 90
         self.cam_tilt = 90
+        # 방향키를 누르고 있는 동안 유지되는 이동 방향(-1/0/+1).
+        self._servo_dir_pan = 0
+        self._servo_dir_tilt = 0
         self._last_valid_frame = np.zeros((FPV_HEIGHT, FPV_WIDTH, 3), dtype=np.uint8)
         self._cached_dist = NO_OBSTACLE_CM
         self._cached_obstacle_kind = "none"
@@ -289,11 +302,38 @@ class IsaacHAL:
     def stop(self):
         self.set_motion(0.0, 0.0)
 
+    # 방향키를 누르고 있는 동안 초당 몇 도씩 움직일 것인가. 실물 서보가
+    # 부드럽게 흐르는 느낌과 맞춘 값이다.
+    SERVO_HOLD_DEG_PER_S = 45.0
+
     def set_servo_angle(self, pan=None, tilt=None):
         if pan is not None:
             self.cam_pan = max(0, min(180, int(pan)))
         if tilt is not None:
             self.cam_tilt = max(0, min(180, int(tilt)))
+        return {"pan": self.cam_pan, "tilt": self.cam_tilt}
+
+    def set_servo_direction(self, pan_dir=None, tilt_dir=None):
+        """방향(-1/0/+1)을 받아 그 쪽으로 계속 움직이게 한다.
+
+        웹의 카메라 화살표는 각도가 아니라 방향을 보낸다 - 누르고 있는 동안
+        로봇이 매 틱 목표를 밀어줘야 끊기지 않는다(실물 쪽과 같은 계약).
+        아이작에는 이 콜백이 등록돼 있지 않아서, 방향 명령이 각도 콜백으로
+        떨어지고 pan=None, tilt=None 이 되어 아무 일도 일어나지 않았다.
+        """
+        if pan_dir is not None:
+            self._servo_dir_pan = int(pan_dir)
+        if tilt_dir is not None:
+            self._servo_dir_tilt = int(tilt_dir)
+        return {"pan": self.cam_pan, "tilt": self.cam_tilt}
+
+    def step_servo(self, dt):
+        """눌린 방향대로 카메라 각도를 조금씩 옮긴다. 메인 루프가 매 틱 부른다."""
+        step = self.SERVO_HOLD_DEG_PER_S * max(0.0, min(0.2, dt))
+        if self._servo_dir_pan:
+            self.cam_pan = max(0, min(180, self.cam_pan + self._servo_dir_pan * step))
+        if self._servo_dir_tilt:
+            self.cam_tilt = max(0, min(180, self.cam_tilt + self._servo_dir_tilt * step))
         return {"pan": self.cam_pan, "tilt": self.cam_tilt}
 
     def capture_fpv_frame(self):

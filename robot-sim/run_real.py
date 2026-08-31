@@ -9,6 +9,8 @@ FrameBroker, NCNN 추론 워커, 임무/야간경비 엔진과 RealHAL의 생명
   - SPACE/C/R/M/F/N 같은 pygame 키 조작은 실물에는 해당 사항이 없다(화면이 없음).
 """
 import datetime
+import json
+import math
 import os
 import signal
 import sys
@@ -23,6 +25,7 @@ from edge_inference import EdgeInferenceWorker, NcnnYoloBackend, draw_detections
 from mission_engine import ItemLocationCache, MissionEngine
 from night_guard import NightGuardScheduler
 # 로봇에서는 Supabase를 직접 부르지 않는다(인터넷 없음) — get_my_local_ip만 로컬 함수라 쓴다.
+import notify_supabase
 from notify_supabase import get_my_local_ip
 from real_hal import RealHAL
 from run_logger import JsonlRunLogger
@@ -30,6 +33,10 @@ from dataclasses import asdict as _asdict
 
 import event_queue
 from route_recorder import RouteRecorder, RoutePlayer, load_route, list_routes
+from patrol import PatrolRunner, load_map, list_maps
+import shelf_map
+from odometry import Odometry, load_model, save_model
+import calibrate_motion
 import stream_server
 
 # 파이썬은 기본적으로 한 스레드가 5ms 동안 GIL을 쥐고 있다가 넘긴다. 이 프로세스는
@@ -222,9 +229,28 @@ def main():
                 # 않게 1초에 한 장만 만든다. 탐지 자체(아래 ai_corrected)는 경비
                 # 판단에 쓰이므로 항상 갱신한다.
                 def encode_annotated():
-                    """박스를 그려 넣은 JPEG 한 장. 실패하면 None."""
+                    """박스와 마커를 그려 넣은 JPEG 한 장. 실패하면 None.
+
+                    마커를 같이 그리는 이유는 "지금 마커가 보이는지"를 화면으로
+                    바로 확인하기 위해서다. 로그 숫자만으로는 안 보이는 건지
+                    보이는데 계산이 틀린 건지 구분이 안 된다.
+                    """
+                    seen_markers = []
+                    if marker_overlay["locator"] is not None:
+                        try:
+                            seen_markers = marker_overlay["locator"].find(source_frame)
+                        except Exception:
+                            seen_markers = []
+                    # QR 도 같이 그린다. "QR 인식이 안 된다"고 할 때, 네모가
+                    # 그려지면 각도·거리 문제이고 안 그려지면 아예 안 보이는
+                    # 것이라 원인이 바로 갈린다.
+                    try:
+                        seen_qrs = hal.find_qr_boxes(source_frame)
+                    except Exception:
+                        seen_qrs = []
                     ok, buf = cv2.imencode(
-                        ".jpg", draw_detections(source_frame, detections),
+                        ".jpg", draw_detections(source_frame, detections,
+                                                markers=seen_markers, qrs=seen_qrs),
                         [int(cv2.IMWRITE_JPEG_QUALITY), AI_JPEG_QUALITY, int(cv2.IMWRITE_JPEG_OPTIMIZE), 0],
                     )
                     return buf.tobytes() if ok else None
@@ -286,10 +312,33 @@ def main():
             ai_runtime_status.update({"mode": "unavailable", "error": f"{type(exc).__name__}: {exc}"})
             print(f"[labkeeper] 로컬 Physical AI 비활성: {ai_runtime_status['error']}")
 
+    # 이 밝기 아래로는 탐지 결과를 믿을 수 없다고 본다. 실측에서 불을 끈 방이
+    # 평균 2.5 였고, 사람이 알아볼 수 있는 어두운 실내가 대략 30~40 이었다.
+    CAMERA_BLIND_MEAN = 12.0
+
+    def camera_light_level():
+        """화면이 얼마나 밝은가(0~255). 못 재면 None."""
+        try:
+            frame = hal.capture_frame()
+            if frame is None or getattr(frame, "size", 0) == 0:
+                return None
+            # 전체를 다 볼 필요가 없다. 8픽셀마다 하나씩만 봐도 평균은 같다.
+            return float(frame[::8, ::8].mean())
+        except Exception:
+            return None
+
     def get_ai_status():
         if ai_worker is None:
             return {"status": "error", **ai_runtime_status}
         worker_status = ai_worker.status()
+        # 어두워서 못 보는 것과 "아무도 없다"는 다르다. 구분해서 알려준다.
+        light = camera_light_level()
+        worker_status["light_level"] = None if light is None else round(light, 1)
+        worker_status["camera_blind"] = bool(light is not None and light < CAMERA_BLIND_MEAN)
+        if worker_status["camera_blind"]:
+            worker_status["blind_note"] = (
+                "화면이 너무 어두워 탐지 결과를 믿을 수 없습니다. "
+                "탐지 0건은 '아무도 없다'가 아니라 '보이지 않는다'입니다.")
         latest = worker_status.get("latest") or {}
         # 사람이 순정 모델로 교체된 뒤의 목록이 있으면 그걸 쓴다.
         if ai_corrected["detections"] is not None:
@@ -355,6 +404,14 @@ def main():
         status=location_cache.status,
     )
 
+    # 배달 상태와 실행 함수. 실행 함수는 한참 아래(순찰 설정 뒤)에서 채워진다 -
+    # patrol·odometry 가 있어야 만들 수 있기 때문이다. 그런데 HTTP 서버는 그보다
+    # 먼저 뜨므로, 그 사이에 대여 요청이 오면 아직 없는 이름을 부르게 된다.
+    # 홀더에 담아두고 "아직 준비 안 됐다"를 정상 응답으로 돌려준다.
+    delivery = {"running": False, "item_id": None, "shelf": None,
+                "phase": "idle", "qr": None, "error_cm": None, "message": ""}
+    driver = {"start": None}
+
     def on_guide_start(params):
         result = mission_engine.start(
             request_id=params.get("request_id") or params.get("loan_id"),
@@ -368,6 +425,25 @@ def main():
             status=result["status"],
             direct_from_previous=result["direct_from_previous"],
         )
+
+        # 여기서 실제로 운전을 건다. mission_engine 은 "무엇을 가지러 가는가"를
+        # 기록할 뿐이고, 예전에는 physical_route(티치앤리피트)가 실행을 맡았는데
+        # 그 방식은 오차가 쌓여 못 쓴다. 지금은 선반 좌표로 직접 간다.
+        #
+        # 실패해도 안내 기록 자체는 남긴다 - 대여는 성립했고 로봇만 못 간 것이라,
+        # 여기서 예외를 던지면 웹의 대여 흐름 전체가 막힌다.
+        try:
+            if driver["start"] is None:
+                raise RuntimeError("주행 준비가 아직 끝나지 않았다")
+            drive = driver["start"](int(result["item_id"]), from_home=True)
+            result["drive"] = drive
+            if "shelf" in drive:
+                result["shelf_code"] = drive["shelf"]["code"]
+                result["target_x"] = drive["shelf"]["x_cm"]
+                result["target_y"] = drive["shelf"]["y_cm"]
+        except Exception as e:
+            result["drive"] = {"error": str(e)}
+            print(f"[guide] 주행을 못 걸었다(안내 기록은 유지): {e}")
         return result
 
     def on_guide_finish(status):
@@ -375,9 +451,22 @@ def main():
         run_log.write("guide_finished", status=status, item_id=result.get("item_id"))
         return result
 
+    def on_guide_status():
+        """안내 상태에 실제 주행 진행을 얹어 준다.
+
+        웹이 mission 과 patrol 을 따로 폴링하면 둘이 어긋난 순간이 보인다
+        (도착했는데 mission 은 아직 navigating 이라거나). 한 군데서 같이 낸다.
+        """
+        st = mission_engine.status()
+        st["drive"] = dict(delivery)
+        pose = odometry.pose()
+        st["drive"]["x_cm"] = pose["x_cm"]
+        st["drive"]["y_cm"] = pose["y_cm"]
+        return st
+
     stream_server.set_guide_callbacks(
         start=on_guide_start,
-        status=mission_engine.status,
+        status=on_guide_status,
         finish=on_guide_finish,
     )
 
@@ -477,6 +566,71 @@ def main():
     last_guard_transition_id = latest_guard["transition_id"]
     control_source = {"value": "manual"}
 
+    # AI 오버레이가 마커를 그릴 수 있게 인식기를 여기 담아둔다. 인식기 자체는
+    # 아래(순찰 설정)에서 만들어지는데, 오버레이는 그보다 먼저 정의된다.
+    marker_overlay = {"locator": None}
+
+    # 자율 주행(순찰·경로 재생·모션 측정)이 바퀴를 잡고 있는 동안 메인 루프가
+    # 끼어들면 안 된다. 수동 모드의 메인 루프는 웹 조이스틱 신호가 3초 없으면
+    # 매 틱 hal.stop() 을 부르는데(데드맨 스위치), 그게 순찰 명령을 초당 10번
+    # 지워버린다. 실제로 이것 때문에 순찰이 "소리만 나고 거의 안 움직였다".
+    motion_owner = {"name": None}
+
+    # 바퀴 잠금.
+    #
+    # 로봇이 충전 케이블에 묶여 있거나 책상 위에 있을 때, 실수로든 자동
+    # 순찰 타이머로든 움직이면 케이블이 뽑히거나 떨어진다. 사람이 자리를
+    # 비운 동안에는 아예 못 움직이게 잠가둔다.
+    #
+    # 카메라·센서·AI 는 그대로 돈다. 막는 것은 바퀴뿐이다.
+    # 잠금은 파일로 남긴다. 재시작할 때마다 풀리면 안전장치가 아니다 -
+    # 사람이 자리를 비운 사이 서비스가 한 번 재시작되면(코드 배포, 크래시,
+    # 전원 복구) 그때부터 로봇이 움직일 수 있게 된다.
+    def _lock_path():
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "state", "motion_lock.json")
+
+    def _load_lock():
+        try:
+            with open(_lock_path(), encoding="utf-8") as f:
+                d = json.load(f)
+            return {"locked": bool(d.get("locked")), "reason": str(d.get("reason", ""))}
+        except Exception:
+            return {"locked": os.environ.get("LABKEEPER_MOTION_LOCK") == "1",
+                    "reason": os.environ.get("LABKEEPER_MOTION_LOCK_REASON", "")}
+
+    def _save_lock(d):
+        try:
+            path = _lock_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(d, f, ensure_ascii=False)
+        except Exception as e:
+            print(f"[labkeeper] 잠금 저장 실패(무시): {e}")
+
+    motion_lock = _load_lock()
+    if motion_lock["locked"]:
+        print(f"[labkeeper] 바퀴가 잠긴 채로 시작합니다 ({motion_lock['reason']}) — "
+              f"/patrol/unlock 으로 풉니다")
+
+    def motion_blocked():
+        return motion_lock["locked"]
+
+    class WheelLease:
+        """with 블록 동안 바퀴 소유권을 가져간다."""
+
+        def __init__(self, name):
+            self.name = name
+
+        def __enter__(self):
+            motion_owner["name"] = self.name
+            return self
+
+        def __exit__(self, *exc):
+            motion_owner["name"] = None
+            hal.stop()
+            return False
+
     def measure_distance():
         """제어 루프 전용 — 실제로 센서를 쏘고 캐시를 갱신한다."""
         d = hal.read_ultrasonic()
@@ -525,6 +679,12 @@ def main():
         code = hal.scan_qr_now()
         if code:
             on_scan(code)
+            # 배달 나가서 기다리는 중이었다면 볼일이 끝난 것이다. 남은 대기
+            # 시간을 채우지 않고 바로 대기 자리로 돌려보낸다. 시간이 아니라
+            # "일이 끝났다"를 신호로 삼는 쪽이 맞다.
+            if delivery.get("running") and delivery.get("phase") == "waiting":
+                delivery["recall"] = True
+                print("[deliver] QR 확인됨 — 대기 자리로 복귀시킨다")
         return code
 
     stream_server.set_qr_scan_callback(on_manual_qr_scan)
@@ -590,9 +750,26 @@ def main():
 
     tick = 0
 
+    # 네트워크로 온 명령은 순서가 뒤바뀔 수 있다. 웹이 85 를 보낸 뒤 대기열에
+    # 남아 있던 51 이 뒤늦게 도착하면, 모터가 85 -> 51 -> 85 로 튄다. 실제
+    # 로그에서 그렇게 나왔고 약한 모터는 그때 못 일어나고 소리만 냈다.
+    #
+    # 웹에서도 고쳤지만 로봇 쪽에도 두는 이유는, 브라우저가 옛 파일을 캐시하고
+    # 있거나 다른 클라이언트가 붙어도 로봇이 스스로를 지켜야 하기 때문이다.
+    DRIVE_STALE_MS = 0.25
+
     def on_direct_drive(mode, speed, turn):
         nonlocal was_manual, last_command_time
         with command_lock:
+            # 방금 더 큰 값을 받았는데 곧바로 작은 값이 오면 순서가 뒤바뀐
+            # 것으로 본다. 사람이 정말 감속한 것이라면 다음 명령에서 다시
+            # 작은 값이 오므로, 0.25초만 무시해도 조작감은 그대로다.
+            recent = time.time() - last_command_time < DRIVE_STALE_MS
+            shrank = abs(speed) + abs(turn) < abs(command["speed"]) + abs(command["turn"])
+            if recent and shrank and mode == command.get("mode") and (speed or turn):
+                last_command_time = time.time()
+                return {"mode": mode, "speed": command["speed"],
+                        "turn": command["turn"], "note": "순서 뒤바뀐 명령 무시"}
             command["mode"] = mode
             command["speed"] = speed
             command["turn"] = turn
@@ -650,11 +827,49 @@ def main():
     )
     route_play_thread = {"t": None}
 
+    # 녹화 중 마커가 보이면 자동으로 찍는다. 사람이 주행하면서 매번 버튼을
+    # 누르는 건 현실적이지 않고, 놓치면 그 지점의 보정 기회가 사라진다.
+    auto_mark = {"stop": None}
+
+    def _auto_mark_loop(stop_event):
+        """마커가 보이면 경로에 새긴다. 같은 마커를 연달아 찍지 않는다."""
+        last_id = None
+        last_at = 0.0
+        last_segments = -1
+        while not stop_event.is_set():
+            try:
+                found = marker_locator.find(hal.capture_frame()) if marker_locator else []
+                if found:
+                    m = found[0]
+                    now = time.time()
+                    segments = route_recorder.status().get("drive_segments", 0)
+                    # 다른 마커면 바로 찍는다. 같은 마커는 그 사이에 로봇이 실제로
+                    # 움직였을 때만 다시 찍는다. 가만히 마커를 보고 있는 동안
+                    # 같은 지점이 수십 번 쌓이는 걸 막는다.
+                    moved = segments != last_segments
+                    if m["id"] != last_id or (moved and now - last_at > 5.0):
+                        route_recorder.mark(m["id"], m["distance_cm"], m["angle_deg"])
+                        print(f"[route] 자동 마크: ID {m['id']} · "
+                              f"{m['distance_cm']:.1f}cm {m['angle_deg']:+.1f}도")
+                        last_id, last_at, last_segments = m["id"], now, segments
+            except Exception as e:
+                print(f"[route] 자동 마크 실패(무시): {e}")
+            stop_event.wait(0.6)
+
     def on_route(action, params):
         if action == "record/start":
-            return route_recorder.start(params.get("name", "route"))
+            result = route_recorder.start(params.get("name", "route"))
+            if marker_locator is not None:
+                ev = threading.Event()
+                auto_mark["stop"] = ev
+                threading.Thread(target=_auto_mark_loop, args=(ev,), daemon=True).start()
+                result["auto_mark"] = True
+            return result
 
         if action == "record/stop":
+            if auto_mark["stop"] is not None:
+                auto_mark["stop"].set()
+                auto_mark["stop"] = None
             route = route_recorder.stop()
             path = route_recorder.save(route)
             print(f"[route] 녹화 저장: {path} · 세그먼트 {len(route['segments'])}개")
@@ -685,7 +900,11 @@ def main():
             if route_player.status().get("playing"):
                 return {"status": "busy", "reason": "이미 재생 중입니다."}
             # 재생은 오래 걸리므로 별도 스레드에서 돌리고 즉시 응답한다.
-            t = threading.Thread(target=route_player.play, args=(route,), daemon=True)
+            def _play():
+                with WheelLease("route"):
+                    route_player.play(route)
+
+            t = threading.Thread(target=_play, daemon=True)
             route_play_thread["t"] = t
             t.start()
             return {"status": "started", "name": name,
@@ -701,6 +920,530 @@ def main():
         return {"status": "unknown_action", "action": action}
 
     stream_server.set_route_callback(on_route)
+
+    # ---- 좌표 순찰 ----
+    # 녹화를 되감는 대신 마커를 계속 보면서 그쪽으로 달린다. 오차가 쌓이지 않는
+    # 유일한 방법이다(엔코더가 없으므로).
+    odometry = Odometry(load_model())
+    def on_patrol_finished():
+        motion_owner["name"] = None
+
+    def person_ahead():
+        """앞에 사람이 있나. 순찰이 "기다릴지 돌아갈지"를 정할 때 쓴다.
+
+        초음파는 앞을 막은 게 벽인지 사람인지 구분하지 못한다. 사람이면 돌아서
+        지나가는 게 아니라 멈춰 서서 기다려야 하므로, AI 비전의 판단이 필요하다.
+        0.75초보다 오래된 탐지는 안 믿는다 - 사람은 움직이고, 지나간 사람 때문에
+        순찰이 멈춰 있으면 안 된다.
+        """
+        if ai_worker is None:
+            return False
+        latest = ai_worker.latest()
+        return bool(
+            latest
+            and time.time() - latest.timestamp <= 0.75
+            and any(item.class_name == "person" and item.confidence >= 0.45
+                    for item in latest.detections)
+        )
+
+    marker_overlay["locator"] = marker_locator
+    patrol = PatrolRunner(
+        hal,
+        marker_fn=(lambda: marker_locator.find(hal.capture_frame())) if marker_locator else None,
+        speed_cap_fn=speed_cap_for_distance,
+        odometry=odometry,
+        on_finish=on_patrol_finished,
+        person_fn=person_ahead,
+    )
+
+    # 바퀴를 쓰는 명령들. 잠겨 있으면 여기서 전부 막는다.
+    # 잠겨 있으면 여기서 막는 명령들. "deliver" 는 뺀다 - 배달은 잠긴 상태에서
+    # 이동만 건너뛰고 QR 단계로 넘어가야 하고, 그 처리는 start_delivery 안에
+    # 있다. 여기서 막으면 대여 자체가 진행되지 않는다.
+    MOTION_ACTIONS = {"start", "dock", "goto", "testdrive", "testturn",
+                      "autotrim", "calibrate", "refine", "wheeltest"}
+
+    def on_patrol(action, params):
+        if action in MOTION_ACTIONS and motion_blocked():
+            return {"error": "바퀴가 잠겨 있다"
+                             + (f" ({motion_lock['reason']})" if motion_lock["reason"] else "")
+                             + ". /patrol/unlock 으로 풀 수 있다."}
+        if action == "lock":
+            motion_lock["locked"] = params.get("on", "1") != "0"
+            motion_lock["reason"] = params.get("reason", motion_lock["reason"])
+            if motion_lock["locked"]:
+                patrol.stop()
+                hal.stop()
+            _save_lock(motion_lock)
+            return dict(motion_lock)
+        if action == "unlock":
+            motion_lock["locked"] = False
+            motion_lock["reason"] = ""
+            _save_lock(motion_lock)
+            return dict(motion_lock)
+        # 실물 로봇과 아이작 심은 서로 다른 공간이다. 웹이 어느 쪽인지 알려준다.
+        env = params.get("env")
+        if action == "start":
+            if marker_locator is None:
+                return {"error": "마커 인식이 꺼져 있다"}
+            motion_owner["name"] = "patrol"
+            return patrol.start(laps=int(params.get("laps", 1)), env=env,
+                                keep_origin=params.get("keep_origin") == "1")
+        if action == "stop":
+            r = patrol.stop()
+            motion_owner["name"] = None
+            return r
+        if action == "status":
+            st = patrol.status()
+            st["motion_locked"] = motion_lock["locked"]
+            st["motion_lock_reason"] = motion_lock["reason"]
+            # 순찰이 안 돌 때도 지금 위치를 실어준다. 그래야 웹 지도에 로봇이
+            # 늘 보인다 - 예전에는 순찰 중에만 좌표가 채워져서, 대기 중에는
+            # 로봇이 지도에서 사라졌다.
+            if not st.get("running"):
+                pose = odometry.pose()
+                st["x_cm"] = pose["x_cm"]
+                st["y_cm"] = pose["y_cm"]
+                st["heading_deg"] = pose["heading_deg"]
+            return st
+        if action == "map":
+            return load_map(env)
+        if action == "maps":
+            return list_maps()
+        if action == "shelves":
+            return shelf_map.summary(load_map(env))
+        if action == "assign_shelves":
+            # 물품을 선반에 나눠 붙인다. 이미 배치된 물품은 그대로 두고 새 것만
+            # 채운다 - 3등분 경계가 밀려서 멀쩡한 배치가 뒤집히면 안 된다.
+            try:
+                items = notify_supabase.fetch_items() or []
+            except Exception as e:
+                return {"error": f"물품 목록을 못 가져왔다: {e}"}
+            ids = [int(i.get("id") or i.get("item_id")) for i in items
+                   if (i.get("id") or i.get("item_id")) is not None]
+            if not ids:
+                return {"error": "물품이 하나도 없다"}
+            codes = [s["code"] for s in shelf_map.shelves_from_map(load_map(env))]
+            if not codes:
+                return {"error": "순찰 지도에 선반으로 쓸 지점이 없다"}
+            shelf_map.build_assignment(ids, codes)
+            return shelf_map.summary(load_map(env))
+        if action == "deliver":
+            return driver["start"](int(params["item_id"]),
+                                   from_home=params.get("from_home") != "0",
+                                   return_after=params.get("return_after") != "0")
+        if action == "avoid":
+            # 장애물 비켜서기를 켜고 끈다. 기본은 꺼짐 - 좁은 방에서는 비켜설
+            # 자리가 없어서 각도만 버린다.
+            if "on" in params:
+                patrol.avoid_enabled = params["on"] == "1"
+            return {"avoid_enabled": patrol.avoid_enabled,
+                    "안내": "켜면 막혔을 때 옆으로 비켜서고, 끄면 그 지점을 포기하고 다음으로 간다"}
+        if action == "delivery_status":
+            return dict(delivery)
+        if action == "deliver_cancel":
+            # 안내를 취소하면 로봇이 그 자리에서 멈추고 대기 자리로 돌아간다.
+            # 창만 닫고 로봇을 그대로 두면, 사용자는 끝났다고 생각하는데 로봇은
+            # 선반 앞에 서 있게 된다.
+            if not delivery.get("running"):
+                return {"error": "배달 중이 아니다"}
+            delivery["cancel"] = True
+            patrol.abort()          # 지금 가고 있던 주행을 즉시 멈춘다
+            return {"status": "취소함 — 대기 자리로 돌아갑니다",
+                    "phase": delivery.get("phase")}
+        if action == "recall":
+            # 기다리는 중이면 바로 복귀시킨다. 사람이 물건을 이미 가져갔는데
+            # 남은 대기 시간을 다 채우고 있을 이유가 없다.
+            if not delivery.get("running"):
+                return {"error": "배달 중이 아니다"}
+            delivery["recall"] = True
+            return {"status": "복귀 지시함", "phase": delivery.get("phase")}
+        if action == "dock":
+            # 지금 어디에 있든 대기 자리(0,0)로 돌아간다.
+            if delivery.get("running") or patrol.status().get("running"):
+                return {"error": "다른 주행이 진행 중이다"}
+
+            def _dock():
+                with WheelLease("dock"):
+                    patrol.clear_abort()   # 위와 같은 이유
+                    patrol.goto(0, 0)
+                    _dist, delta = odometry.vector_to(100.0, 0.0)
+                    patrol.turn_in_place(delta)
+
+            threading.Thread(target=_dock, daemon=True).start()
+            return {"status": "복귀 중", "target": [0, 0]}
+        if action == "pose":
+            return odometry.pose()
+        if action == "reset":
+            # 지금 자리를 원점으로 삼는다. "여기가 0,0 이다".
+            odometry.reset(float(params.get("x", 0)), float(params.get("y", 0)),
+                           float(params.get("heading", 0)), note="사용자 지정")
+            return odometry.pose()
+        if action == "goto":
+            with WheelLease("goto"):
+                return patrol.goto(float(params["x"]), float(params["y"]))
+        if action == "trim_from_offset":
+            # 사람이 잰 값으로 직진 보정을 계산한다. 카메라 자동 측정은 좁은
+            # 공간에서 분해능이 모자라(1.6초 주행 = 2픽셀) 못 믿는다.
+            #
+            # 로봇이 원호를 그린다고 보면 옆으로 벗어난 거리와 돌아간 각도는
+            #     벗어난 거리 = 주행거리 x 각도(라디안) / 2
+            # 이므로 각도 = 2 x 벗어난거리 / 주행거리. 이걸 초당으로 바꾸고
+            # 회전 명령 1 단위가 내는 각속도로 나누면 필요한 trim 이 나온다.
+            left = float(params.get("left_cm", 0))     # 왼쪽으로 벗어났으면 양수
+            over = float(params.get("over_cm", 200))
+            speed = float(params.get("speed", 65))
+            if over <= 10:
+                return {"error": "주행거리를 10cm 보다 크게 주세요"}
+            rad = 2.0 * left / over
+            seconds = odometry.seconds_for_cm(over, speed)
+            drift_deg_per_s = math.degrees(rad) / seconds if seconds else 0.0
+            turn_ref = float(sorted(odometry.model["turn_deg_per_s"])[0])
+            deg_per_unit = (float(odometry.model["turn_deg_per_s"][str(int(turn_ref))])
+                            / turn_ref)
+            trim = float(odometry.model.get("drive_trim", 0.0)) +                 drift_deg_per_s / deg_per_unit
+            trim = round(max(-25.0, min(25.0, trim)), 2)
+            model = dict(odometry.model, drive_trim=trim)
+            save_model(model, env)
+            odometry.model = model
+            patrol.odometry.model = model
+            return {"drive_trim": trim,
+                    "휜 각도": f"{math.degrees(rad):.1f}도 ({drift_deg_per_s:.2f} 도/s)",
+                    "근거": f"{over:.0f}cm 가는 동안 왼쪽으로 {left:.0f}cm"}
+        if action == "autotrim":
+            # 로봇이 스스로 직진 정렬을 찾는다. 앞으로 2초 가면서 화면이 얼마나
+            # 옆으로 흐르는지 재고, 그만큼을 회전으로 상쇄한 뒤 다시 잰다.
+            if patrol.status().get("running"):
+                return {"error": "순찰 중에는 정렬할 수 없다"}
+            with WheelLease("autotrim"):
+                r = calibrate_motion.autotrim(hal, odometry.model)
+            # 자동으로 적용하지 않는다. 이 측정은 전진 시 화면 확대를 회전으로
+            # 잘못 읽어서, 그대로 반영하면 오히려 나빠진다(위 autotrim 설명).
+            r["applied"] = False
+            r["안내"] = ("참고용이다. 이 값은 저장하지 않는다. 직진 휨은 "
+                         "/patrol/testdrive?cm=190 후 줄자로 재서 "
+                         "/patrol/trim_from_offset 으로 넣어야 정확하다")
+            return r
+        if action == "wheeltest":
+            # 한쪽 바퀴만 지정한 값으로 돌린다. "오른쪽이 안 돈다"가 하드웨어인지
+            # 소프트웨어인지 가리는 유일한 방법이다 - 엔코더가 없어서 로봇은
+            # 바퀴가 실제로 돌았는지 모르므로, 사람이 보고 판단해야 한다.
+            #
+            # set_motion 이 left = speed + turn, right = speed - turn 이므로
+            # 한쪽만 v 로 돌리려면 speed = v/2, turn = ±v/2 를 준다.
+            #   왼쪽만:  turn = +v/2  (right = 0)
+            #   오른쪽만: turn = -v/2  (left = 0)
+            side = params.get("side", "right")
+            v = float(params.get("v", 60))
+            secs = min(3.0, float(params.get("secs", 1.5)))
+            sign = 1.0 if side == "left" else -1.0
+            with WheelLease("wheeltest"):
+                hal.set_motion(v / 2.0, sign * v / 2.0)
+                time.sleep(secs)
+            return {"side": side, "value": v, "seconds": secs,
+                    "안내": "바퀴를 띄운 채로 보세요. 이 값에서 돌았는지 알려주면 "
+                            "정지마찰 임계값을 알 수 있습니다."}
+        if action == "trim":
+            # 직진 보정값. 왼쪽으로 휘면 양수를 키운다.
+            model = dict(odometry.model)
+            if "value" in params:
+                model["drive_trim"] = float(params["value"])
+                save_model(model, env)
+                odometry.model = model
+                patrol.odometry.model = model
+            return {"drive_trim": model.get("drive_trim", 0.0),
+                    "안내": "왼쪽으로 휘면 값을 키우고, 오른쪽으로 휘면 줄이세요"}
+        if action == "testdrive":
+            # 모델이 "이만큼"이라고 믿는 거리를 실제로 가고 멈춘다. 사람이 줄자로
+            # 재서 scale 로 알려주면 표가 고쳐진다. 카메라·초음파로 자동 측정하는
+            # 것보다 확실하다 - 무늬 없는 벽이나 먼 거리에서 자동 측정은 틀린다.
+            cm = float(params.get("cm", 100))
+            speed = float(params.get("speed", 65))
+            seconds = odometry.seconds_for_cm(cm, speed)
+            trim = float(params.get("trim", odometry.model.get("drive_trim", 0.0)))
+            with WheelLease("testdrive"):
+                hal.set_motion(speed, trim)
+                time.sleep(seconds)
+            return {"commanded_cm": cm, "speed": speed, "trim": trim,
+                    "seconds": round(seconds, 2),
+                    "안내": f"실제로 간 거리를 줄자로 재서 "
+                            f"/patrol/scale?forward=<실제cm>&of={cm:.0f} 로 알려주세요"}
+        if action == "testturn":
+            deg = float(params.get("deg", 90))
+            turn = float(params.get("turn", 60))
+            seconds = odometry.seconds_for_deg(deg, turn)
+            with WheelLease("testturn"):
+                hal.set_motion(0, turn)
+                time.sleep(seconds)
+            return {"commanded_deg": deg, "turn": turn,
+                    "seconds": round(seconds, 2),
+                    "안내": f"실제로 돈 각도를 재서 "
+                            f"/patrol/scale?turn=<실제도>&of={deg:.0f} 로 알려주세요"}
+        if action == "scale":
+            # 사람이 잰 실제값으로 표를 고친다. 실제/명령 비율만큼 곱한다.
+            of = float(params.get("of", 100))
+            model = dict(odometry.model)
+            applied = {}
+            if "forward" in params:
+                k = float(params["forward"]) / of
+                model["forward_cm_per_s"] = {a: round(b * k, 1)
+                                             for a, b in model["forward_cm_per_s"].items()}
+                applied["forward"] = round(k, 3)
+            if "turn" in params:
+                k = float(params["turn"]) / of
+                model["turn_deg_per_s"] = {a: round(b * k, 1)
+                                           for a, b in model["turn_deg_per_s"].items()}
+                applied["turn"] = round(k, 3)
+            model["scaled_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+            model["scale_applied"] = applied
+            save_model(model, env)
+            odometry.model = model
+            patrol.odometry.model = model
+            return model
+        if action == "refine":
+            # 이미 있는 모델을 실제 주행 결과로 고친다. 짧은 측정의 5~8% 오차를
+            # 한 번에 줄인다. 순찰이 거리를 넘치거나 모자라면 이걸 돌린다.
+            if patrol.status().get("running"):
+                return {"error": "순찰 중에는 보정할 수 없다"}
+            with WheelLease("refine"):
+                model = calibrate_motion.refine(
+                    hal, odometry.model,
+                    marker_fn=(lambda: marker_locator.find(hal.capture_frame()))
+                    if marker_locator else None)
+            save_model(model, env)
+            odometry.model = model
+            patrol.odometry.model = model
+            return model
+        if action == "calibrate":
+            # 로봇이 스스로 "이 명령이 얼마나 움직이는지"를 잰다. 이 표가 없으면
+            # 좌표 이동이 성립하지 않는다.
+            if patrol.status().get("running"):
+                return {"error": "순찰 중에는 측정할 수 없다"}
+            with WheelLease("calibrate"):
+                model = calibrate_motion.run(
+                    hal,
+                    marker_fn=(lambda: marker_locator.find(hal.capture_frame()))
+                    if marker_locator else None)
+            save_model(model, env)
+            odometry.model = model
+            patrol.odometry.model = model
+            return model
+        if action == "see":
+            # 지금 보이는 마커. 지도를 만들 때 거리를 재는 용도.
+            # pan 을 주면 카메라를 그쪽으로 돌린 뒤 본다.
+            if marker_locator is None:
+                return {"error": "마커 인식이 꺼져 있다"}
+            if "pan" in params or "tilt" in params:
+                hal.set_camera_angle(
+                    pan=int(params["pan"]) if "pan" in params else None,
+                    tilt=int(params["tilt"]) if "tilt" in params else None)
+                time.sleep(1.0)
+            found = marker_locator.find(hal.capture_frame())
+            pan = float(getattr(hal, "cam_pan", 90.0))
+            for m in found:
+                # 로봇 몸통 기준 방향까지 같이 준다. 지도를 그릴 때 이게 필요하다.
+                m["bearing_deg"] = round((pan - 90.0) + m["angle_deg"], 1)
+            return {"markers": found, "cam_pan": pan}
+        if action == "scan":
+            # 카메라를 좌우·상하로 훑어 보이는 마커를 전부 모은다. 지도를 만들 때
+            # "여기서 뭐가 보이나"를 한 번에 알아야 해서 서버에서 돈다. 왕복
+            # HTTP 로 하면 서보가 매번 멈췄다 가서 훨씬 느리다.
+            if marker_locator is None:
+                return {"error": "마커 인식이 꺼져 있다"}
+            tilts = [int(t) for t in params.get("tilts", "80,90,100").split(",")]
+            pans = [int(x) for x in params.get("pans", "40,60,80,100,120,140").split(",")]
+            best = {}
+            for tilt in tilts:
+                for pan in pans:
+                    hal.set_camera_angle(pan=pan, tilt=tilt)
+                    time.sleep(0.55)
+                    for m in marker_locator.find(hal.capture_frame()):
+                        # 같은 마커가 여러 각도에서 보이면 가장 크게(=정면에
+                        # 가깝게) 보인 관측을 남긴다. 그게 가장 정확하다.
+                        prev = best.get(m["id"])
+                        if prev is None or m["px"] > prev["px"]:
+                            best[m["id"]] = dict(m, cam_pan=pan, cam_tilt=tilt,
+                                                 bearing_deg=round((pan - 90.0) + m["angle_deg"], 1))
+            hal.set_camera_angle(pan=90, tilt=90)
+            return {"found": sorted(best.values(), key=lambda m: m["id"]),
+                    "scanned": {"tilts": tilts, "pans": pans}}
+
+        raise ValueError(f"알 수 없는 순찰 명령: {action}")
+
+    stream_server.set_patrol_callback(on_patrol)
+
+    # ---- 발열 관리: 필요할 때만 빠르게 본다 ----
+    # 가만히 있어도 CPU 130%, 60°C 였고 그중 대부분이 추론이었다. 아무도 안 보고
+    # 아무 일도 없을 때까지 8fps 로 돌릴 이유가 없다.
+    AI_FPS_ACTIVE = float(os.environ.get("LABKEEPER_AI_TARGET_FPS", "8"))
+    AI_FPS_IDLE = float(os.environ.get("LABKEEPER_AI_IDLE_FPS", "3"))
+
+    def _ai_speed_loop():
+        """볼 사람이 있거나 로봇이 움직이면 빠르게, 아니면 느리게."""
+        current = None
+        while not shutdown_requested.is_set():
+            try:
+                busy = (
+                    stream_server.ai_has_viewers()      # 웹에서 AI 화면을 보는 중
+                    or stream_server.camera_has_viewers()
+                    or patrol.status().get("running")   # 순찰 중
+                    or delivery.get("running")          # 배달 중
+                    or motion_owner["name"] is not None
+                )
+                want = AI_FPS_ACTIVE if busy else AI_FPS_IDLE
+                if want != current and ai_worker is not None:
+                    ai_worker.set_target_fps(want)
+                    current = want
+                    print(f"[labkeeper] AI 추론 {want:.0f}fps "
+                          f"({'활성' if busy else '대기'})")
+            except Exception as e:
+                print(f"[labkeeper] AI 속도 조절 실패(무시): {e}")
+            shutdown_requested.wait(3.0)
+
+    if ai_worker is not None:
+        threading.Thread(target=_ai_speed_loop, name="ai-speed", daemon=True).start()
+
+    # ---- 대여 배달 ----
+    # 웹에서 대여를 걸면 로봇이 그 물품의 선반 앞으로 간다. mission_engine 은
+    # "무엇을 가지러 가는가"를 기록할 뿐 운전은 하지 않으므로, 실제 주행은
+    # 여기서 좌표 순찰의 goto 를 빌려 쓴다.
+    #
+    # 배경 스레드로 도는 이유는 주행이 수십 초 걸리기 때문이다. HTTP 요청을
+    # 붙잡고 있으면 웹이 그동안 아무 것도 못 하고, 진행 상황도 볼 수 없다.
+    # 물품 앞에 서 있어 주는 시간. 사람이 와서 물건을 집어갈 틈이다. 이 동안
+    # 로봇은 멈춰 있고, 지나면 대기 자리로 돌아간다.
+    DELIVERY_DWELL_S = float(os.environ.get("LABKEEPER_DELIVERY_DWELL_S", "25"))
+
+    def _deliver(item_id, from_home, return_after=True):
+        """선반 좌표까지 갔다가 대기 자리로 돌아온다.
+
+        이동은 전적으로 좌표로 한다. QR 은 이동에 쓰지 않는다 - QR 은 어느 물품인지
+        알려주는 재고용 값이지 위치를 알려주지 않는다. 게다가 QR 값은 관리자만
+        읽을 수 있는 별도 테이블(item_qr_codes)에 있어서 로봇은 갖고 있지도 않다.
+        로봇은 읽은 문자열을 그대로 올리고, 어느 물품인지는 서버가 판단한다.
+        """
+        pmap = load_map()
+        shelf = shelf_map.locate(item_id, pmap)
+        # 지난번 취소로 중단 신호가 켜져 있을 수 있다. 새 주행은 깨끗한
+        # 상태에서 시작해야 한다 - 안 지우면 시작하자마자 멈춘다.
+        patrol.clear_abort()
+        delivery.update(running=True, item_id=item_id, shelf=shelf,
+                        phase="navigating", qr=None, error_cm=None, message="")
+        try:
+            if from_home:
+                # 로봇이 대기 자리에 있다는 뜻. 거기가 (0,0) 이다.
+                odometry.reset(0, 0, 0, note="배달 출발")
+
+            with WheelLease("deliver"):
+                r = patrol.goto(shelf["x_cm"], shelf["y_cm"])
+
+                # 가는 도중에 취소됐으면 남은 일을 건너뛰고 곧장 돌아간다.
+                # patrol 의 중단 신호를 여기서 풀어줘야 복귀 주행이 돈다 -
+                # 안 풀면 복귀 goto 도 즉시 중단돼 로봇이 선반 앞에 남는다.
+                if delivery.get("cancel"):
+                    patrol.clear_abort()
+                    delivery.update(phase="cancelled", message="안내 취소됨")
+                    self_return = True
+                else:
+                    self_return = False
+
+                blocked = bool(r.get("blocked")) and not self_return
+                if not self_return:
+                    # 취소된 배달을 "도착"으로 적으면 안 된다. 기록상 성공한
+                    # 배달로 남아서 나중에 뭐가 실제로 이뤄졌는지 알 수 없다.
+                    delivery.update(phase="blocked" if blocked else "arrived",
+                                    error_cm=r["error_cm"],
+                                    message="막혀서 못 감" if blocked else "도착")
+                    event_queue.push("delivery_arrived", {
+                        "item_id": item_id, "shelf_code": shelf["code"],
+                        "x_cm": r["pose"]["x_cm"], "y_cm": r["pose"]["y_cm"],
+                        "error_cm": r["error_cm"], "blocked": blocked,
+                    })
+
+                if not blocked and not self_return:
+                    # 재고 확인용 QR 스캔. 이동과는 무관하고 실패해도 넘어간다.
+                    # 여기 물품이 실제로 있는지를 기록으로 남기는 것이 목적이다.
+                    try:
+                        code = hal.scan_qr_now()
+                        delivery.update(qr=code)
+                        if code:
+                            event_queue.push("audit_scan", {
+                                "location": code, "at_item_id": item_id,
+                                "shelf_code": shelf["code"],
+                            })
+                    except Exception as scan_error:
+                        print(f"[deliver] 재고 스캔 실패(무시): {scan_error}")
+
+                    # 사람이 물건을 집어갈 시간을 준다. recall 이 오면 바로 끝낸다.
+                    delivery.update(phase="waiting")
+                    waited = 0.0
+                    while (waited < DELIVERY_DWELL_S
+                           and not delivery.get("recall")
+                           and not delivery.get("cancel")):
+                        time.sleep(0.5)
+                        waited += 0.5
+                    if delivery.get("cancel"):
+                        patrol.clear_abort()
+                        delivery.update(phase="cancelled", message="안내 취소됨")
+
+                if return_after:
+                    delivery.update(phase="returning", message="대기 자리로 복귀")
+                    back = patrol.goto(0, 0)
+                    # 방향까지 처음처럼 돌려놔야 다음 배달이 같은 조건에서 시작한다.
+                    _dist, delta = odometry.vector_to(100.0, 0.0)
+                    patrol.turn_in_place(delta)
+                    delivery.update(error_cm=back["error_cm"])
+                    event_queue.push("delivery_returned", {
+                        "item_id": item_id,
+                        "x_cm": back["pose"]["x_cm"], "y_cm": back["pose"]["y_cm"],
+                        "error_cm": back["error_cm"],
+                    })
+                    if not blocked:
+                        delivery.update(phase="docked", message="복귀 완료")
+
+            delivery.update(running=False, recall=False, cancel=False)
+        except Exception as e:
+            delivery.update(running=False, phase="error", message=str(e))
+            print(f"[deliver] 실패: {e}")
+
+    def start_delivery(item_id, from_home=True, return_after=True):
+        """배달 시작. 여기서도 잠금을 본다.
+
+        /patrol/deliver 만 막으면 새는 구멍이 있다 - 웹에서 대여를 걸면
+        /guide/start 로 들어와 이 함수를 직접 부른다. 잠금은 바퀴를 쓰는
+        모든 입구에서 확인해야 의미가 있다.
+        """
+        # 바퀴가 잠겨 있어도 대여는 진행한다.
+        #
+        # 주행을 못 하는 상태(바퀴 고장·충전 중·책상 위)에서 배달 요청이 오면,
+        # 예전에는 오류를 돌려주고 대여가 거기서 막혔다. 하지만 대여의 본질은
+        # "이 물품을 이 사람이 가져갔다"를 QR 로 확인하는 것이고, 로봇이 앞까지
+        # 가주는 건 편의 기능이다. 못 가면 못 간다고 알리고 QR 단계로 넘어간다.
+        if motion_blocked():
+            shelf = shelf_map.locate(item_id, load_map())
+            delivery.update(running=False, item_id=item_id, shelf=shelf,
+                            phase="stationary", qr=None, error_cm=None,
+                            message="로봇이 이동할 수 없어 제자리에서 진행합니다")
+            return {"status": "stationary", "item_id": item_id, "shelf": shelf,
+                    "moved": False,
+                    "안내": "로봇이 이동하지 않습니다. 물품 QR 을 로봇 카메라에 "
+                            "보여주면 대여가 확정됩니다."}
+        """배달을 시작한다. 곧바로 돌아오고 실제 주행은 배경에서 돈다."""
+        if delivery["running"]:
+            return {"error": f"이미 물품 {delivery['item_id']} 배달 중"}
+        if patrol.status().get("running"):
+            return {"error": "순찰 중이다. 먼저 순찰을 멈춰라"}
+        shelf = shelf_map.locate(item_id, load_map())
+        if not shelf:
+            return {"error": f"물품 {item_id} 의 선반이 정해져 있지 않다. "
+                             f"/patrol/assign_shelves 를 먼저 부르세요"}
+        delivery["recall"] = False
+        delivery["cancel"] = False
+        threading.Thread(target=_deliver, args=(item_id, from_home, return_after),
+                         daemon=True).start()
+        return {"status": "navigating", "item_id": item_id, "shelf": shelf}
+
+    driver["start"] = start_delivery
 
     stream_server.set_drive_callback(on_direct_drive)
 
@@ -720,12 +1463,20 @@ def main():
                 control_source["value"] = "manual"
                 distance = measure_distance()  # 센서를 실제로 쏘는 유일한 지점
                 stale = (time.time() - cmd_time) > MANUAL_COMMAND_MAX_AGE_SECONDS
-                if stale:
+                if motion_lock["locked"]:
+                    hal.stop()    # 잠겨 있다 — 어떤 명령도 바퀴로 내려보내지 않는다
+                elif motion_owner["name"]:
+                    pass          # 자율 주행이 바퀴를 잡고 있다 — 건드리지 않는다
+                elif stale:
                     hal.stop()  # 3초 동안 웹에서 조이스틱 신호가 없으면 자동 정지
                 elif cur_speed > 0 and distance < OBSTACLE_STOP_DISTANCE:
                     hal.stop()  # 전진할 때만 막는다 — 후진 탈출은 허용
                 else:
                     hal.set_motion(cur_speed, cur_turn)
+                    # 손으로 몬 것도 좌표에 반영한다. 이걸 빼먹으면 WASD 로
+                    # 옮겨놓고 "대기 자리로" 를 눌렀을 때 로봇이 자기가 아직
+                    # (0,0) 에 있다고 믿어서 꿈쩍도 안 한다.
+                    odometry.apply(cur_speed, cur_turn, TICK_SECONDS)
             else:
                 distance = measure_distance()
                 ai_person = False

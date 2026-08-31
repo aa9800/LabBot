@@ -110,4 +110,6 @@ class PatrolController:
         else:
             turn = 25.0  # 라인을 일시 이탈했을 때 완만한 선회로 부드럽게 재진입
 
-        self.hal.set_motion(SPEED, turn)
+        # 자동순찰도 수동 주행과 같은 감속 곡선을 쓴다. 예전에는 여기서 SPEED를
+        # 그대로 써서, 회피가 발동하는 10cm 까지 전속으로 달리다 관성으로 박았다.
+        self.hal.set_motion(speed_cap_for_distance(distance), turn)

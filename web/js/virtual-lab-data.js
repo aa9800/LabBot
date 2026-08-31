@@ -7,6 +7,7 @@
 
 const VIRTUAL_LAB_ROOMS = [
   { id: "all", name: "전체 연구실", code: "ALL" },
+  { id: "입구 공용비품 보관구역", name: "입구 공용비품", code: "ENT" },
   { id: "일반실험실", name: "일반실험실", code: "GEN" },
   { id: "기기실-1", name: "기기실-1 (분석/PCR)", code: "EQ1" },
   { id: "기기실-2", name: "기기실-2 (원심/저울)", code: "EQ2" },
@@ -25,9 +26,9 @@ const VIRTUAL_LAB_OBJECTS = [
     label: "EQ-01",
     displayNameFallback: "마이크로피펫 세트",
     category: "EQUIPMENT",
-    room: "기기실-2",
-    zoneTag: "일반실험실/기기실",
-    position: { x: 38, y: 62 }, // 퍼센트 좌표 (반응형 2.5D 뷰)
+    room: "입구 공용비품 보관구역",
+    zoneTag: "ENT-W01 · 서측 개방 선반",
+    position: { x: 25, y: 82 }, // 퍼센트 좌표 (반응형 2.5D 뷰)
     displayMode: "single",
     itemQuery: "마이크로피펫",
     iconType: "pipette",
@@ -38,22 +39,48 @@ const VIRTUAL_LAB_OBJECTS = [
     label: "CON-01",
     displayNameFallback: "피펫 팁",
     category: "CONSUMABLE",
-    room: "소모품보관실",
-    zoneTag: "소모품실 선반",
-    position: { x: 80, y: 72 },
-    displayMode: "grouped",
-    itemQuery: "팁",
+    room: "입구 공용비품 보관구역",
+    zoneTag: "ENT-W02 · 서측 개방 선반",
+    position: { x: 22, y: 86 },
+    displayMode: "single",
+    itemQuery: "10 μL 피펫 팁",
     iconType: "tips",
-    description: "멸균 필터 피펫 팁 (200uL / 1000uL)"
+    description: "10 μL 멸균 피펫 팁"
+  },
+  {
+    sceneObjectId: "con-tips-02",
+    label: "CON-02",
+    displayNameFallback: "200 μL 피펫 팁",
+    category: "CONSUMABLE",
+    room: "입구 공용비품 보관구역",
+    zoneTag: "ENT-W02 · 서측 개방 선반",
+    position: { x: 25, y: 86 },
+    displayMode: "single",
+    itemQuery: "200 μL 피펫 팁",
+    iconType: "tips",
+    description: "200 μL 멸균 피펫 팁"
+  },
+  {
+    sceneObjectId: "con-tips-03",
+    label: "CON-03",
+    displayNameFallback: "1000 μL 피펫 팁",
+    category: "CONSUMABLE",
+    room: "입구 공용비품 보관구역",
+    zoneTag: "ENT-W02 · 서측 개방 선반",
+    position: { x: 28, y: 86 },
+    displayMode: "single",
+    itemQuery: "1000 μL 피펫 팁",
+    iconType: "tips",
+    description: "1000 μL 멸균 피펫 팁"
   },
   {
     sceneObjectId: "eq-centrifuge-01",
     label: "EQ-02",
     displayNameFallback: "마이크로 원심분리기",
     category: "EQUIPMENT",
-    room: "기기실-2",
-    zoneTag: "기기실-2 벤치",
-    position: { x: 26, y: 58 },
+    room: "입구 공용비품 보관구역",
+    zoneTag: "ENT-E01 · 동측 개방 선반",
+    position: { x: 75, y: 82 },
     displayMode: "single",
     itemQuery: "원심분리기",
     iconType: "centrifuge",
@@ -64,9 +91,9 @@ const VIRTUAL_LAB_OBJECTS = [
     label: "EQ-03",
     displayNameFallback: "정밀 전자저울",
     category: "EQUIPMENT",
-    room: "기기실-2",
-    zoneTag: "기기실-2 벤치",
-    position: { x: 32, y: 54 },
+    room: "입구 공용비품 보관구역",
+    zoneTag: "ENT-E02 · 동측 개방 선반",
+    position: { x: 75, y: 86 },
     displayMode: "single",
     itemQuery: "전자저울",
     iconType: "scale",
@@ -179,10 +206,12 @@ const VIRTUAL_LAB_ENVIRONMENT_PROPS = [
 // 정규화한 데이터다. 웹이 임의의 길을 그리지 않고 시뮬레이터와 같은 체크포인트를
 // 사용하도록 sceneObjectId별 목적지와 경유점을 함께 보관한다.
 const VIRTUAL_LAB_GUIDE_ROUTES = {
-  "eq-pipette-01": [[0, 0], [0, 4], [1.8, 4], [2.6, 5.55]],
-  "con-tips-01": [[0, 0], [0, 4], [1.8, 4], [1.8, 10]],
-  "eq-centrifuge-01": [[0, 0], [0, 4], [1.8, 4], [2.6, 2.35]],
-  "eq-scale-01": [[0, 0], [0, 4], [-1.8, 4], [-2.6, 5.72]],
+  "eq-pipette-01": [[0, 4], [0, -1.2], [0, -4.8], [-2.6, -4.8], [-2.6, -5.22]],
+  "con-tips-01": [[0, 4], [0, -1.2], [0, -6], [-2.6, -6], [-2.6, -6.47]],
+  "con-tips-02": [[0, 4], [0, -1.2], [0, -6], [-2.6, -6], [-2.6, -6.47]],
+  "con-tips-03": [[0, 4], [0, -1.2], [0, -6], [-2.6, -6], [-2.6, -6.47]],
+  "eq-centrifuge-01": [[0, 4], [0, -1.2], [0, -4.8], [2.6, -4.8], [2.6, -5.22]],
+  "eq-scale-01": [[0, 4], [0, -1.2], [0, -6], [2.6, -6], [2.6, -6.48]],
   "eq-microscope-01": [[0, 0], [0, 4], [-1.8, 4], [-2.35, 2.1]],
   "eq-pcr-01": [[0, 0], [0, 4], [-1.8, 4], [-1.8, 10]],
   "eq-phmeter-01": [[0, 0], [0, 4], [-1.8, 4], [-1.8, 12.4], [0, 13.6]],
@@ -194,10 +223,12 @@ const VIRTUAL_LAB_GUIDE_ROUTES = {
 // build_lab_asset.py와 object_bindings.json에서 가져온 실제 Isaac 월드 XY 좌표.
 // route의 마지막 점은 로봇 정지점이고, 아래 좌표는 물품 prim이 놓인 위치라 서로 다르다.
 const VIRTUAL_LAB_OBJECT_WORLD_POSITIONS = {
-  "eq-pipette-01": [3.64, 5.55],
-  "con-tips-01": [3.30, 6.65],
-  "eq-centrifuge-01": [3.66, 2.35],
-  "eq-scale-01": [-3.65, 5.72],
+  "eq-pipette-01": [-3.55, -5.22],
+  "con-tips-01": [-3.95, -6.47],
+  "con-tips-02": [-3.55, -6.47],
+  "con-tips-03": [-3.15, -6.47],
+  "eq-centrifuge-01": [3.55, -5.22],
+  "eq-scale-01": [3.55, -6.48],
   "eq-phmeter-01": [-1.28, 15.25],
   "eq-microscope-01": [-3.62, 2.10],
   "eq-pcr-01": [-5.55, 10.65],
@@ -207,10 +238,14 @@ const VIRTUAL_LAB_OBJECT_WORLD_POSITIONS = {
   "saf-biohazard-01": [4.55, -1.18]
 };
 
-// Isaac 장면의 14m × 18m 바닥과 주요 충돌 가구를 위에서 본 직사각형으로 투영한다.
+// Isaac 장면의 입구를 포함한 14m × 26m 바닥과 주요 충돌 가구를 위에서 본 직사각형으로 투영한다.
 const VIRTUAL_LAB_SIM_GEOMETRY = {
-  bounds: { minX: -7, maxX: 7, minY: -2, maxY: 16 },
+  bounds: { minX: -7, maxX: 7, minY: -10, maxY: 16 },
   fixtures: [
+    { id: "entry-corridor", label: "ENTRY AISLE", x: 0, y: -6, w: 3.2, h: 7.6, type: "aisle" },
+    { id: "entry-shelf-west", label: "Entry Shelf West", x: -3.55, y: -5.85, w: 1.52, h: 0.58, type: "storage" },
+    { id: "entry-shelf-east", label: "Entry Shelf East", x: 3.55, y: -5.85, w: 1.52, h: 0.58, type: "storage" },
+    { id: "robot-dock", label: "Robot Dock", x: -1.55, y: -8.72, w: 1.25, h: 1.05, type: "dock" },
     { id: "corridor", label: "ROBOT AISLE", x: 0, y: 7, w: 4.75, h: 17.4, type: "aisle" },
     { id: "island-west", label: "Island West", x: -3.65, y: 4.25, w: 1.25, h: 7.4, type: "bench" },
     { id: "island-east", label: "Island East", x: 3.65, y: 4.25, w: 1.25, h: 7.4, type: "bench" },
@@ -241,6 +276,7 @@ const VIRTUAL_LAB_SIM_GEOMETRY = {
 // 퍼센트이며 재고나 물품명은 포함하지 않는다. 실제 물품은 Supabase와 위 객체 매핑에서
 // 계속 가져온다.
 const VIRTUAL_LAB_ROOM_LAYOUTS = [
+  { id: "입구 공용비품 보관구역", code: "ENTRY", label: "공용비품 · 로봇 도크", x: 2, y: 3, w: 30, h: 28 },
   { id: "기기실-1", code: "ZONE A", label: "분석 · PCR", x: 2, y: 3, w: 30, h: 28 },
   { id: "시약보관실", code: "ZONE B", label: "시약 조제 · 보관", x: 34, y: 3, w: 30, h: 28 },
   { id: "냉동보관실", code: "ZONE C", label: "-80℃ / -20℃", x: 66, y: 3, w: 32, h: 28 },

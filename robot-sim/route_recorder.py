@@ -96,8 +96,13 @@ class RouteRecorder:
             })
         self._cur = None
 
-    def mark(self, marker_id, distance_cm, angle_deg):
-        """지금 지점에서 본 마커를 경로에 새겨둔다. 재생 때 여기서 위치를 다시 잡는다."""
+    def mark(self, marker_id, distance_cm, angle_deg, cam_pan=90.0):
+        """지금 지점에서 본 마커를 경로에 새겨둔다. 재생 때 여기서 위치를 다시 잡는다.
+
+        카메라 각도를 같이 남기는 게 중요하다. 마커가 화면 가운데 있어도 카메라가
+        오른쪽을 보고 있었다면 마커는 로봇 기준으로 오른쪽에 있는 것이다. 이걸
+        빼먹으면 재생 때 카메라가 딴 데를 보고 있어서 마커를 아예 못 찾는다.
+        """
         if not self._recording:
             return
         with self._lock:
@@ -105,6 +110,7 @@ class RouteRecorder:
                 "marker": int(marker_id),
                 "distance_cm": round(float(distance_cm), 1),
                 "angle_deg": round(float(angle_deg), 1),
+                "cam_pan": round(float(cam_pan), 1),
             })
 
     def stop(self):
@@ -200,7 +206,7 @@ class RoutePlayer:
     # 거리 몇 cm 는 그 자리에서 끝난다. 그래서 각도만 맞추고 거리는 남겨둔다.
 
     def __init__(self, hal, distance_fn=None, stop_distance=10.0, on_marker=None,
-                 speed_cap_fn=None, marker_fn=None):
+                 speed_cap_fn=None, marker_fn=None, camera_fn=None):
         self.hal = hal
         self.distance_fn = distance_fn
         self.stop_distance = float(stop_distance)
@@ -211,6 +217,8 @@ class RoutePlayer:
         self.speed_cap_fn = speed_cap_fn
         # 지금 보이는 마커 목록을 돌려주는 함수. 없으면 보정 없이 재생만 한다.
         self.marker_fn = marker_fn
+        # 카메라를 특정 각도로 돌리는 함수. 마커를 훑어 찾을 때 쓴다.
+        self.camera_fn = camera_fn
         self.align_log = []
         self._abort = threading.Event()
         self._lock = threading.Lock()
@@ -263,6 +271,47 @@ class RoutePlayer:
         except Exception as e:
             print(f"[route] 마커 조회 실패: {e}")
         return None
+
+    # 카메라를 훑을 각도. 녹화 때 각도에서 시작해 좌우로 넓혀간다. 마운트가
+    # 물리적으로 막히는 끝을 피해 40~140 안에서만 움직인다.
+    PAN_SWEEP = (0, -25, +25, -50, +50)
+    PAN_LIMIT = (40.0, 140.0)
+
+    def _set_pan(self, pan):
+        if self.camera_fn is None:
+            return 90.0
+        pan = max(self.PAN_LIMIT[0], min(self.PAN_LIMIT[1], float(pan)))
+        try:
+            self.camera_fn(pan)
+        except Exception as e:
+            print(f"[route] 카메라 이동 실패(무시): {e}")
+        time.sleep(0.45)   # 서보가 도착하고 화면이 안정될 때까지
+        return pan
+
+    def _look_for(self, marker_id, want_pan):
+        """카메라를 좌우로 훑어 마커를 찾는다. (마커, 그때의 카메라각) 을 돌려준다.
+
+        몸통을 돌려 찾는 것보다 훨씬 낫다. 카메라는 즉시 정확히 움직이지만
+        몸통은 정지마찰 때문에 몇 도 단위로만 움직이고, 찾다가 위치까지
+        틀어져 버린다.
+        """
+        for offset in self.PAN_SWEEP:
+            if self._abort.is_set():
+                break
+            pan = self._set_pan(want_pan + offset)
+            seen = self._see(marker_id)
+            if seen is not None:
+                return seen, pan
+        return None, want_pan
+
+    @staticmethod
+    def _bearing(cam_pan, angle_deg):
+        """로봇 몸통 기준 마커 방향(도). 오른쪽이 양수.
+
+        카메라각 90 이 정면이다. 카메라가 110 도(오른쪽 20도)를 보는데 마커가
+        화면에서 +5도면, 몸통 기준으로는 +25도에 있다.
+        """
+        return (float(cam_pan) - 90.0) + float(angle_deg)
 
     def _nudge(self, speed, turn, seconds):
         """짧게 움직이고 멈춘다. 보정은 조금씩 여러 번이 안전하다."""

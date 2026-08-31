@@ -213,6 +213,12 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok", "applied": applied}).encode("utf-8"))
         elif req_path.startswith("/drive"):
+            # 두 곳에서 동시에 조작하면 서로 다른 속도가 번갈아 나가 모터가
+            # 세게/약하게를 반복한다. 약한 모터는 아예 못 일어나고 소리만 낸다.
+            # 실제로 관리자 페이지를 두 탭에서 연 채로 "오른쪽 바퀴가 안 돈다"를
+            # 한참 뒤쫓았다. 화면 두 개를 켜둔 걸 사람이 알아채기 어려우므로
+            # 로봇이 알려준다.
+            _note_drive_client(self.client_address[0] if self.client_address else "?")
             # 초저지연 로컬 조이스틱 주행 직결 엔드포인트 (0ms 반응)
             parsed = urlparse(self.path)
             qs = parse_qs(parsed.query)
@@ -242,6 +248,18 @@ class StreamingHandler(BaseHTTPRequestHandler):
             self.end_headers()
             data = _telemetry_provider() if _telemetry_provider is not None else {}
             self.wfile.write(json.dumps(data).encode("utf-8"))
+        elif req_path.startswith("/patrol/"):
+            if _patrol_callback is None:
+                self._send_json(503, {"error": "순찰 기능이 꺼져 있다"})
+                return
+            action = req_path[len("/patrol/"):].strip("/")
+            qs = parse_qs(urlparse(self.path).query)
+            params = {k: v[0] for k, v in qs.items()}
+            try:
+                self._send_json(200, _patrol_callback(action, params) or {})
+            except Exception as e:
+                self._send_json(400, {"error": str(e)})
+
         elif req_path.startswith("/route/"):
             # 경로 녹화·재생. 좌표 순찰의 2단계다 — 사람이 한 번 몰아 보여준 것을
             # 그대로 따라 하게 하고, 마커로 위치를 다시 잡아 오차 누적을 막는다.
@@ -441,7 +459,26 @@ class StreamingHandler(BaseHTTPRequestHandler):
 
 _camera_angle_callback = None
 _camera_direction_callback = None
+# 최근에 주행 명령을 보낸 곳들. 둘 이상이면 경고한다.
+_drive_clients = {}
+_drive_conflict_warned_at = [0.0]
+
+
+def _note_drive_client(ip):
+    now = time.time()
+    _drive_clients[ip] = now
+    for old_ip, seen in list(_drive_clients.items()):
+        if now - seen > 5.0:
+            del _drive_clients[old_ip]
+    if len(_drive_clients) > 1 and now - _drive_conflict_warned_at[0] > 10.0:
+        _drive_conflict_warned_at[0] = now
+        print(f"[stream_server] 주행 명령이 {len(_drive_clients)}곳에서 오고 있습니다: "
+              f"{', '.join(sorted(_drive_clients))} — 화면을 하나만 열어두세요. "
+              f"서로 다른 속도가 번갈아 나가면 모터가 제대로 돌지 않습니다.")
+
+
 _route_callback = None
+_patrol_callback = None
 _drive_callback = None
 _telemetry_provider = None
 _qr_scan_callback = None
@@ -511,6 +548,32 @@ def read_pi_health():
                 active.append({"key": key, "label": label})
     health["throttle_flags"] = flags
     health["throttled_now"] = active          # 지금 걸려 있는 것만. 이력 비트(16~19)는 뺀다.
+
+    # 배터리 상태 — 전압을 직접 읽는 게 아니라 저전압 플래그로 유추한다.
+    #
+    # 이 확장보드(YB_Pcb_Car, I2C 0x16)는 배터리 전압을 알려주지 않는다.
+    # 라이브러리에 함수가 없고, 레지스터 0x00~0x5F 어디에도 전압으로 읽히는
+    # 값이 없다(probe_battery.py 로 확인, 2026-08-31). 그래서 퍼센트는 못 낸다.
+    #
+    # 대신 라즈베리파이가 자기 전원이 처질 때 세우는 저전압 비트를 쓴다.
+    # 배터리가 닳으면 모터가 돌 때 전압이 먼저 주저앉고, 그때 이 비트가 뜬다.
+    # 정확한 잔량은 아니지만 "곧 꺼진다"는 신호로는 실제로 맞는다.
+    #
+    #   bit 0  지금 저전압    -> 위험. 주행 중이면 곧 멈춘다
+    #   bit 16 부팅 후 겪음   -> 주의. 부하가 걸릴 때 처지고 있다
+    if flags is None:
+        health["power"] = {"state": "unknown", "label": "알 수 없음",
+                           "how": "스로틀 플래그를 못 읽음"}
+    elif flags & (1 << 0):
+        health["power"] = {"state": "critical", "label": "저전압 — 충전 필요",
+                           "how": "라즈베리파이 저전압 플래그(지금)"}
+    elif flags & (1 << 16):
+        health["power"] = {"state": "weak", "label": "전압 처짐 이력 있음",
+                           "how": "라즈베리파이 저전압 플래그(부팅 후)"}
+    else:
+        health["power"] = {"state": "ok", "label": "정상",
+                           "how": "라즈베리파이 저전압 플래그 없음"}
+    health["power"]["note"] = "확장보드가 전압을 알려주지 않아 잔량(%)은 표시할 수 없다"
 
     # CPU 클럭 (kHz -> MHz)
     raw = _read_first_line("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
@@ -592,6 +655,12 @@ def read_pi_health():
             health["ai_error"] = f"{type(e).__name__}: {e}"
 
     return health
+
+
+def set_patrol_callback(cb):
+    """좌표 순찰 명령을 받을 함수. (action, params) -> dict."""
+    global _patrol_callback
+    _patrol_callback = cb
 
 
 def set_route_callback(cb):

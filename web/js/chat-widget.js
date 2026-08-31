@@ -300,12 +300,12 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
             button.disabled = true;
             try {
-              await window.LabBotRentals.reserveItem(item, session, "chatbot");
+              const loan = await window.LabBotRentals.reserveItem(item, session, "chatbot");
               appendMessage(
-                `"${item.name}" 예약되었습니다. 마이페이지에서 로봇 안내를 받아 ${consumable ? "사용" : "수령"}하세요.`,
+                `"${item.name}" 예약되었습니다. 로봇의 선반 안내 경로를 표시합니다.`,
                 "bot"
               );
-              await refreshItems();
+              window.location.href = window.LabBotRentals.buildRobotGuideUrl(item, loan);
             } catch (err) {
               window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
               button.disabled = false;

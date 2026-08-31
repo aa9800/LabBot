@@ -269,7 +269,7 @@ def tall_cabinet(stage, path, x, y, w, d, h, mats, color="cabinet"):
 
 
 def rental_shelf(stage, path, x, y, mats, facing="east"):
-    """대여실용 개방 선반. 각 칸은 DB의 shelf_code와 1:1로 대응한다."""
+    """입구 공용비품용 개방 선반. 각 칸은 DB의 shelf_code와 1:1로 대응한다."""
     for dx in (-0.72, 0.72):
         for dy_idx, dy in enumerate((-0.24, 0.24)):
             cube(stage, f"{path}/Post_{'L' if dx < 0 else 'R'}_{dy_idx}", (x + dx, y + dy, 1.05),
@@ -401,7 +401,7 @@ def build():
         "floor_detail": material(stage, "FloorJoint", (0.17, 0.21, 0.22), 0.50),
     }
 
-    # 14x18m 보안 실험구역 + 남쪽 14x8m 대여·반납실 확장.
+    # 14x18m 보안 실험구역 + 남쪽 14x8m 입구 공용비품 구역 확장.
     cube(stage, "/World/LabFloor", (0, 7, -0.06), (14, 18, 0.12), mats["floor"], True)
     cube(stage, "/World/CleanCorridor", (0, 7, 0.008), (4.75, 17.4, 0.016), mats["aisle"])
     walls = (("WestWall", (-7, 7, 1.6), (0.16, 18, 3.2)),
@@ -415,7 +415,7 @@ def build():
     for idx, x in enumerate((-1.72, 1.72)):
         cube(stage, f"/World/Architecture/EntryJamb_{idx}", (x, -2, 1.35), (0.12, 0.20, 2.70), mats["frame"])
 
-    # 대여·반납실: 일반 사용자가 접근하는 공간. y=-2의 기존 출입구는 이제 보안 게이트다.
+    # 입구 공용비품 구역: 일반 사용자가 접근하는 공간. y=-2의 기존 출입구는 보안 게이트다.
     cube(stage, "/World/RentalWing/Floor", (0, -6.0, -0.06), (14, 8.0, 0.12), mats["aisle"], True)
     cube(stage, "/World/RentalWing/CenterLane", (0, -6.0, 0.008), (3.2, 7.6, 0.016), mats["floor"])
     # 에폭시 바닥의 패널 이음선을 업무 동선을 해치지 않는 정도로만 표현한다.

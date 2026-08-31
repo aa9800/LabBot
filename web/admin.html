@@ -252,6 +252,7 @@
           <span class="robot-health-chip" id="healthCpu" title="CPU 부하 / 동작 클럭">🧠 CPU <strong>--</strong></span>
           <span class="robot-health-chip" id="healthMem" title="메모리 사용률">💾 RAM <strong>--</strong></span>
           <span class="robot-health-chip" id="healthUptime" title="라즈베리파이가 부팅된 뒤 지난 시간. 0으로 돌아갔다면 로봇이 재시작된 것.">⏱️ 가동 <strong>--</strong></span>
+          <span class="robot-health-chip" id="healthPower" title="배터리 상태. 확장보드가 전압을 알려주지 않아 잔량(%)은 못 읽고, 라즈베리파이가 전원이 처질 때 세우는 저전압 플래그로 판단한다.">🔋 <strong>--</strong></span>
           <span class="robot-health-chip" id="healthWifi" title="로봇의 무선 신호 세기. 로봇이 멀어지면 명령과 영상이 같이 끊긴다.">📶 <strong>--</strong></span>
           <span class="robot-health-chip" id="healthDisk" title="이벤트 큐와 주행 로그가 쌓이는 곳. 가득 차면 안전이벤트가 유실된다.">💽 <strong>--</strong></span>
           <span class="robot-health-chip" id="healthAi" title="AI 추론 상태. 조용히 죽으면 아무것도 탐지하지 못한다.">🧿 AI <strong>--</strong></span>
@@ -358,7 +359,7 @@
             </div>
             <div class="ai-guard-actions">
               <button type="button" class="btn btn-danger btn-sm" data-drive="stop">■ 강제 정지 (Space)</button>
-              <button type="button" class="btn btn-primary btn-sm" id="robotAutoBtn">🔄 자동 순찰 복귀</button>
+              <button type="button" class="btn btn-primary btn-sm" id="robotAutoBtn" title="지금 위치에서 출발점(0,0)으로 좌표 주행해 돌아갑니다.">🏠 대기 자리 복귀</button>
               <button type="button" class="btn btn-secondary btn-sm" id="robotScanQrBtn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8" />
@@ -367,6 +368,63 @@
                 물품 QR 인식
               </button>
               <span id="robotScanQrResult"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 🗺️ 좌표 순찰 패널 -->
+        <!-- 실물 라즈봇과 아이작 심은 공간이 달라서 경로와 위치 상태를 따로 사용한다. -->
+        <div class="ai-guard-panel">
+          <div class="ai-guard-header">
+            <div class="ai-guard-title">
+              <span>🗺️ 좌표 순찰</span>
+              <span id="patrolStatusBadge" class="badge badge-st-open"><span class="badge-dot"></span>대기</span>
+            </div>
+            <div class="ai-guard-actions">
+              <label class="night-guard-interval" for="patrolEnv">
+                대상
+                <select id="patrolEnv" aria-label="순찰 대상 환경">
+                  <option value="real" selected>실물 로봇</option>
+                  <option value="isaac">아이작 심</option>
+                </select>
+              </label>
+              <button type="button" class="btn btn-primary btn-sm" id="patrolStartBtn">▶ 순찰 시작</button>
+              <button type="button" class="btn btn-danger btn-sm" id="patrolStopBtn">■ 중지</button>
+              <label class="night-guard-interval" for="patrolAutoInterval">
+                자동 반복
+                <select id="patrolAutoInterval" aria-label="자동 순찰 간격">
+                  <option value="-1" id="patrolContinuousOption" hidden>연속 순찰</option>
+                  <option value="0" selected>1회 후 정지</option>
+                  <option value="15">15분마다</option>
+                  <option value="30">30분마다</option>
+                  <option value="60">60분마다</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="patrol-body">
+            <canvas id="patrolMap" width="440" height="300" aria-label="순찰 경로 지도"></canvas>
+            <div class="patrol-info">
+              <div class="patrol-info-row">
+                <span class="mono">경로</span>
+                <strong id="patrolRouteText">불러오는 중…</strong>
+              </div>
+              <div class="patrol-info-row">
+                <span class="mono">현재 위치</span>
+                <strong id="patrolPoseText">—</strong>
+              </div>
+              <div class="patrol-info-row">
+                <span class="mono">진행</span>
+                <strong id="patrolLegText">—</strong>
+              </div>
+              <div class="patrol-info-row">
+                <span class="mono">다음 순찰</span>
+                <strong id="patrolNextText">자동 반복 꺼짐</strong>
+              </div>
+              <p class="patrol-note" id="patrolMessage">
+                실물 로봇에 저장된 순찰 경로를 불러오는 중입니다.
+              </p>
             </div>
           </div>
         </div>
@@ -610,7 +668,7 @@
   <script src="js/items-data.js"></script>
   <script src="js/rentals.js"></script>
   <script src="js/safety-data.js?v=20260828-lab-safety2"></script>
-  <script src="js/robot-console-data.js?v=20260830-camdir"></script>
+  <script src="js/robot-console-data.js?v=20260831-real-default"></script>
   <script src="js/audit-data.js"></script>
   <script src="js/damage-data.js"></script>
   <script src="js/stock-adjustments-data.js"></script>
@@ -618,6 +676,8 @@
   <script src="js/restock-data.js"></script>
   <script src="js/chat-data.js"></script>
   <script src="js/user-admin-data.js"></script>
-  <script src="js/admin.js?v=20260830-health2"></script>
+  <script src="js/admin.js?v=20260831-camkeys"></script>
+  <!-- 좌표 순찰 패널. admin.js 뒤에 와야 LabBotToast 를 쓸 수 있다. -->
+  <script src="js/patrol-panel.js?v=20260831-lock"></script>
 </body>
 </html>

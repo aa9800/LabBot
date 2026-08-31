@@ -21,6 +21,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // N+1이 되니 한 번만 불러와서 renderRow에서 함께 쓰고, 신청/취소할 때 그 자리에서
   // 갱신한다(다시 통째로 불러오지 않음). 실제 알림 전송/소비는 nav.js가 담당.
   let subscribedItemIds = new Set();
+  let storageFixturesById = new Map();
 
   // 물품이 60개가 넘어가면 페이지 전체가 한없이 길어져서, 화면 단위로 나눠 보여준다.
   // 검색/필터가 바뀌면 결과가 달라지니 1페이지로 되돌린다(renderList에서 처리).
@@ -51,6 +52,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     let actionHtml;
     if (rentable) {
       actionHtml = `<button type="button" class="btn btn-primary btn-sm">${actionLabel}</button>`;
+    } else if (statusKey === "FIXED_ASSET") {
+      actionHtml = `<button type="button" class="btn btn-secondary btn-sm" disabled>고정 설비</button>`;
     } else if (statusKey === "OUT_OF_STOCK") {
       actionHtml = `<button type="button" class="btn btn-secondary btn-sm${isSubscribed ? " is-subscribed" : ""}" data-action="restock" data-subscribed="${isSubscribed}">${isSubscribed ? "알림 신청됨" : "재입고 알림"}</button>`;
     } else {
@@ -61,16 +64,23 @@ document.addEventListener("DOMContentLoaded", async () => {
       ? `<span class="item-row-location">유효기간 ${escapeHtml(item.expires_at)}</span>`
       : "";
 
+    const parentItem = item.storage_parent_item_id ? storageFixturesById.get(item.storage_parent_item_id) : null;
+    const storagePathHtml = parentItem
+      ? `<span class="item-row-location">내부 위치: ${escapeHtml(parentItem.name)} · ${escapeHtml(item.storage_position || "위치 미지정")}</span>`
+      : "";
+    const quantityLabel = item.is_rentable === false ? "설비" : "재고";
+
     row.innerHTML = `
       <div class="item-row-icon" aria-hidden="true">${categoryIconOf(item.category)}</div>
       <div class="item-row-main"${item.notes ? ` title="${escapeHtml(item.notes)}"` : ""}>
         <span class="category-tag">${escapeHtml(item.categoryLabel)}</span>
         <h3 class="item-row-name">${escapeHtml(item.name)}</h3>
         <span class="item-row-location">${escapeHtml(item.location)} · ${escapeHtml(item.storage_condition || "-")}</span>
+        ${storagePathHtml}
         ${expiresHtml}
       </div>
       <div class="item-row-meta">
-        <span class="stock-count">재고 ${item.available_qty}/${item.total_qty} ${escapeHtml(item.unit || "")}</span>
+        <span class="stock-count">${quantityLabel} ${item.available_qty}/${item.total_qty} ${escapeHtml(item.unit || "")}</span>
         <span class="badge ${badgeClass}"><span class="badge-dot"></span>${statusLabel}</span>
         <div style="display:flex; gap:0.35rem; align-items:center;">
           ${actionHtml}
@@ -86,13 +96,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         target.disabled = true;
 
         try {
-          // 소모품도 이제 그 자리에서 바로 처리되지 않는다 — 예약만 되고, 마이페이지에서
-          // 수량을 입력하고 QR을 스캔해야만 실제 사용으로 확정된다(장비 대여와 동일한 원칙).
-          await window.LabBotRentals.reserveItem(item, session);
+          // 소모품도 여기서 바로 사용 완료되지 않는다 — 예약 후 가상 실험실에서 로봇 안내를
+          // 받고, 물품 QR을 스캔해야만 실제 사용으로 확정된다(장비 대여와 동일한 원칙).
+          const loan = await window.LabBotRentals.reserveItem(item, session);
           window.LabBotToast.success(
-            `"${item.name}" 예약되었습니다. 마이페이지에서 로봇 안내를 받아 ${consumable ? "사용" : "수령"}하세요.`
+            `"${item.name}" 예약되었습니다. 가상 실험실에서 로봇을 따라 ${consumable ? "사용" : "수령"} 위치로 이동하세요.`
           );
-          window.location.href = "mypage.html";
+          window.location.href = window.LabBotRentals.buildRobotGuideUrl(item, loan);
         } catch (err) {
           window.LabBotToast.error(err.message || "처리 중 오류가 발생했습니다.");
           target.disabled = false;
@@ -252,6 +262,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     subscribedItemIds = await window.LabBotRestock.fetchMySubscribedItemIds(session.id);
   } catch (err) {
     console.warn("LabBot: 재입고 알림 신청 목록을 불러오지 못했습니다", err);
+  }
+
+  try {
+    const fixtures = await window.LabBotItems.fetchStorageFixtures();
+    storageFixturesById = new Map(fixtures.map((fixture) => [fixture.id, fixture]));
+  } catch (err) {
+    console.warn("LabBot: 고정 보관 설비 목록을 불러오지 못했습니다", err);
   }
 
   await populateLocationOptions();
