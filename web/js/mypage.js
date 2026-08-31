@@ -332,6 +332,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     function renderGuideStatus(status) {
       if (!status) return;
       const exactLocation = status.location_detail || `${status.shelf_code || "물품 위치"} 선반`;
+      // 로봇이 이동할 수 없는 상태(바퀴 잠금·고장·충전 중)면 그렇다고 말한다.
+      // 안 그러면 사용자가 오지 않는 로봇을 계속 기다린다. 대여 자체는
+      // QR 확인으로 진행되므로 무엇을 하면 되는지 같이 알려준다.
+      if (status.drive && status.drive.phase === "stationary") {
+        navStatus.textContent =
+          `로봇이 지금 이동할 수 없습니다 · 물품 위치: ${exactLocation}`
+          + " · 물품을 가져와 아래 QR을 로봇 카메라에 보여주면 대여가 확정됩니다.";
+        return;
+      }
       if (status.status === "arrived") {
         navStatus.textContent = `도착했습니다 · ${exactLocation}에 물품이 있습니다. 물품을 꺼낸 뒤 로봇 카메라에 QR을 보여주세요.`;
       } else if (status.status === "navigating") {

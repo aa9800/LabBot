@@ -957,7 +957,10 @@ def main():
     )
 
     # 바퀴를 쓰는 명령들. 잠겨 있으면 여기서 전부 막는다.
-    MOTION_ACTIONS = {"start", "deliver", "dock", "goto", "testdrive", "testturn",
+    # 잠겨 있으면 여기서 막는 명령들. "deliver" 는 뺀다 - 배달은 잠긴 상태에서
+    # 이동만 건너뛰고 QR 단계로 넘어가야 하고, 그 처리는 start_delivery 안에
+    # 있다. 여기서 막으면 대여 자체가 진행되지 않는다.
+    MOTION_ACTIONS = {"start", "dock", "goto", "testdrive", "testturn",
                       "autotrim", "calibrate", "refine", "wheeltest"}
 
     def on_patrol(action, params):
@@ -1410,9 +1413,21 @@ def main():
         /guide/start 로 들어와 이 함수를 직접 부른다. 잠금은 바퀴를 쓰는
         모든 입구에서 확인해야 의미가 있다.
         """
+        # 바퀴가 잠겨 있어도 대여는 진행한다.
+        #
+        # 주행을 못 하는 상태(바퀴 고장·충전 중·책상 위)에서 배달 요청이 오면,
+        # 예전에는 오류를 돌려주고 대여가 거기서 막혔다. 하지만 대여의 본질은
+        # "이 물품을 이 사람이 가져갔다"를 QR 로 확인하는 것이고, 로봇이 앞까지
+        # 가주는 건 편의 기능이다. 못 가면 못 간다고 알리고 QR 단계로 넘어간다.
         if motion_blocked():
-            return {"error": "바퀴가 잠겨 있다"
-                             + (f" ({motion_lock['reason']})" if motion_lock["reason"] else "")}
+            shelf = shelf_map.locate(item_id, load_map())
+            delivery.update(running=False, item_id=item_id, shelf=shelf,
+                            phase="stationary", qr=None, error_cm=None,
+                            message="로봇이 이동할 수 없어 제자리에서 진행합니다")
+            return {"status": "stationary", "item_id": item_id, "shelf": shelf,
+                    "moved": False,
+                    "안내": "로봇이 이동하지 않습니다. 물품 QR 을 로봇 카메라에 "
+                            "보여주면 대여가 확정됩니다."}
         """배달을 시작한다. 곧바로 돌아오고 실제 주행은 배경에서 돈다."""
         if delivery["running"]:
             return {"error": f"이미 물품 {delivery['item_id']} 배달 중"}
