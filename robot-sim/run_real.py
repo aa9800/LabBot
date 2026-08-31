@@ -760,6 +760,14 @@ def main():
 
     def on_direct_drive(mode, speed, turn):
         nonlocal was_manual, last_command_time
+        # 바퀴가 잠겨 있으면 제어 루프가 매 틱 hal.stop() 을 불러 이 명령을 지운다.
+        # 그런데 예전에는 그 사실을 아무에게도 안 알렸다 - 웹은 정상으로 보이고
+        # 로봇만 꿈쩍 안 하니, 원인이 잠금인지 하드웨어인지 알 길이 없었다.
+        # 명령을 버린다는 것을 요청한 쪽에 그대로 돌려준다.
+        if motion_lock["locked"] and (speed or turn):
+            return {"mode": mode, "speed": 0, "turn": 0, "locked": True,
+                    "reason": motion_lock["reason"],
+                    "note": "바퀴가 잠겨 있어 명령을 버렸다. /patrol/unlock 으로 푼다."}
         with command_lock:
             # 방금 더 큰 값을 받았는데 곧바로 작은 값이 오면 순서가 뒤바뀐
             # 것으로 본다. 사람이 정말 감속한 것이라면 다음 명령에서 다시

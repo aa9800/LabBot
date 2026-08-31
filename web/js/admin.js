@@ -1281,7 +1281,17 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     joyCommandInFlight = true;
     try {
-      await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", ...command });
+      const applied = await window.LabBotRobotConsole.setRobotCommand({ mode: "manual", ...command });
+      // 로봇이 "바퀴가 잠겨서 버렸다"고 답하면 그대로 알린다. 이걸 안 보여주면
+      // 화면은 멀쩡한데 로봇만 안 움직이는, 원인을 알 수 없는 상태가 된다.
+      // 조이스틱은 초당 수십 번 보내므로 토스트는 3초에 한 번만 띄운다.
+      if (applied?.locked && Date.now() - joyLastErrorAt > 3000) {
+        joyLastErrorAt = Date.now();
+        window.LabBotToast.error(
+          "로봇 바퀴가 잠겨 있어 움직이지 않습니다"
+          + (applied.reason ? ` (${applied.reason})` : "")
+        );
+      }
     } catch (err) {
       // 더 최신 입력(주로 정지)이 이전 요청을 취소한 것은 정상 제어 흐름이다.
       if (err?.name === "AbortError") return;
