@@ -1910,6 +1910,101 @@ body[data-page="lab-twin"] .page {
   overflow-x: visible;
 }
 
+/* ---------------------------------------------------------------------------
+   재고표: 칸이 헤더와 어긋나고 오른쪽 끝이 잘리던 문제
+   ---------------------------------------------------------------------------
+   원인이 두 가지 겹쳐 있었다.
+
+   1) td.qr-cell 과 td.stock-actions 에 display:flex 가 걸려 있었다. <td> 에 flex 를
+      주면 그 칸은 표의 칸(table-cell)이기를 그만두고 열 격자에서 빠져나온다. 그래서
+      헤더는 124px/185px 인데 실제 칸은 18px/33px 로 잡혔고, 작업 버튼이 표 밖으로
+      삐져나와 잘렸다. 칸은 칸으로 두고, 가로 배치는 vertical-align 과 margin 으로 낸다.
+
+   2) 열 폭을 브라우저 자동 계산에 맡기니 내용이 제일 긴 행을 기준으로 잡혀
+      표 전체가 1440px 가 됐다. 담는 칸은 그보다 좁아서 넘쳤다. table-layout:fixed 로
+      비율을 직접 정해 어떤 화면 폭에서도 딱 맞게 한다.
+
+   가로 스크롤로 해결하지 않는 이유는 아래 .table-wrap-wide 주석에 적어 두었다.
+   --------------------------------------------------------------------------- */
+
+td.qr-cell,
+td.stock-actions {
+  display: table-cell;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+td.qr-cell > *,
+td.stock-actions > * {
+  vertical-align: middle;
+}
+
+td.qr-cell > * + *,
+td.stock-actions > * + * {
+  margin-left: 6px;
+}
+
+#tab-stock table.sticky-first-col {
+  table-layout: fixed;
+}
+
+/* 합이 정확히 100% 다. 하나를 늘리면 다른 하나를 줄여야 한다. */
+#tab-stock th:nth-child(1),  #tab-stock td:nth-child(1)  { width: 14.5%; }  /* 물품명 */
+#tab-stock th:nth-child(2),  #tab-stock td:nth-child(2)  { width: 7%; }     /* 카테고리 */
+#tab-stock th:nth-child(3),  #tab-stock td:nth-child(3)  { width: 12%; }    /* 위치 */
+#tab-stock th:nth-child(4),  #tab-stock td:nth-child(4)  { width: 13.5%; }  /* QR 코드 */
+#tab-stock th:nth-child(5),  #tab-stock td:nth-child(5)  { width: 11%; }    /* 상태 */
+#tab-stock th:nth-child(6),  #tab-stock td:nth-child(6)  { width: 6.5%; }   /* 대여가능 */
+#tab-stock th:nth-child(7),  #tab-stock td:nth-child(7)  { width: 6.5%; }   /* 총 수량 */
+#tab-stock th:nth-child(8),  #tab-stock td:nth-child(8)  { width: 6.5%; }   /* 최소수량 */
+#tab-stock th:nth-child(9),  #tab-stock td:nth-child(9)  { width: 5%; }     /* 점검중 */
+#tab-stock th:nth-child(10), #tab-stock td:nth-child(10) { width: 17.5%; }  /* 작업 */
+
+#tab-stock td,
+#tab-stock th {
+  padding-left: 9px;
+  padding-right: 9px;
+}
+
+/* 이름과 위치는 길면 줄바꿈한다("입구 공용비품 보관구역" 같은 것들). */
+#tab-stock td:nth-child(1),
+#tab-stock td:nth-child(2),
+#tab-stock td:nth-child(3) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* "유효기간 임박 · 대여 가능" 처럼 긴 배지가 9개 있다. 이 칸에서만 배지를 접는다. */
+#tab-stock td:nth-child(5),
+#tab-stock td:nth-child(5) .badge {
+  white-space: normal;
+}
+
+#tab-stock td:nth-child(5) .badge {
+  text-align: left;
+}
+
+#tab-stock .stock-input {
+  width: 100%;
+  max-width: 52px;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+#tab-stock .qr-thumb {
+  width: 40px;
+  height: 40px;
+}
+
+#tab-stock td.qr-cell .mono {
+  font-size: 0.63rem;
+}
+
+#tab-stock td.stock-actions .btn.btn-sm {
+  padding: 5px 7px;
+  font-size: 0.72rem;
+}
+
 /* 물품이 많아 표가 세로로 길어져도, 스크롤을 내리는 동안 물품명~작업 헤더가 화면 위에
    계속 붙어있게 한다(엑셀의 "틀 고정"과 같은 효과). */
 .table-wrap-wide thead th {
