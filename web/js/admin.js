@@ -1309,6 +1309,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
     joyLastSentAt = now;
 
+    // 지금 보내는 값이 대기열의 값보다 새 것이다. 대기열을 비우지 않으면
+    // 전송이 끝난 뒤 옛 값이 뒤늦게 나가서, 모터가 "85 -> 2 -> 35" 처럼
+    // 튄다. 실제 로그에서 18 뒤에 2 가 도착하는 걸 확인했다.
+    joyQueuedCommand = null;
+
     // 정지는 이동 명령 대기열을 추월해 즉시 보낸다.
     if (force && command.speed === 0 && command.turn === 0 && joyCommandInFlight) {
       joyQueuedCommand = null;
@@ -1919,7 +1924,12 @@ ${power.note || ""}`;
 
   window.addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
-    const isDriveKey = ["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(key);
+    // 화살표는 카메라 전용이다(CAM_KEY_MAP). 주행 키 목록에 같이 넣어두면,
+    // 카메라를 조작할 때마다 주행 핸들러가 "주행 키가 눌렸다"고 받아들인다.
+    // 그런데 속도 계산은 WASD 만 보므로 throttle=0, steering=0 이 되고
+    // joyEmergencyStop() 이 걸려 로봇이 멈춘다 - 실제로 "각도 조절하면 로봇이
+    // 멈춘다"는 증상이 여기서 나왔다.
+    const isDriveKey = ["w", "a", "s", "d", " "].includes(key);
     if (!isDriveKey) return;
     if (!robotControlAllowed()) {
       renderKeyboardFeedback("입력 비활성 · 로봇 콘솔 탭을 여세요", "blocked");
@@ -1949,7 +1959,8 @@ ${power.note || ""}`;
 
   window.addEventListener("keyup", (e) => {
     const key = e.key.toLowerCase();
-    if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+    // keydown 과 같은 목록을 쓴다. 화살표는 카메라 전용이라 여기 없다.
+    if (["w", "a", "s", "d"].includes(key)) {
       if (activeKeyboardKeys.delete(key)) updateKeyboardDrive();
     }
   });

@@ -60,6 +60,15 @@ TELEMETRY_LOG_EVERY = 30
 OBSTACLE_ALERT_COOLDOWN = 3.0
 OBSTACLE_STOP_DISTANCE = 20.0
 MANUAL_COMMAND_MAX_AGE_SECONDS = 3.0  # 실물(run_real.py)과 동일하게 맞춤 — 1초면 키보드 주행이 끊긴다
+# 카메라 렌즈를 차체 앞면보다 확실히 밖에 두는 최소 여유.
+# 위치는 아래 메인 루프에서 robot_spec의 차체 길이와 함께 계산한다.
+CAMERA_LENS_CLEARANCE_M = 0.015
+# 실물 서보의 90도 정면과 Isaac 광학축을 맞추는 영점 보정값.
+# 기존 -6도는 90도에서 차체 경계면을 화면 중앙에 걸치게 했다.
+CAMERA_ZERO_PITCH_DEG = 4.0
+# 온보드 카메라가 자기 차체/팬틸트 하우징을 그리지 않도록 하는 근거리 평면.
+CAMERA_NEAR_CLIP_M = 0.12
+
 FPV_WIDTH = int(os.environ.get("LABKEEPER_FPV_WIDTH", "960"))
 FPV_HEIGHT = int(os.environ.get("LABKEEPER_FPV_HEIGHT", "540"))
 JPEG_QUALITY = max(65, min(95, int(os.environ.get("LABKEEPER_JPEG_QUALITY", "84"))))
@@ -141,10 +150,9 @@ def _create_obstacle(stage):
 def _compute_camera_quaternion(eye_pos, heading_rad, pan_deg=90, tilt_deg=90):
     """로봇 진행방향(heading)과 Pan/Tilt 서보 각도를 결합하여 FPV 카메라 쿼터니언을 생성한다."""
     # pan: 0(좌) -> 90(정면) -> 180(우)
-    # tilt: 0(바닥/QR) -> 90(정면 수평) -> 180(상단선반/시약)
+    # 실물/웹과 같은 tilt 의미: 45(상단) -> 90(정면) -> 135(바닥/QR)
     rel_pan = math.radians(pan_deg - 90.0)
-    # 기본 시야각을 전방 바닥과 작업대가 잘 보이도록 살짝(-6도) 숙임
-    rel_tilt = math.radians(tilt_deg - 90.0 - 6.0)
+    rel_tilt = math.radians(90.0 - tilt_deg + CAMERA_ZERO_PITCH_DEG)
 
     total_yaw = heading_rad - rel_pan
     total_pitch = rel_tilt
@@ -256,6 +264,7 @@ def main():
         orientations=np.array([[qw, 0.0, 0.0, qz]]),
     )
     cam.initialize()
+    cam.set_clipping_range(near_distance=CAMERA_NEAR_CLIP_M, far_distance=100.0)
     overview_cam.initialize()
     # 별도 대여/반납실 없이 실제 연구실 구역 전체를 한 프레임에 담는다.
     overview_eye = np.array([15.0, -15.0, 23.0])
@@ -332,6 +341,14 @@ def main():
 
     def on_servo_cmd(pan, tilt):
         return hal.set_servo_angle(pan=pan, tilt=tilt)
+
+    def on_servo_dir(pan_dir, tilt_dir):
+        """카메라 화살표를 누르고 있는 동안 그 방향으로 계속 움직인다.
+
+        이 콜백이 없으면 stream_server 가 방향 명령을 각도 콜백으로 흘려보내고,
+        pan=None/tilt=None 이 되어 카메라가 꿈쩍도 안 한다.
+        """
+        return hal.set_servo_direction(pan_dir=pan_dir, tilt_dir=tilt_dir)
 
     def on_scan_req():
         # 사용자가 물품을 로봇 카메라에 보여주는 동안 주행을 잠시 멈춘다.
@@ -744,6 +761,7 @@ def main():
 
     stream_server.set_drive_callback(on_drive_cmd)
     stream_server.set_camera_angle_callback(on_servo_cmd)
+    stream_server.set_camera_direction_callback(on_servo_dir)
     stream_server.set_qr_scan_callback(on_scan_req)
     stream_server.set_telemetry_provider(provide_telemetry)
     stream_server.set_guide_callbacks(start=on_guide_start, status=on_guide_status, finish=on_guide_finish)
@@ -939,9 +957,17 @@ def main():
                     hal.stop()
 
             # 2. 로봇 위치 및 Pan/Tilt 각도를 합성하여 FPV 카메라 회전 동기화
+            # 화살표를 누르고 있으면 그 방향으로 조금씩 민다.
+            hal.step_servo(TIME_STEP_S)
             rx, ry, fx, fy = hal._position_and_heading()
             heading = math.atan2(fy, fx)
-            camera_forward = float(camera_spec["forwardOffsetM"])
+            # CameraHead뿐 아니라 더 길게 돌출된 차체 Body까지 피해야 한다.
+            # 기존 0.06 + 0.03 = 0.09m는 18.5cm 차체의 앞면(0.0925m)보다
+            # 안쪽이라 정면 영상 하단 절반이 차체에 가려졌다. 렌즈 위치를
+            # 차체/마운트 중 더 앞선 면에서 1.5cm 밖으로 계산한다.
+            mount_center = float(camera_spec["forwardOffsetM"])
+            chassis_front = float(robot_spec["dimensionsM"]["length"]) * 0.5
+            camera_forward = max(mount_center, chassis_front) + CAMERA_LENS_CLEARANCE_M
             camera_height = float(camera_spec["heightM"])
             eye_pos = np.array([rx + fx * camera_forward, ry + fy * camera_forward, camera_height])
             cam_q = _compute_camera_quaternion(eye_pos, heading, hal.cam_pan, hal.cam_tilt)
