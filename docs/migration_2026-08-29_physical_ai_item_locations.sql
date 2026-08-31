@@ -1,4 +1,4 @@
--- LabKeeper Physical AI 물품 위치 스키마 전환
+-- LabBot Physical AI 물품 위치 스키마 전환
 -- 목적: 별도 대여/반납실 없이 실제 실험실의 구역·선반·단·칸과 안내 좌표를 저장한다.
 -- QR 원문은 이 테이블이나 USD에 복제하지 않는다. QR 최종 검증은 기존 items/대여 RPC가 담당한다.
 
@@ -114,4 +114,3 @@ create index if not exists virtual_lab_objects_item_location_idx
   where enabled = true;
 
 commit;
-

@@ -370,7 +370,42 @@ alter table items
   add column if not exists storage_condition text,
   add column if not exists expires_at date,
   add column if not exists manual_status text check (manual_status in ('MAINTENANCE')),
-  add column if not exists notes text default '';
+  add column if not exists notes text default '',
+  add column if not exists is_rentable boolean not null default true,
+  add column if not exists storage_parent_item_id bigint references items(id) on delete restrict,
+  add column if not exists storage_position text;
+
+alter table items drop constraint if exists items_storage_parent_not_self;
+alter table items add constraint items_storage_parent_not_self
+  check (storage_parent_item_id is null or storage_parent_item_id <> id);
+
+create index if not exists items_storage_parent_idx
+  on items(storage_parent_item_id) where storage_parent_item_id is not null;
+
+create or replace function public.guard_item_storage_parent()
+returns trigger as $$
+declare
+  parent_item public.items%rowtype;
+begin
+  if new.storage_parent_item_id is null then return new; end if;
+  select * into parent_item from public.items where id = new.storage_parent_item_id;
+  if not found or parent_item.is_rentable is distinct from false then
+    raise exception 'storage parent must be a fixed non-rentable item';
+  end if;
+  if parent_item.storage_parent_item_id is not null then
+    raise exception 'nested storage fixtures are not allowed';
+  end if;
+  if parent_item.location <> new.location then
+    raise exception 'stored item and storage fixture must share a location';
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer set search_path = public;
+
+drop trigger if exists trg_guard_item_storage_parent on items;
+create trigger trg_guard_item_storage_parent
+  before insert or update of storage_parent_item_id, location on items
+  for each row execute function public.guard_item_storage_parent();
 
 -- manual_status: 관리자가 직접 정하는 예외 상태만 저장(null 또는 'MAINTENANCE').
 -- OUT_OF_STOCK/LOW_STOCK/EXPIRED/EXPIRING_SOON/AVAILABLE은 저장하지 않고, 매번
@@ -487,6 +522,9 @@ declare
   item record;
 begin
   select * into item from items where id = new.item_id;
+  if item.is_rentable is distinct from true then
+    raise exception 'fixed facility is not rentable';
+  end if;
   if item.manual_status = 'MAINTENANCE' then
     raise exception 'item under maintenance';
   end if;
@@ -1766,17 +1804,23 @@ grant execute on function public.confirm_virtual_item_usage(bigint, text, intege
 
 -- 대표 객체만 실제 items 행에 연결한다. 재고/QR 사본은 만들지 않는다.
 insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
-select 'eq-pipette-01', id, '대여·반납실', 'single' from items where name ilike '%마이크로피펫%' order by id limit 1
+select 'eq-pipette-01', id, '입구 공용비품 보관구역', 'single' from items where name = '마이크로피펫 세트' order by id limit 1
 on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
 
 insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
-select 'con-tips-01', id, '대여·반납실', 'grouped' from items where name ilike '%피펫 팁%' order by id limit 1
+select 'con-tips-01', id, '입구 공용비품 보관구역', 'single' from items where name = '10 μL 피펫 팁' order by id limit 1
 on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
 insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
-select 'eq-centrifuge-01', id, '대여·반납실', 'single' from items where name ilike '%마이크로 원심분리기%' order by id limit 1
+select 'con-tips-02', id, '입구 공용비품 보관구역', 'single' from items where name = '200 μL 피펫 팁' order by id limit 1
 on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
 insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
-select 'eq-scale-01', id, '대여·반납실', 'single' from items where name ilike '%전자저울%' order by id limit 1
+select 'con-tips-03', id, '입구 공용비품 보관구역', 'single' from items where name = '1000 μL 피펫 팁' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'eq-centrifuge-01', id, '입구 공용비품 보관구역', 'single' from items where name ilike '%마이크로 원심분리기%' order by id limit 1
+on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
+insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
+select 'eq-scale-01', id, '입구 공용비품 보관구역', 'single' from items where name ilike '%전자저울%' order by id limit 1
 on conflict (scene_object_id) do update set item_id=excluded.item_id, room=excluded.room, display_mode=excluded.display_mode;
 insert into virtual_lab_objects (scene_object_id, item_id, room, display_mode)
 select 'eq-phmeter-01', id, '시약보관실', 'single' from items where name ilike '%pH meter%' order by id limit 1
@@ -1801,9 +1845,9 @@ on conflict (scene_object_id) do update set item_id=excluded.item_id, room=exclu
 -- 33. 물품별 로봇 안내 좌표 + 대여/보안 구역 분리
 -- =============================================================
 alter table virtual_lab_objects add column if not exists zone_type text not null default 'restricted_lab'
-  check (zone_type in ('rental', 'restricted_lab'));
+  check (zone_type in ('lab_inventory', 'restricted_lab'));
 alter table virtual_lab_objects add column if not exists access_level text not null default 'authorized'
-  check (access_level in ('public', 'authorized', 'staff'));
+  check (access_level in ('authorized', 'staff'));
 alter table virtual_lab_objects add column if not exists shelf_code text;
 alter table virtual_lab_objects add column if not exists shelf_row integer;
 alter table virtual_lab_objects add column if not exists shelf_slot integer;
@@ -1812,10 +1856,12 @@ alter table virtual_lab_objects add column if not exists nav_x double precision;
 alter table virtual_lab_objects add column if not exists nav_y double precision;
 alter table virtual_lab_objects add column if not exists nav_heading double precision default 0;
 
-update virtual_lab_objects set room='대여·반납실', zone_type='rental', access_level='public', shelf_code='A-01', shelf_row=2, shelf_slot=1, location_detail='A-01 선반 2번째 줄, 왼쪽에서 1번째 칸', nav_x=-2.6, nav_y=-5.2 where scene_object_id='eq-pipette-01';
-update virtual_lab_objects set room='대여·반납실', zone_type='rental', access_level='public', shelf_code='A-02', shelf_row=2, shelf_slot=3, location_detail='A-02 선반 2번째 줄, 왼쪽에서 3번째 바구니', nav_x=-2.6, nav_y=-6.5 where scene_object_id='con-tips-01';
-update virtual_lab_objects set room='대여·반납실', zone_type='rental', access_level='public', shelf_code='B-01', shelf_row=1, shelf_slot=1, location_detail='B-01 선반 1번째 줄, 오른쪽에서 1번째 칸', nav_x=2.6, nav_y=-5.2 where scene_object_id='eq-centrifuge-01';
-update virtual_lab_objects set room='대여·반납실', zone_type='rental', access_level='public', shelf_code='B-02', shelf_row=2, shelf_slot=2, location_detail='B-02 선반 2번째 줄, 오른쪽에서 2번째 칸', nav_x=2.6, nav_y=-6.5 where scene_object_id='eq-scale-01';
+update virtual_lab_objects set room='입구 공용비품 보관구역', zone_type='lab_inventory', access_level='authorized', shelf_code='ENT-W01', shelf_row=3, shelf_slot=1, location_detail='ENT-W01 입구 서측 개방 선반 3단, 왼쪽 1번째 피펫 스탠드', nav_x=-2.6, nav_y=-5.22, nav_heading=180 where scene_object_id='eq-pipette-01';
+update virtual_lab_objects set room='입구 공용비품 보관구역', zone_type='lab_inventory', access_level='authorized', shelf_code='ENT-W02', shelf_row=3, shelf_slot=1, location_detail='ENT-W02 입구 서측 개방 선반 3단, 왼쪽 1번째 바구니', nav_x=-2.6, nav_y=-6.47, nav_heading=180 where scene_object_id='con-tips-01';
+update virtual_lab_objects set room='입구 공용비품 보관구역', zone_type='lab_inventory', access_level='authorized', shelf_code='ENT-W02', shelf_row=3, shelf_slot=2, location_detail='ENT-W02 입구 서측 개방 선반 3단, 왼쪽 2번째 바구니', nav_x=-2.6, nav_y=-6.47, nav_heading=180 where scene_object_id='con-tips-02';
+update virtual_lab_objects set room='입구 공용비품 보관구역', zone_type='lab_inventory', access_level='authorized', shelf_code='ENT-W02', shelf_row=3, shelf_slot=3, location_detail='ENT-W02 입구 서측 개방 선반 3단, 왼쪽 3번째 바구니', nav_x=-2.6, nav_y=-6.47, nav_heading=180 where scene_object_id='con-tips-03';
+update virtual_lab_objects set room='입구 공용비품 보관구역', zone_type='lab_inventory', access_level='authorized', shelf_code='ENT-E01', shelf_row=3, shelf_slot=1, location_detail='ENT-E01 입구 동측 개방 선반 3단, 오른쪽 1번째 위치', nav_x=2.6, nav_y=-5.22, nav_heading=0 where scene_object_id='eq-centrifuge-01';
+update virtual_lab_objects set room='입구 공용비품 보관구역', zone_type='lab_inventory', access_level='authorized', shelf_code='ENT-E02', shelf_row=3, shelf_slot=2, location_detail='ENT-E02 입구 동측 개방 선반 3단, 오른쪽 2번째 위치', nav_x=2.6, nav_y=-6.48, nav_heading=0 where scene_object_id='eq-scale-01';
 update virtual_lab_objects set zone_type='restricted_lab', access_level='authorized', shelf_code='LAB-G01', nav_x=-2.35, nav_y=2.1 where scene_object_id='eq-microscope-01';
 update virtual_lab_objects set zone_type='restricted_lab', access_level='authorized', shelf_code='LAB-I01', nav_x=-1.8, nav_y=10.0 where scene_object_id='eq-pcr-01';
 update virtual_lab_objects set zone_type='restricted_lab', access_level='authorized', shelf_code='LAB-R01', nav_x=0.0, nav_y=13.6 where scene_object_id='eq-phmeter-01';
@@ -1832,20 +1878,20 @@ insert into virtual_lab_objects (
 select
   'db-item-' || i.id::text,
   i.id,
-  case when i.item_type in ('CONSUMABLE','PPE','SAFETY') then '대여·반납실' else i.location end,
+  i.location,
   'grouped',
-  case when i.item_type in ('CONSUMABLE','PPE','SAFETY') then 'rental' else 'restricted_lab' end,
-  case when i.item_type in ('CONSUMABLE','PPE','SAFETY') then 'public' else 'authorized' end,
+  case when i.item_type in ('CONSUMABLE','PPE','SAFETY') then 'lab_inventory' else 'restricted_lab' end,
+  'authorized',
   case
-    when i.item_type='CONSUMABLE' then 'A-03'
-    when i.item_type in ('PPE','SAFETY') then 'B-03'
+    when i.item_type='CONSUMABLE' then 'LAB-CON'
+    when i.item_type in ('PPE','SAFETY') then 'LAB-S'
     else 'LAB-' || upper(substr(md5(i.location), 1, 4))
   end,
   ((i.id - 1) / 4)::integer % 3 + 1,
   ((i.id - 1) % 4)::integer + 1,
   (case
-    when i.item_type='CONSUMABLE' then 'A-03 선반 '
-    when i.item_type in ('PPE','SAFETY') then 'B-03 선반 '
+    when i.item_type='CONSUMABLE' then 'LAB-CON 선반 '
+    when i.item_type in ('PPE','SAFETY') then 'LAB-S 선반 '
     else '제한구역 보관 위치 '
   end) || ((((i.id - 1) / 4)::integer % 3) + 1)::text || '번째 줄, 번호표 ' || i.id::text,
   case
@@ -1856,7 +1902,6 @@ select
     else 0.0
   end,
   case
-    when i.item_type in ('CONSUMABLE','PPE','SAFETY') then -7.7
     when i.location='기기실-1' then 10.0
     when i.location='기기실-2' then 12.4
     when i.location='세포배양실' then 14.6
